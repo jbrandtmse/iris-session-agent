@@ -9,13 +9,13 @@ status: "Draft — pending PRD authoring"
 
 # Product Brief: iris-session-agent
 
-> *"Chatting with your Interoperability Session to really understand what happened."*
+> *"Chatting with your Interoperability Session to really understand what happened — and finding the right session by asking."*
 
 ## Executive Summary
 
 `iris-session-agent` is an open-source IRIS module that adds an AI assistant chat experience to the InterSystems Management Portal for Interoperability operators. Two agents — a **Session Inspection Agent** that explains what happened in a given Ensemble session, and a **Message Search Agent** that helps operators find sessions by natural-language query — share infrastructure inside one IPM-installable package and run on **IRIS / IRIS for Health 2024.1+** in pure ObjectScript with no embedded Python and no AI Hub dependency.
 
-The product fills a structural gap: an Ensemble session leaves a trace across five separate data surfaces (`Ens.MessageHeader`, message bodies, `Ens.Util.Log`, `Ens.Rule.Log`, BP runtime state), and operators today join those surfaces in their heads — every time, on every incident, starting from scratch. Junior engineers can't do this at all without senior help. `iris-session-agent` collapses 20-30 minutes of expert tab-switching into a 30-second conversation, and gives junior engineers the ability to do senior-level diagnosis. It originated as a planned hackathon project at InterSystems READY 2026 and is now an independent, single-author hobby project published as open source from day one.
+The product fills a structural gap: an Ensemble session leaves a trace across six separate data surfaces (`Ens.MessageHeader`, message bodies, `Ens.SearchTableBase` indexes, `Ens.Util.Log`, `Ens.Rule.Log`, BP runtime state), and operators today join those surfaces in their heads — every time, on every incident, starting from scratch. Junior engineers can't do this at all without senior help. `iris-session-agent` collapses 20-30 minutes of expert tab-switching into a 30-second conversation, and gives junior engineers the ability to do senior-level diagnosis. It originated as a planned hackathon project at InterSystems READY 2026 and is now an independent, single-author hobby project published as open source from day one.
 
 ## The Problem
 
@@ -23,6 +23,7 @@ A production Ensemble session that completes successfully takes seconds. A sessi
 
 - The **message headers** (`Ens.MessageHeader`) tell you the call graph, the configuration hosts involved, the status, the timing, and where errors flagged.
 - The **message bodies** are dynamically-typed `%Persistent` instances of arbitrary classes — HL7 messages, FHIR resources, X12 transactions, custom request/response objects — and you have to know the class to render them sensibly.
+- The **search-table indexes** (`Ens.SearchTableBase` subclasses such as `EnsLib.HL7.SearchTable`) are a parallel indexed extent joined on `MessageBodyId` that exposes curated body fields — patient ID, MRN, order # — so operators can find sessions by body content without opening every body.
 - The **event log** (`Ens.Util.Log`) carries the operational narrative — adapter retries, queue events, custom `$$$LOG*` calls.
 - The **rule log** (`Ens.Rule.Log`) explains why the routing rule engine sent each message where it did.
 - The **business process runtime state** (`Ens.BP.Context`, `Ens.BP.Thread`) reveals what the BP was thinking at each await/sleep boundary — if it's a BPL process or a custom subclass.

@@ -10,7 +10,7 @@ purpose: "Token-efficient context for downstream PRD creation. Dense bullets; ea
 
 ## Product Identity & Posture
 
-- **Name**: `iris-session-agent`. Tagline: *"Chatting with your Interoperability Session to really understand what happened."*
+- **Name**: `iris-session-agent`. Tagline: *"Chatting with your Interoperability Session to really understand what happened — and finding the right session by asking."*
 - **What**: Open-source IRIS module adding two AI chat agents to the Management Portal — a Session Inspection Agent (chat about a specific session) and a Message Search Agent (find sessions via natural-language query) — both embedded in custom subclasses of `EnsPortal.VisualTrace` and `EnsPortal.MessageViewer` respectively.
 - **Posture**: **Hobby project**, single author **Joshua Brandt**. **Open source from day one** under the **MIT license** (inherited posture from `sources/iris-session-chat/LICENSE`; `LICENSE` file lands at repo root in v1 release commit). No commercial motion — no SI partner channel, no closed-source features, no paid support tier. Timeline is **flexible / milestone-based, not date-based**.
 - **Origin**: Scoped during InterSystems READY 2026 internal hackathon as the *Ensemble Session Inspection Agent* — planned but not built. Hackathon = origin attribution only; no remaining hackathon ties.
@@ -20,7 +20,7 @@ purpose: "Token-efficient context for downstream PRD creation. Dense bullets; ea
 
 - **Primary users**: IRIS / Ensemble integration engineers and operators on **IRIS / IRIS for Health 2024.1+**. On-call engineers debugging incidents at 2am are the canonical persona.
 - **Junior engineers benefit disproportionately** — they can do senior-level diagnosis with the agent's help that they can't do alone.
-- **The pain**: An Ensemble session leaves a trace across 5 separate data surfaces (`Ens.MessageHeader`, message bodies as arbitrary `%Persistent` instances, `Ens.Util.Log`, `Ens.Rule.Log`, BP runtime state in `Ens.BP.Context`/`Ens.BP.Thread`); operators join those surfaces in their heads on every incident.
+- **The pain**: An Ensemble session leaves a trace across 6 separate data surfaces (`Ens.MessageHeader`, message bodies as arbitrary `%Persistent` instances, `Ens.SearchTableBase` indexes joined on `MessageBodyId`, `Ens.Util.Log`, `Ens.Rule.Log`, BP runtime state in `Ens.BP.Context`/`Ens.BP.Thread`); operators join those surfaces in their heads on every incident.
 - **Cost of status quo**: 20-30 minutes of expert tab-switching per diagnostic conversation; junior engineers blocked; correlated errors missed.
 
 ## Success Criteria (north-star metrics)

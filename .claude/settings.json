@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__iris-dev-mcp__iris_doc_get",
+      "mcp__iris-dev-mcp__iris_global_get",
+      "mcp__iris-dev-mcp__iris_doc_search",
+      "mcp__iris-admin-mcp__iris_user_get",
+      "mcp__iris-dev-mcp__iris_doc_list",
+      "mcp__iris-dev-mcp__iris_package_list",
+      "mcp__iris-admin-mcp__iris_permission_check",
+      "mcp__iris-dev-mcp__iris_global_list",
+      "mcp__iris-admin-mcp__iris_database_list",
+      "mcp__iris-ops-mcp__iris_task_history",
+      "mcp__iris-admin-mcp__iris_webapp_get",
+      "mcp__iris-ops-mcp__iris_metrics_system",
+      "mcp__iris-admin-mcp__iris_ssl_list",
+      "mcp__iris-interop-mcp__iris_production_summary",
+      "mcp__iris-data-mcp__iris_docdb_find",
+      "mcp__iris-admin-mcp__iris_role_list",
+      "mcp__iris-admin-mcp__iris_namespace_list",
+      "mcp__iris-admin-mcp__iris_mapping_list",
+      "mcp__iris-admin-mcp__iris_user_roles",
+      "mcp__iris-interop-mcp__iris_credential_list"
+    ]
+  }
+}

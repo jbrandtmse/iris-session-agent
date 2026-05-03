@@ -62,6 +62,21 @@ Method OnAfterOneTest() As %Status
     Quit $$$OK
 }
 
+/// <p>End-of-class restoration (Story 3.0 carry-forward fix): re-seed
+/// the two Config.Agent rows so that downstream test classes
+/// (AgentLoopTest, AgentLoopGuardsTest, SmokeTest) that depend on
+/// <code>session-inspection</code> being configured don't fail when
+/// the suite runs in package order. Without this, the per-test kills
+/// above leave the global empty after the last test method, breaking
+/// the suite.</p>
+Method OnAfterAllTests() As %Status
+{
+    Try {
+        Do ##class(SessionAgent.Installer).SeedDefaultAgentConfigs()
+    } Catch {}
+    Quit $$$OK
+}
+
 /// <p>AC-4 #1 — schema-presence check. Verifies each of the 12 required
 /// properties exists on <CLASS>SessionAgent.Config.Agent</CLASS> with the
 /// correct type per AC-1 table. Catches schema drift early — if a future

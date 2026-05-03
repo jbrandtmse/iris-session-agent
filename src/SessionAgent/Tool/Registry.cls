@@ -51,7 +51,12 @@ ClassMethod ListTools() As %DynamicArray
     Set tResult = []
     Try {
         Set tStmt = ##class(%SQL.Statement).%New()
-        Set tSC = tStmt.%Prepare("SELECT %EXACT(Name) AS ClassName FROM %Dictionary.ClassDefinition WHERE %EXACT(Super) = 'SessionAgent.Tool.Base' AND Abstract = 0 ORDER BY %EXACT(Name)")
+        ; Story 3.0 carry-forward fix: exclude SessionAgent.Test.* fixture
+        ; classes (StubReadOnlyTool, StubWriteTool, StubThrowingTool) from
+        ; the production registry. They live under src/SessionAgent/Test/
+        ; for compile-deploy convenience but must never appear to operators
+        ; or LLM callers as discoverable tools.
+        Set tSC = tStmt.%Prepare("SELECT %EXACT(Name) AS ClassName FROM %Dictionary.ClassDefinition WHERE %EXACT(Super) = 'SessionAgent.Tool.Base' AND Abstract = 0 AND NOT (%EXACT(Name) %STARTSWITH 'SessionAgent.Test.') ORDER BY %EXACT(Name)")
         If $$$ISERR(tSC) Quit
         Set tRs = tStmt.%Execute()
         While tRs.%Next() {
@@ -165,38 +170,33 @@ ClassMethod Dispatch(pToolName As %String, pCallerCtx As SessionAgent.Agent.Call
     ; Step 6 — Compute latency.
     Set tLatencyMs = $Normalize(($ZH - tStart) * 1000, 0)
 
-    ; Step 7 — Audit emit (NFR-S4 — always, success and error). Skip ONLY
-    ; when the lookup itself failed (unknown tool / blocked tool) — those
-    ; are not real tool dispatches and shouldn't pollute the
-    ; ToolCall ledger with rows for non-existent tools. The operator
-    ; sees the unknown-tool / blocked-tool envelope in the chat panel;
-    ; the AgentLoop's own audit covers the turn-level signal.
-    If tDispatchAttempted = 1 {
-        ; Prefer the AgentLoop-supplied Chat.History row id (Story 2.12
-        ; — set on pCallerCtx after LoadOrCreate); fall back to the
-        ; per-agent session-key derivation for pre-AgentLoop tests
-        ; (Story 2.10 / 2.11 dispatched the registry without a real
-        ; chat-history row). Either way the audit-row FK is populated
-        ; per NFR-S4 100% completeness.
-        Set tChatHistoryId = ""
-        If $IsObject(pCallerCtx), pCallerCtx.ChatHistoryId '= "" {
-            Set tChatHistoryId = pCallerCtx.ChatHistoryId
-        } Else {
-            Set tChatHistoryId = $Case(pCallerCtx.AgentName,
-                "session-inspection": pCallerCtx.IrisSessionId,
-                "message-search": pCallerCtx.SearchSessionKey,
-                : pCallerCtx.IrisSessionId)
-        }
-        Set tArgsJson = ""
-        If $IsObject($Get(pJsonArgs)) {
-            Set tArgsJson = pJsonArgs.%ToJSON()
-        }
-        Set tResultJson = ""
-        If $IsObject($Get(pResult)) {
-            Set tResultJson = pResult.%ToJSON()
-        }
-        Do ##class(SessionAgent.Audit.Emit).LogToolCall(tChatHistoryId, pToolName, tArgsJson, tResultJson, tLatencyMs, tIsError, tErrorText, "", "", "")
+    ; Step 7 — Audit emit (NFR-S4 100% completeness — every Dispatch call
+    ; produces exactly one Audit.ToolCall row, success OR failure OR
+    ; lookup-failure OR policy-block). Story 3.0 carry-forward: the
+    ; original Story 2.10 design skipped audit on unknown-tool / blocked
+    ; paths as a DoS hedge, but that opens a real audit-completeness
+    ; gap (an attacker spamming blocked tools generates no trail) and
+    ; conflicts with NFR-S4. Switched to unconditional emit; DoS is
+    ; better addressed at the call-rate boundary if it becomes a real
+    ; problem.
+    Set tChatHistoryId = ""
+    If $IsObject(pCallerCtx), pCallerCtx.ChatHistoryId '= "" {
+        Set tChatHistoryId = pCallerCtx.ChatHistoryId
+    } ElseIf $IsObject(pCallerCtx) {
+        Set tChatHistoryId = $Case(pCallerCtx.AgentName,
+            "session-inspection": pCallerCtx.IrisSessionId,
+            "message-search": pCallerCtx.SearchSessionKey,
+            : pCallerCtx.IrisSessionId)
     }
+    Set tArgsJson = ""
+    If $IsObject($Get(pJsonArgs)) {
+        Set tArgsJson = pJsonArgs.%ToJSON()
+    }
+    Set tResultJson = ""
+    If $IsObject($Get(pResult)) {
+        Set tResultJson = pResult.%ToJSON()
+    }
+    Do ##class(SessionAgent.Audit.Emit).LogToolCall(tChatHistoryId, pToolName, tArgsJson, tResultJson, tLatencyMs, tIsError, tErrorText, "", "", "")
 
     Quit tSC
 }

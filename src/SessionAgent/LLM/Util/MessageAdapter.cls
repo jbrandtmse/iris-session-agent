@@ -162,18 +162,27 @@ ClassMethod ProviderToCanonical(pProviderName As %String, pProviderResponseRaw A
 /// <ul>
 /// <li><b>user</b> with text-only blocks → <code>{role:"user",
 /// content:&lt;concatenated text&gt;}</code>.</li>
-/// <li><b>user</b> with mixed blocks (rare) → preserve text as content,
-/// drop other block types (OpenAI user messages do not host
-/// tool_use / tool_result).</li>
+/// <li><b>user</b> with tool_result blocks (canonical Anthropic packs
+/// tool_result responses inside <code>role:"user"</code> messages —
+/// see <a href="https://docs.anthropic.com/en/api/messages">Anthropic
+/// Messages API</a>) → emit one OpenAI <code>{role:"tool",
+/// tool_call_id, content}</code> message per tool_result block. If
+/// the same canonical user message also carries text blocks, also
+/// emit a separate <code>{role:"user", content:&lt;text&gt;}</code>
+/// after the tool messages. If only tool_result blocks (no text),
+/// suppress the user message entirely (OpenAI rejects empty user
+/// messages between tool calls). <b>This branch was missing in the
+/// initial Story 2.8 ship — caught by Epic 2 retro live-OpenAI
+/// probe and fixed in the Story 3.0 carry-forward.</b></li>
 /// <li><b>assistant</b> text-only → <code>{role:"assistant",
 /// content:&lt;text&gt;}</code>.</li>
 /// <li><b>assistant</b> with tool_use blocks →
 /// <code>{role:"assistant", content:&lt;text or null&gt;,
 /// tool_calls:[{id, type:"function", function:{name,
 /// arguments:&lt;stringified JSON&gt;}}]}</code>.</li>
-/// <li><b>tool</b> with tool_result blocks → emit one OpenAI message
-/// per block: <code>{role:"tool", tool_call_id, content:&lt;stringified
-/// JSON or text&gt;}</code>.</li>
+/// <li><b>tool</b> role (rare; Anthropic uses user-role for tool
+/// responses, but we accept this shape too for symmetry) → same
+/// emission rules as the user-with-tool_result path above.</li>
 /// </ul>
 ClassMethod CanonicalToOpenAi(pCanonical As %DynamicArray) As %DynamicArray [ Internal ]
 {
@@ -192,35 +201,19 @@ ClassMethod CanonicalToOpenAi(pCanonical As %DynamicArray) As %DynamicArray [ In
         }
 
         ; Tool role: emit one openai "tool" message per tool_result block.
+        ; Canonical IS Anthropic, so the tool role is rare here — but accept it.
         If tRole = "tool" {
-            If $IsObject(tContent) {
-                Set tToolIter = tContent.%GetIterator()
-                While tToolIter.%GetNext(.tBidx, .tBlock) {
-                    If '$IsObject(tBlock) Continue
-                    If 'tBlock.%IsDefined("type") Continue
-                    If tBlock.%Get("type") '= "tool_result" Continue
-                    Set tToolMsg = ##class(%DynamicObject).%New()
-                    Do tToolMsg.%Set("role", "tool")
-                    If tBlock.%IsDefined("tool_use_id") {
-                        Do tToolMsg.%Set("tool_call_id", tBlock.%Get("tool_use_id"))
-                    }
-                    ; tool_result.content can be a string or an array of
-                    ; {type:text, text:...} blocks. Stringify the array
-                    ; form to JSON; pass strings through verbatim.
-                    Set tResultContent = ""
-                    If tBlock.%IsDefined("content") {
-                        Set tRC = tBlock.%Get("content")
-                        If $IsObject(tRC) {
-                            Set tResultContent = tRC.%ToJSON()
-                        } Else {
-                            Set tResultContent = tRC
-                        }
-                    }
-                    Do tToolMsg.%Set("content", tResultContent)
-                    Do tOut.%Push(tToolMsg)
-                }
-            }
+            Do ..EmitOpenAiToolMessages(tContent, tOut)
             Continue
+        }
+
+        ; User role: tool_result blocks (canonical Anthropic shape) become
+        ; OpenAI tool messages. Emit them first; then fall through to
+        ; emit a user message ONLY if there's also text content in this
+        ; same canonical message (mixed shape).
+        Set tEmittedToolMsgs = 0
+        If tRole = "user" {
+            Set tEmittedToolMsgs = ..EmitOpenAiToolMessages(tContent, tOut)
         }
 
         ; user / assistant / other — flatten content blocks.
@@ -278,6 +271,13 @@ ClassMethod CanonicalToOpenAi(pCanonical As %DynamicArray) As %DynamicArray [ In
             Set tTextParts = tContent
         }
 
+        ; Suppress empty user messages — OpenAI rejects them between
+        ; tool messages, and a user-role canonical message that ONLY
+        ; carried tool_result blocks has already been fully emitted as
+        ; tool messages above. Assistant messages with tool_calls but
+        ; no text are valid (content="" is the OpenAI convention).
+        If (tRole = "user") && (tTextParts = "") && tEmittedToolMsgs Continue
+
         Set tOaMsg = ##class(%DynamicObject).%New()
         Do tOaMsg.%Set("role", tRole)
         ; OpenAI requires content. If we have text, set it; else use
@@ -290,6 +290,48 @@ ClassMethod CanonicalToOpenAi(pCanonical As %DynamicArray) As %DynamicArray [ In
     }
 
     Quit tOut
+}
+
+/// <p>Internal helper — scan <var>pContent</var> for <code>tool_result</code>
+/// blocks and push one OpenAI <code>{role:"tool", tool_call_id, content}</code>
+/// message per block to <var>pOut</var>. Returns the count of messages
+/// emitted (0 if no tool_result blocks found, or pContent isn't an array).</p>
+///
+/// <p>Pulled out of <method>CanonicalToOpenAi</method> in the Story 3.0
+/// carry-forward fix so it can be invoked from BOTH the Anthropic-canonical
+/// <code>role:"user"</code> path AND the legacy <code>role:"tool"</code>
+/// path. Behavior matches the original inline implementation.</p>
+ClassMethod EmitOpenAiToolMessages(pContent, pOut As %DynamicArray) As %Integer [ Internal ]
+{
+    Set tCount = 0
+    If '$IsObject(pContent) Quit tCount
+    Set tIter = pContent.%GetIterator()
+    While tIter.%GetNext(.tIdx, .tBlock) {
+        If '$IsObject(tBlock) Continue
+        If 'tBlock.%IsDefined("type") Continue
+        If tBlock.%Get("type") '= "tool_result" Continue
+        Set tToolMsg = ##class(%DynamicObject).%New()
+        Do tToolMsg.%Set("role", "tool")
+        If tBlock.%IsDefined("tool_use_id") {
+            Do tToolMsg.%Set("tool_call_id", tBlock.%Get("tool_use_id"))
+        }
+        ; tool_result.content can be a string or an array of
+        ; {type:text, text:...} blocks. Stringify the array form
+        ; to JSON; pass strings through verbatim.
+        Set tResultContent = ""
+        If tBlock.%IsDefined("content") {
+            Set tRC = tBlock.%Get("content")
+            If $IsObject(tRC) {
+                Set tResultContent = tRC.%ToJSON()
+            } Else {
+                Set tResultContent = tRC
+            }
+        }
+        Do tToolMsg.%Set("content", tResultContent)
+        Do pOut.%Push(tToolMsg)
+        Set tCount = tCount + 1
+    }
+    Quit tCount
 }
 
 /// <p>Internal — OpenAI Chat Completions response object → canonical

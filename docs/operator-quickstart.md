@@ -7,10 +7,11 @@ You're an IRIS Platform Lead managing an HSCUSTOM (or plain-IRIS) interop namesp
 
 ## 1. Run through the prerequisite checklist
 
-Open [README.md §"Operator Prerequisites"](../README.md#operator-prerequisites) and complete the eight one-time setup steps. **Two of them are install-blocking** — get these right or `zpm install` will fail:
+Open [README.md §"Operator Prerequisites"](../README.md#operator-prerequisites) and complete the nine one-time setup steps. **Three of them are install-blocking or first-call-blocking** — get these right or `zpm install` will fail or the very first agent turn will produce a sub-second "mid-flight failure" with no real network call:
 
 - **§2 IPM availability.** On a fresh IRIS for Health, `zpm` is installed only in `%SYS` (and a read-only DeveloperMode copy in `HSLIB`). Your target namespace (HSCUSTOM, USER, etc.) starts unmapped. Run from `%SYS`: `Do $System.OBJ.Load("https://pm.community.intersystems.com/packages/zpm/latest/installer","ck")` (skip if `zpm version` already works in `%SYS`), then `zpm "enable -map -globally"`. Verify with `zpm version` from your target namespace — should report the same version as `%SYS`.
 - **§3 Web Gateway timeout 60 → 300s.** LLM calls routinely run 30–90s; an agent turn chains 2–3 of them. The default 60s ceiling kills agent turns mid-stream. Path: Web Gateway management page → Configuration → Default Parameters → "Server Response Timeout" → 300.
+- **§7 SSL/TLS configuration `DefaultSSL`.** The OpenAIProvider issues HTTPS POSTs and references an SSL configuration named **`DefaultSSL`**. If that name is not present in `Security.SSLConfigs`, the very first agent turn fails fast with `"OpenAI mid-flight failure"` (no actual HTTPS call happens — IRIS rejects the request at the SSL-config-lookup step). Mgmt Portal path: *System Administration → Security → SSL/TLS Configurations → Create New Configuration → Name=`DefaultSSL`, Type=`Client`, Min Protocol=`TLSv1.2`*. Verify with `SELECT Name FROM Security.SSLConfigs` from `%SYS`.
 
 The other six prereqs (IRIS version, RBAC role assignment, package mapping, API key, bookmark URLs, daily purge task) are documented in the README and don't need to be redone here.
 

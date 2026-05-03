@@ -337,6 +337,146 @@ Method TestProviderToCanonicalOpenAiUsageMapping()
     Quit
 }
 
+/// <p>Regression for the Story 3.0 carry-forward bug: canonical
+/// Anthropic packs <code>tool_result</code> blocks inside
+/// <code>role:"user"</code> messages. The original Story 2.8 adapter
+/// only handled <code>role:"tool"</code>, so OpenAI got an orphaned
+/// <code>tool_calls</code> on turn 2 and rejected with HTTP 400.
+/// This test feeds a user-role message with a single tool_result
+/// block and asserts the OpenAI output has exactly one
+/// <code>{role:"tool", tool_call_id, content}</code> message — and
+/// no empty user message.</p>
+Method TestCanonicalUserToolResultBecomesOpenAiToolMessage()
+{
+    Set tHistory = ##class(%DynamicArray).%New()
+    Set tMsg = ##class(%DynamicObject).%New()
+    Do tMsg.%Set("role", "user")
+    Set tContent = ##class(%DynamicArray).%New()
+    Set tBlock = ##class(%DynamicObject).%New()
+    Do tBlock.%Set("type", "tool_result")
+    Do tBlock.%Set("tool_use_id", "call_abc")
+    Do tBlock.%Set("content", "found 5 messages")
+    Do tContent.%Push(tBlock)
+    Do tMsg.%Set("content", tContent)
+    Do tHistory.%Push(tMsg)
+
+    Set tOut = ##class(SessionAgent.LLM.Util.MessageAdapter).CanonicalToProvider("openai", tHistory)
+    Do $$$AssertEquals(tOut.%Size(), 1, "Exactly one OpenAI message emitted (the tool message); empty user message suppressed")
+    Set tOaMsg = tOut.%Get(0)
+    Do $$$AssertEquals(tOaMsg.%Get("role"), "tool", "role is 'tool'")
+    Do $$$AssertEquals(tOaMsg.%Get("tool_call_id"), "call_abc", "tool_call_id propagated from canonical tool_use_id")
+    Do $$$AssertEquals(tOaMsg.%Get("content"), "found 5 messages", "tool_result content preserved")
+    Quit
+}
+
+/// <p>User-role canonical message with BOTH tool_result and text
+/// blocks (mixed shape — rare but legal in canonical Anthropic). Adapter
+/// must emit the tool message FIRST, then a separate user message
+/// carrying the text. Order matters for OpenAI conversation flow.</p>
+Method TestCanonicalUserMixedTextAndToolResult()
+{
+    Set tHistory = ##class(%DynamicArray).%New()
+    Set tMsg = ##class(%DynamicObject).%New()
+    Do tMsg.%Set("role", "user")
+    Set tContent = ##class(%DynamicArray).%New()
+    Set tToolBlk = ##class(%DynamicObject).%New()
+    Do tToolBlk.%Set("type", "tool_result")
+    Do tToolBlk.%Set("tool_use_id", "call_x")
+    Do tToolBlk.%Set("content", "first result")
+    Do tContent.%Push(tToolBlk)
+    Set tTextBlk = ##class(%DynamicObject).%New()
+    Do tTextBlk.%Set("type", "text")
+    Do tTextBlk.%Set("text", "and another question")
+    Do tContent.%Push(tTextBlk)
+    Do tMsg.%Set("content", tContent)
+    Do tHistory.%Push(tMsg)
+
+    Set tOut = ##class(SessionAgent.LLM.Util.MessageAdapter).CanonicalToProvider("openai", tHistory)
+    Do $$$AssertEquals(tOut.%Size(), 2, "Two OpenAI messages: one tool, one user")
+    Do $$$AssertEquals(tOut.%Get(0).%Get("role"), "tool", "Index 0 is tool message")
+    Do $$$AssertEquals(tOut.%Get(0).%Get("tool_call_id"), "call_x", "tool_call_id correct")
+    Do $$$AssertEquals(tOut.%Get(1).%Get("role"), "user", "Index 1 is user message")
+    Do $$$AssertEquals(tOut.%Get(1).%Get("content"), "and another question", "user text preserved")
+    Quit
+}
+
+/// <p>Full 4-turn multi-turn tool flow round-trip: user → assistant
+/// tool_use → user tool_result → assistant final answer. Asserts the
+/// OpenAI translation preserves the conversation structure end-to-end:
+/// every assistant tool_calls.id has a matching subsequent
+/// tool.tool_call_id (this is exactly the invariant OpenAI's HTTP 400
+/// validates server-side).</p>
+Method TestCanonicalToOpenAiMultiTurnToolFlowPreservesIdLinkage()
+{
+    Set tHistory = ##class(%DynamicArray).%New()
+
+    ; Turn 1: user
+    Set tU = ##class(%DynamicObject).%New()
+    Do tU.%Set("role", "user")
+    Set tUC = ##class(%DynamicArray).%New()
+    Set tUT = ##class(%DynamicObject).%New()
+    Do tUT.%Set("type", "text")
+    Do tUT.%Set("text", "summarize session 42")
+    Do tUC.%Push(tUT)
+    Do tU.%Set("content", tUC)
+    Do tHistory.%Push(tU)
+
+    ; Turn 2: assistant tool_use
+    Set tA1 = ##class(%DynamicObject).%New()
+    Do tA1.%Set("role", "assistant")
+    Set tA1C = ##class(%DynamicArray).%New()
+    Set tA1Tu = ##class(%DynamicObject).%New()
+    Do tA1Tu.%Set("type", "tool_use")
+    Do tA1Tu.%Set("id", "call_zzz")
+    Do tA1Tu.%Set("name", "session_summary")
+    Set tA1Args = ##class(%DynamicObject).%New()
+    Do tA1Args.%Set("session_id", "42")
+    Do tA1Tu.%Set("input", tA1Args)
+    Do tA1C.%Push(tA1Tu)
+    Do tA1.%Set("content", tA1C)
+    Do tHistory.%Push(tA1)
+
+    ; Turn 3: user tool_result (canonical Anthropic shape)
+    Set tTr = ##class(%DynamicObject).%New()
+    Do tTr.%Set("role", "user")
+    Set tTrC = ##class(%DynamicArray).%New()
+    Set tTrBlk = ##class(%DynamicObject).%New()
+    Do tTrBlk.%Set("type", "tool_result")
+    Do tTrBlk.%Set("tool_use_id", "call_zzz")
+    Do tTrBlk.%Set("content", "5 messages, 0 errors")
+    Do tTrC.%Push(tTrBlk)
+    Do tTr.%Set("content", tTrC)
+    Do tHistory.%Push(tTr)
+
+    ; Turn 4: assistant final text
+    Set tA2 = ##class(%DynamicObject).%New()
+    Do tA2.%Set("role", "assistant")
+    Set tA2C = ##class(%DynamicArray).%New()
+    Set tA2T = ##class(%DynamicObject).%New()
+    Do tA2T.%Set("type", "text")
+    Do tA2T.%Set("text", "Session 42 had 5 messages with no errors.")
+    Do tA2C.%Push(tA2T)
+    Do tA2.%Set("content", tA2C)
+    Do tHistory.%Push(tA2)
+
+    Set tOut = ##class(SessionAgent.LLM.Util.MessageAdapter).CanonicalToProvider("openai", tHistory)
+    Do $$$AssertEquals(tOut.%Size(), 4, "Four OpenAI messages: user, assistant(tool_calls), tool, assistant(text)")
+
+    ; Index 1: assistant message with tool_calls[0].id = call_zzz
+    Set tOaA1 = tOut.%Get(1)
+    Do $$$AssertEquals(tOaA1.%Get("role"), "assistant", "Index 1 role assistant")
+    Set tCalls = tOaA1.%Get("tool_calls")
+    Do $$$AssertTrue($IsObject(tCalls), "Index 1 has tool_calls array")
+    Do $$$AssertEquals(tCalls.%Get(0).%Get("id"), "call_zzz", "tool_calls[0].id = call_zzz")
+
+    ; Index 2: tool message with tool_call_id = call_zzz (THE INVARIANT)
+    Set tOaTool = tOut.%Get(2)
+    Do $$$AssertEquals(tOaTool.%Get("role"), "tool", "Index 2 role tool")
+    Do $$$AssertEquals(tOaTool.%Get("tool_call_id"), "call_zzz", "tool.tool_call_id MATCHES assistant.tool_calls[0].id (the invariant OpenAI HTTP 400 validates)")
+    Do $$$AssertEquals(tOaTool.%Get("content"), "5 messages, 0 errors", "tool message content preserved")
+    Quit
+}
+
 /// <p>Internal helper — build a 3-message canonical history with mixed
 /// block types: <code>user</code> with text, <code>assistant</code> with
 /// text + tool_use, <code>tool</code> with tool_result.</p>

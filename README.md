@@ -84,7 +84,18 @@ Pick **one** of the two delivery mechanisms:
 
 API keys are **never** stored inside `SessionAgent.Config.Agent` itself.
 
-### 7. Bookmark URLs
+### 7. SSL/TLS configuration for outbound HTTPS to the LLM provider
+
+`SessionAgent.LLM.OpenAIProvider` issues HTTPS POSTs against `api.openai.com` (and the equivalent provider hosts in Epic 5). IRIS requires a named SSL/TLS configuration to negotiate outbound TLS. The provider hardcodes the configuration name **`DefaultSSL`**.
+
+If `DefaultSSL` does not already exist on your IRIS install, create a client-side SSL configuration with that exact name. Two paths:
+
+- **Management Portal:** *System Administration → Security → SSL/TLS Configurations → Create New Configuration*. Set **Name** = `DefaultSSL`, **Type** = `Client`, **Min Protocol** = `TLSv1.2`, **Server certificate verification** = `None` (acceptable for outbound calls to well-known TLS termination on `api.openai.com`; tighten to `Require` + provide a CA file in hardened deployments).
+- **ObjectScript / SQL:** create with `Security.SSLConfigs.Create("DefaultSSL", ...)` from `%SYS` — see [`irislib/Security/SSLConfigs.cls`](irislib/Security/SSLConfigs.cls) for the full signature.
+
+**How to verify:** from `%SYS`, query `SELECT Name FROM Security.SSLConfigs` — `DefaultSSL` must appear. Without this configuration, every outbound LLM call fails fast with `"OpenAI mid-flight failure (request may have been processed)"` in `Audit.LlmCall.ErrorText` — the symptom is a sub-second turn that returns no answer (no real network call ever happened). The Story 2.12 retro empirical battery surfaced this as a missing operator-prereq documentation gap; this section closes it.
+
+### 8. Bookmark URLs
 
 After install, both Management Portal entry points are bookmarkable. **Use the URL pattern that matches your IRIS deployment style** — HealthShare-based deployments include the `/healthshare/` segment; plain IRIS deployments do not:
 
@@ -97,7 +108,7 @@ After install, both Management Portal entry points are bookmarkable. **Use the U
 
 The Search Agent path is for the operator's "find the session I care about" entry; the Visual Trace path opens the Inspection Agent on a specific session that the operator already has selected.
 
-### 8. Daily purge task
+### 9. Daily purge task
 
 The installer schedules `SessionAgent.Task.PurgeOrphanedChatHistory` to run daily at 02:00 UTC (this task ships in [Epic 7 Story 7.2](_bmad-output/planning-artifacts/epics.md)). Verify it's enabled in **Task Manager** after install. The task removes chat-history rows whose linked `Ens.MessageHeader` session has been purged, so no orphaned conversations accumulate.
 

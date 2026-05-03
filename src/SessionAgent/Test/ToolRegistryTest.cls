@@ -82,16 +82,20 @@ Method NewInspectionCtx() As SessionAgent.Agent.CallerContext
 }
 
 /// <p>AC-2 #1 — the stub read-only tool appears in the discovery list.</p>
-Method TestListToolsIncludesStubReadOnlyTool()
+Method TestListToolsExcludesSessionAgentTestStubs()
 {
     Set tList = ##class(SessionAgent.Tool.Registry).ListTools()
     Do $$$AssertTrue($IsObject(tList), "ListTools returns an object")
-    Set tFound = 0
+    Set tFoundStub = 0, tFoundProd = 0
     Set tIter = tList.%GetIterator()
     While tIter.%GetNext(.tKey, .tEntry) {
-        If tEntry.name = "test_readonly_tool" Set tFound = 1
+        If tEntry.name = "test_readonly_tool" Set tFoundStub = 1
+        If tEntry.name = "test_throwing_tool" Set tFoundStub = 1
+        If tEntry.name = "test_write_tool" Set tFoundStub = 1
+        If tEntry.name = "session_summary" Set tFoundProd = 1
     }
-    Do $$$AssertEquals(tFound, 1, "test_readonly_tool present in ListTools output")
+    Do $$$AssertEquals(tFoundStub, 0, "Story 3.0 carry-forward: SessionAgent.Test.* stub tools EXCLUDED from production ListTools")
+    Do $$$AssertEquals(tFoundProd, 1, "Production tool (session_summary) still present — exclusion is package-scoped, not over-broad")
     Quit
 }
 
@@ -145,15 +149,18 @@ Method TestDispatchRejectsMutatesStateOne()
     Set tArgs = {}
     Set tResult = ""
 
+    Set tBefore = ..CountToolCallRows("test_write_tool")
     Set tSC = ##class(SessionAgent.Tool.Registry).Dispatch("test_write_tool", tCtx, tArgs, .tResult)
     Do $$$AssertStatusOK(tSC, "Dispatch returns OK (envelope-based error signaling)")
     Do $$$AssertEquals(tResult.%Get("isError"), 1, "Result envelope has isError=1")
     Do $$$AssertTrue(tResult.content.%Get(0).text [ "read-only policy", "Error text mentions read-only policy")
 
-    ; No audit row should be written for blocked-at-policy dispatches —
-    ; tDispatchAttempted = 0 in Registry.Dispatch.
-    Set tCount = ..CountToolCallRows("test_write_tool")
-    Do $$$AssertEquals(tCount, 0, "No ToolCall row written when L2 gate blocks dispatch (no real invocation)")
+    ; Story 3.0 carry-forward fix: blocked-by-policy dispatches DO now
+    ; write an audit row (NFR-S4 100% completeness). The original Story
+    ; 2.10 design skipped audit on blocked paths but that opened a gap
+    ; (an attacker spamming blocked tools left no trail).
+    Set tAfter = ..CountToolCallRows("test_write_tool")
+    Do $$$AssertEquals(tAfter - tBefore, 1, "Story 3.0 carry-forward: blocked-by-policy dispatch writes one audit row with IsError=1")
     Quit
 }
 
@@ -194,11 +201,18 @@ Method TestDispatchUnknownToolReturnsErrorEnvelope()
     Set tArgs = {}
     Set tResult = ""
 
+    Set tBefore = ..CountToolCallRows("does_not_exist")
     Set tSC = ##class(SessionAgent.Tool.Registry).Dispatch("does_not_exist", tCtx, tArgs, .tResult)
     Do $$$AssertStatusOK(tSC, "Dispatch returns OK for unknown tool (envelope-based)")
     Do $$$AssertEquals(tResult.%Get("isError"), 1, "Result envelope has isError=1")
     Do $$$AssertTrue(tResult.content.%Get(0).text [ "unknown tool", "Error text contains 'unknown tool'")
     Do $$$AssertTrue(tResult.content.%Get(0).text [ "does_not_exist", "Error text echoes the requested tool name")
+
+    ; Story 3.0 carry-forward fix: unknown-tool dispatches DO now
+    ; write an audit row (NFR-S4 100% completeness — every Dispatch
+    ; call produces exactly one row).
+    Set tAfter = ..CountToolCallRows("does_not_exist")
+    Do $$$AssertEquals(tAfter - tBefore, 1, "Story 3.0 carry-forward: unknown-tool dispatch writes one audit row with IsError=1")
     Quit
 }
 

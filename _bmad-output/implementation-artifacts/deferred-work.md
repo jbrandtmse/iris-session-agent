@@ -410,7 +410,7 @@ This file accumulates findings, follow-ups, and architect-decision items that ar
 
 ## Deferred from: code review of story-3-2-client-side-chat-panel-js-mvp-render-submit (2026-05-03)
 
-- **`data-tool-call-id="tc-N"` synthesis vs. citation-chip `data-cite-id` lookup contract — Story 3.4 must bridge the gap.**
+- **`data-tool-call-id="tc-N"` synthesis vs. citation-chip `data-cite-id` lookup contract — Story 3.4 must bridge the gap.** **[CLOSED 2026-05-03 by Story 3.4 — Rule 9 binding deferral honored]**
 
   - **Source:** Story 3.2 code review (lead's prompt item 2 — contract-handoff to Story 3.4).
   - **Severity:** MEDIUM (predicted bug — Story 3.4's `sa-cite-tool` chip click handler will not be able to look up the matching tool-call card by id without a bridging strategy).
@@ -423,6 +423,11 @@ This file accumulates findings, follow-ups, and architect-decision items that ar
   - **Owner reassigned to Story 3.4** (`sa-cite-tool` chip handler authoring).
   - **Why this is a Rule 9 binding deferral, not a fix-now in Story 3.2:** Story 3.2's contract surface (`data-tool-call-id` on cards) is correct given the DTO reality. The bug shape is on the consumer side (the not-yet-written click handler in Story 3.4), not on the producer side (the cards themselves). The synthesis the dev chose is reasonable; the contract just needs the consumer to know about it. Per Rule 9, Story 3.4's spec MUST grep `deferred-work.md` for "Story 3.4" mentions and incorporate this carry-forward into its ACs.
   - **Blocking?** Blocks Story 3.4 entering dev — must be addressed in Story 3.4's scope.
+  - **CLOSURE (Story 3.4, 2026-05-03):** Path 2 (tool-name lookup) implemented exactly as recommended, with Path 1 (dispatch-index `tc-N`) retained as fallback. Closure mechanism:
+    - **Producer side** (`static/chat-panel.js` `renderToolCard`): added `details.setAttribute('data-tool-name', (card && card.name) || '')` alongside the existing `data-tool-call-id="tc-N"`. Both attributes coexist on every card.
+    - **Consumer side** (`src/SessionAgent/EnsPortal/VisualTrace.cls` `onCitationClick` ClientMethod): tool-type branch does `document.querySelector('.sa-tool-call-card[data-tool-name="' + CSS.escape(id) + '"]')` first, falls back to `data-tool-call-id` if no name match. Either citation form (`[tool:list_sessions]` OR `[tool:tc-3]`) lands the right card. CSS.escape() availability per NFR-C6 evergreen-browser scope (no polyfill needed).
+    - **Limitation documented inline** (per spec Carry-Forward decision): "when the same tool name appears multiple times in one turn, the handler picks the FIRST matching card." Re-deferred to Epic 10 ONLY if a real-world duplicate-tool case surfaces — this story does not pre-defer.
+    - **Test coverage:** `ChatPanelJsTest.TestRenderToolCardEmitsToolNameAttr` (producer) + `VisualTraceTest.TestOnCitationClickPresent` (consumer — asserts both `data-tool-name` and `data-tool-call-id` lookups present in the ClientMethod body). Both passing.
 
 
 

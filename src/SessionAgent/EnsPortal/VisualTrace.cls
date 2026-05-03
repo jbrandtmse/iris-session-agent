@@ -458,4 +458,130 @@ ClassMethod SendChatMessage(pAgentName As %String, pSessionKey As %String, pUser
     Quit tEnvelope
 }
 
+/// <p>Story 3.4 — citation-chip click handler. Invoked by
+/// <code>chat-panel.js</code>'s delegated click listener on
+/// <code>.sa-message-transcript</code> when the operator clicks any
+/// <code>.sa-citation-chip</code>. Dispatches by <code>type</code>:</p>
+///
+/// <ul>
+/// <li><code>rule_log | event_log | message | ack | iolog</code> →
+/// parent-panel navigation. Calls
+/// <code>zenPage.svgPage.selectItem(null, parentType, null, id, klass, null)</code>
+/// after mapping the chip-type to the parent's vocabulary
+/// (<code>rule_log</code>→<code>rule</code>, <code>event_log</code>→
+/// <code>event</code>, <code>iolog</code>→<code>ioLog</code>;
+/// <code>message</code> and <code>ack</code> pass through). Per Task 0
+/// probe of <code>irislib/EnsPortal/SVG/VisualTrace.cls</code> line
+/// 2374, <code>selectItem(evt, type, svgId, itemId, extraType, lineId)</code>
+/// sets <code>zenPage.currentId/currentType/currentClass</code> and
+/// invokes <code>zenPage.updateTabs()</code> unconditionally — the SVG
+/// highlight is best-effort (silently skipped when <code>svgId</code>
+/// is null OR the row is not on the current SVG page). This handles
+/// AC-2 (on-page) and AC-3 (off-page partial sync) in one call — no
+/// try/catch needed; the parent does NOT throw on off-page items.</li>
+/// <li><code>tool</code> → in-chat scroll-and-expand per AC-4. Lookup
+/// strategy per the Carry-Forward decision (Path 2 — closes Story 3.2
+/// reviewer's binding deferral about <code>data-tool-call-id="tc-N"</code>
+/// vs LLM-emitted <code>data-cite-id</code>):
+///   <ol>
+///   <li>First, <code>document.querySelector('.sa-tool-call-card[data-tool-name="<id>"]')</code> — primary path (tool name match).</li>
+///   <li>Else, <code>document.querySelector('.sa-tool-call-card[data-tool-call-id="<id>"]')</code> — fallback for the <code>[tool:tc-N]</code> LLM convention.</li>
+///   <li>If neither match, console.warn (silent for the operator).</li>
+///   </ol>
+///   Limitation: when the same tool name appears multiple times in one
+///   turn, the handler picks the FIRST matching card (querySelector
+///   semantics). Re-defer to Epic 10 only if a real-world duplicate-
+///   tool case surfaces. The lookup uses <code>CSS.escape()</code>
+///   (Chrome 46+, Firefox 31+, Safari 10.1+, Edge 79+ — NFR-C6
+///   evergreen-browser scope; no polyfill needed).</li>
+/// </ul>
+///
+/// <p>The <code>klass</code> argument is the optional body-class name
+/// from the citation chip's <code>data-cite-klass</code> attribute
+/// (Story 3.4 AC-7 widened the regex to capture it). May be
+/// <code>null</code> or empty when the LLM emits the short
+/// <code>[message:42]</code> form; the parent's selectItem treats
+/// missing extraType the same way ack-rendering will fall back to
+/// the row's stored class.</p>
+ClientMethod onCitationClick(type, id, klass) [ Language = javascript ]
+{
+    if (!type || !id) {
+        return;
+    }
+
+    // Tool-type: in-chat scroll-and-expand. Lookup strategy per
+    // Story 3.2 reviewer's deferred-work entry (Path 2 closure).
+    if (type === 'tool') {
+        var card = document.querySelector('.sa-tool-call-card[data-tool-name="' + CSS.escape(id) + '"]');
+        if (!card) {
+            // Fallback: the [tool:tc-N] LLM convention (dispatch-index match).
+            card = document.querySelector('.sa-tool-call-card[data-tool-call-id="' + CSS.escape(id) + '"]');
+        }
+        if (!card) {
+            if (typeof console !== 'undefined' && console.warn) {
+                console.warn('[VisualTrace] onCitationClick(tool): no card matched id="' + id + '"');
+            }
+            return;
+        }
+        // Force-expand the <details> + scroll into view + 1-second
+        // highlight flash via the sa-tool-card-highlight CSS rule
+        // (UI/ChatPanel.cls EmitStyle()).
+        card.open = true;
+        card.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+        card.classList.add('sa-tool-card-highlight');
+        setTimeout(function () {
+            card.classList.remove('sa-tool-card-highlight');
+        }, 1000);
+        return;
+    }
+
+    // Parent-panel navigation types. Map chip-type vocabulary to the
+    // parent's selectItem vocabulary (per Task 0 probe of
+    // irislib/EnsPortal/VisualTrace.cls _contentIndex / _tabMap +
+    // SVG/VisualTrace.cls selectItem signature).
+    var parentTypeMap = {
+        'rule_log': 'rule',
+        'event_log': 'event',
+        'message': 'message',
+        'ack': 'ack',
+        'iolog': 'ioLog'
+    };
+    var parentType = parentTypeMap[type];
+    if (!parentType) {
+        if (typeof console !== 'undefined' && console.warn) {
+            console.warn('[VisualTrace] onCitationClick: unknown citation type "' + type + '"');
+        }
+        return;
+    }
+
+    // selectItem signature (verified Task 0):
+    //   selectItem(evt, type, svgId, itemId, extraType, lineId)
+    // We pass null for evt, svgId, lineId — we don't have an SVG event
+    // and we don't know the SVG element ids from a citation chip.
+    // The parent silently skips the SVG highlight when svgId is null
+    // OR getElementById returns null (off-page case), AND ALWAYS sets
+    // currentId/currentType/currentClass + calls updateTabs(). So the
+    // single call covers AC-2 (on-page) AND AC-3 (off-page partial
+    // sync) without needing try/catch detection.
+    var trace = zen('SVGTrace');
+    var svgPage = (trace && trace.svgWindow) ? trace.svgWindow.svgPage : null;
+    var klassArg = klass || '';
+    if (svgPage && typeof svgPage.selectItem === 'function') {
+        svgPage.selectItem(null, parentType, null, id, klassArg, null);
+        // selectItem internally invokes zenPage.updateTabs() — no
+        // additional updateTabs call needed.
+    } else {
+        // Defense-in-depth: SVG frame not loaded yet (rare — chip
+        // can't render before the agent answer, which can't render
+        // before the page loaded the SVG frame). Set state directly
+        // and call updateTabs(true) per AC-3 fallback.
+        zenPage.currentId = id;
+        zenPage.currentType = parentType;
+        zenPage.currentClass = klassArg;
+        if (typeof zenPage.updateTabs === 'function') {
+            zenPage.updateTabs(true);
+        }
+    }
+}
+
 }

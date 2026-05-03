@@ -327,6 +327,57 @@ Method TestVisualTraceClassResolves()
     Quit
 }
 
+/// <p>Story 3.4 AC-1, AC-2, AC-3, AC-4 + Carry-Forward closure — static
+/// class-content inspection for the <code>onCitationClick</code>
+/// ClientMethod. Asserts the compiled
+/// <CLASS>SessionAgent.EnsPortal.VisualTrace</CLASS> declares an
+/// <code>onCitationClick</code> method whose body contains the
+/// load-bearing fragments:</p>
+///
+/// <ul>
+/// <li><code>selectItem(</code> — the parent-panel navigation call
+/// (AC-2 / AC-3).</li>
+/// <li><code>data-tool-name</code> — the tool-card lookup primary path
+/// (Path 2 closure of Story 3.2's binding deferral).</li>
+/// <li><code>data-tool-call-id</code> — the dispatch-index fallback
+/// (Path 1 retained per Carry-Forward decision).</li>
+/// <li><code>sa-tool-card-highlight</code> — the 1-second highlight
+/// flash (AC-4).</li>
+/// </ul>
+///
+/// <p>This is a static class-content inspection (not a live page-render
+/// test), per the AC-8 acceptance pattern: ClientMethod JS code embedded
+/// in a Zen page is opaque to the unit-test harness, so we read the
+/// <CLASS>%Dictionary.CompiledMethod</CLASS> body and assert load-bearing
+/// substrings.</p>
+Method TestOnCitationClickPresent()
+{
+    Set tMethod = ##class(%Dictionary.CompiledMethod).%OpenId("SessionAgent.EnsPortal.VisualTrace||onCitationClick")
+    Do $$$AssertTrue($IsObject(tMethod), "onCitationClick ClientMethod is defined on SessionAgent.EnsPortal.VisualTrace (Story 3.4 AC-1)")
+    If '$IsObject(tMethod) Quit
+
+    ; Read the method implementation. CompiledMethod.Implementation is
+    ; a stream property containing the source body.
+    Do tMethod.Implementation.Rewind()
+    Set tBody = ""
+    While 'tMethod.Implementation.AtEnd {
+        Set tBody = tBody _ tMethod.Implementation.Read(32000)
+    }
+
+    ; AC-2 / AC-3: parent-panel navigation calls selectItem.
+    Do $$$AssertTrue(tBody [ "selectItem(", "onCitationClick body invokes selectItem (Story 3.4 AC-2 / AC-3)")
+    ; AC-4 / Carry-Forward Path 2: tool-name lookup primary path.
+    Do $$$AssertTrue(tBody [ "data-tool-name", "onCitationClick uses data-tool-name lookup (Story 3.4 Carry-Forward Path 2 — primary)")
+    ; AC-4 / Carry-Forward Path 1 retained: dispatch-index fallback.
+    Do $$$AssertTrue(tBody [ "data-tool-call-id", "onCitationClick retains data-tool-call-id fallback (Story 3.4 Carry-Forward Path 1 — fallback)")
+    ; AC-4: 1-second highlight flash CSS class.
+    Do $$$AssertTrue(tBody [ "sa-tool-card-highlight", "onCitationClick adds sa-tool-card-highlight class (Story 3.4 AC-4)")
+    ; AC-1: tool dispatch branch.
+    Do $$$AssertTrue(tBody [ "'tool'", "onCitationClick has a 'tool' type branch (Story 3.4 AC-1)")
+
+    Quit
+}
+
 /// <p>Helper — count rows in an audit table. <code>pTable</code> is the
 /// SQL-qualified table name (e.g., <code>SessionAgent_Audit.LlmCall</code>);
 /// <code>pFilter</code> is an optional WHERE-clause fragment without the

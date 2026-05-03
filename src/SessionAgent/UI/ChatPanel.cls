@@ -117,6 +117,17 @@ ClassMethod EmitStyle() As %Status
     &html<.sa-input-field { flex: 1 1 auto; }>
     &html<.sa-status-text { color: var(--sa-status-text-color); font-style: italic; }>
 
+    ; --- Story 3.4 AC-4: tool-card highlight flash for citation-chip
+    ; click target. Added to <details class="sa-tool-call-card"> by
+    ; SessionAgent.EnsPortal.VisualTrace.onCitationClick(), removed
+    ; ~1000ms later via setTimeout. Uses an outline (NOT a
+    ; background-color or @keyframes per UX-DR28's no-modals/no-anims
+    ; anti-pattern list — outline is a single transient visual cue,
+    ; not a sustained animation). Color references the existing
+    ; --sa-citation-chip-text token so the flash uses the same
+    ; "active link" hue the chip itself does.
+    &html<.sa-tool-card-highlight { outline: 2px solid var(--sa-citation-chip-text); transition: outline 0.3s ease; }>
+
     &html<</style>>
     Quit $$$OK
 }

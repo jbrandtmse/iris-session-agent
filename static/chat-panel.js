@@ -31,12 +31,18 @@
         inFlight: false       // true while a turn is mid-flight
     };
 
-    /* Citation-chip regex per AC-3. Pattern matches:
-     *   [rule_log:...], [event_log:...], [message:...], [ack:...],
-     *   [iolog:...], [tool:...]
-     * Used by parseInlineCitations(). The regex literal is also inspected
-     * by the AC-6 static-file validator. */
-    var CITE_RE = /\[(rule_log|event_log|message|ack|iolog|tool):([^\]]+)\]/g;
+    /* Citation-chip regex per AC-3 (Story 3.2) extended in Story 3.4
+     * AC-7 with an OPTIONAL third capture group for the body class
+     * name (klass — the type the parent selectItem call needs to render
+     * the Header tab for ack/iolog message-style rows). Pattern matches:
+     *   [rule_log:42]                          (no klass)
+     *   [message:42:Ens.MessageHeader]         (explicit klass)
+     *   [event_log:7], [ack:5], [iolog:3], [tool:list_sessions]
+     * The third group is optional — `[message:42]` still matches with
+     * klass = undefined. Used by parseInlineCitations(). The regex
+     * literal is also inspected by the AC-6 static-file validator
+     * (Story 3.2) + the AC-8 klass-capture assertion (Story 3.4). */
+    var CITE_RE = /\[(rule_log|event_log|message|ack|iolog|tool):([^\]:]+)(?::([^\]]+))?\]/g;
 
     /* Map of citation type -> short CSS modifier per AC-3:
      *   rule_log  -> sa-cite-rule
@@ -88,6 +94,19 @@
         // AC-1: keydown handler — Enter -> submit, Shift+Enter -> default
         // newline, Esc -> no-op MVP (TODO Story 3.5+: cancel in-flight).
         state.inputEl.addEventListener('keydown', onKeyDown);
+
+        // Story 3.4 AC-6: single delegated click listener on the
+        // transcript that fires when the operator clicks any
+        // .sa-citation-chip. The listener is attached to the parent
+        // transcript element (not each chip) so it survives every
+        // dynamically appended message block (operator turns, agent
+        // turns, prior-transcript replays). Reads data-cite-type /
+        // data-cite-id / data-cite-klass and dispatches to
+        // zenPage.onCitationClick(type, id, klass) — the ClientMethod
+        // shipped in Story 3.4 on SessionAgent.EnsPortal.VisualTrace.
+        // Falls back to console.warn + window.SessionAgentChatTestHook
+        // if zenPage is absent (Story 3.6 manual-smoke fixture pattern).
+        state.transcriptEl.addEventListener('click', onTranscriptClick);
 
         // Story 3.3 AC-6 — apply the placeholder from the bootstrap context
         // (overrides Story 3.1's static HTML default). First-time vs
@@ -184,6 +203,55 @@
             return;
         }
         // Shift+Enter and all other keys: default textarea behavior.
+    }
+
+    /**
+     * Story 3.4 AC-6 — delegated click listener on the transcript.
+     * Detects clicks on any .sa-citation-chip (using closest() so a
+     * click inside the chip's textContent still resolves to the chip
+     * element), preventDefault()'s the anchor's native href="#"
+     * navigation, then dispatches to zenPage.onCitationClick(type, id,
+     * klass). Falls back to console.warn + window.SessionAgentChatTestHook
+     * when zenPage.onCitationClick is unavailable (Story 3.6 manual-smoke
+     * fixture pattern, mirroring the submitTurn() fallback).
+     */
+    function onTranscriptClick(event) {
+        var chip = event.target && event.target.closest && event.target.closest('.sa-citation-chip');
+        if (!chip) {
+            return;
+        }
+        // Prevent the browser from following href="#" (which would scroll
+        // the page to the top + push a history entry).
+        event.preventDefault();
+
+        var citeType = chip.getAttribute('data-cite-type');
+        var citeId = chip.getAttribute('data-cite-id');
+        var citeKlass = chip.getAttribute('data-cite-klass'); // null when absent — handler treats as ""
+
+        if (typeof zenPage !== 'undefined' && zenPage && typeof zenPage.onCitationClick === 'function') {
+            try {
+                zenPage.onCitationClick(citeType, citeId, citeKlass);
+            } catch (e) {
+                if (typeof console !== 'undefined' && console.warn) {
+                    console.warn('[chat-panel] zenPage.onCitationClick threw: ' + (e && e.message));
+                }
+            }
+            return;
+        }
+
+        // Story 3.6 manual smoke / non-Zen-page load fallback.
+        if (typeof console !== 'undefined' && console.warn) {
+            console.warn('[chat-panel] zenPage.onCitationClick unavailable — citation chip click ignored');
+        }
+        if (typeof window.SessionAgentChatTestHook === 'function') {
+            try {
+                // Re-use Story 3.2's hook pattern for testability; the
+                // hook receives the same 3 args the ClientMethod would.
+                window.SessionAgentChatTestHook(citeType, citeId, citeKlass);
+            } catch (e2) {
+                // Swallow — the hook is test-only.
+            }
+        }
     }
 
     /* ------------------------------------------------------------------ */
@@ -351,6 +419,18 @@
         var details = document.createElement('details');
         details.setAttribute('class', 'sa-tool-call-card sa-tool-card-status-' + statusModifier);
         details.setAttribute('data-tool-call-id', 'tc-' + dispatchIndex);
+        // Story 3.4 AC-4 / Carry-Forward (Path 2 — tool-name lookup): tag
+        // each card with data-tool-name="<card.name>" so the citation-chip
+        // click handler in onCitationClick can find the matching card by
+        // name (primary lookup). The dispatch-index data-tool-call-id stays
+        // as the fallback (Path 1) for the [tool:tc-N] LLM convention.
+        // Limitation (documented per spec): when the same tool name is
+        // called multiple times in one turn, the handler picks the FIRST
+        // matching card. Re-deferred to Epic 10 if real-world duplicate-
+        // tool-name turns surface — this story doesn't pre-defer. Use
+        // setAttribute (auto-encodes) — never string-concat into HTML
+        // (XSS-safety per Story 3.2 AC-3 / Story 3.4 Dev Notes).
+        details.setAttribute('data-tool-name', (card && card.name) || '');
 
         var summary = document.createElement('summary');
 
@@ -446,10 +526,41 @@
         }
     }
 
+    /* Citation type -> aria-label template per Story 3.4 AC-5 + UX-DR20-MVP.
+     * Each entry is a function (id) -> "...". Templates intentionally end
+     * with the verb the click action triggers ("view in Header tab" /
+     * "scroll to card") so screen-reader users hear the navigation
+     * promise before the chip fires. Per AC-5 the chip is a real <a>;
+     * the aria-label REPLACES the chip's textContent for screen-reader
+     * announcement (the visual textContent stays the canonical bracket
+     * form so sighted users see the citation as it appears in the
+     * Markdown). */
+    var CITE_TYPE_TO_ARIA = {
+        'rule_log': function (id) { return 'Rule log entry ' + id + ' — view in Header tab'; },
+        'event_log': function (id) { return 'Event log entry ' + id + ' — view in Header tab'; },
+        'message': function (id) { return 'Message ' + id + ' — view in Header tab'; },
+        'ack': function (id) { return 'ACK message ' + id + ' — view in Header tab'; },
+        'iolog': function (id) { return 'IO log entry ' + id + ' — view in Header tab'; },
+        'tool': function (id) { return 'Tool call ' + id + ' — scroll to card'; }
+    };
+
     /**
      * Tokenize a string into text segments + citation chip <a> elements,
      * appending each to parentNode. Inline code-fence placeholders inside
      * paragraphs are rendered as inline <code> elements.
+     *
+     * Story 3.4 AC-7 extension: the regex captures an OPTIONAL third
+     * group `klass` (the parent body-class name needed by selectItem's
+     * `extraType` parameter — see Story 3.4 Task 0 probe of
+     * irislib/EnsPortal/SVG/VisualTrace.cls). When the third group
+     * matches, the chip gets `data-cite-klass="<klass>"`; otherwise the
+     * attribute is omitted. Story 3.4 AC-5 / UX-DR20-MVP: every chip
+     * also gets a descriptive `aria-label` per citation type.
+     *
+     * XSS-safety preserved (Story 3.2 AC-3): all attribute writes use
+     * setAttribute (auto-encodes); textContent is the only text-node
+     * sink. The new data-cite-klass + aria-label values come from
+     * LLM-emitted strings (untrusted) but never string-concat into HTML.
      */
     function parseInlineCitations(text, parentNode, codeBlocks) {
         // Walk: alternate plain text + citation matches.
@@ -463,13 +574,30 @@
             }
             var citeType = match[1];
             var citeId = match[2];
+            var citeKlass = match[3]; // undefined when 3rd group absent
             var chip = document.createElement('a');
             var modifier = CITE_TYPE_TO_MODIFIER[citeType] || 'sa-cite-other';
             chip.setAttribute('class', 'sa-citation-chip ' + modifier);
             chip.setAttribute('href', '#');
             chip.setAttribute('data-cite-type', citeType);
             chip.setAttribute('data-cite-id', citeId);
-            chip.textContent = '[' + citeType + ':' + citeId + ']';
+            // Story 3.4 AC-7: only set data-cite-klass when the optional
+            // 3rd capture group matched. setAttribute auto-encodes the
+            // (untrusted) LLM value — XSS-safe.
+            if (citeKlass) {
+                chip.setAttribute('data-cite-klass', citeKlass);
+            }
+            // Story 3.4 AC-5: descriptive aria-label per citation type
+            // (UX-DR20-MVP). The id is interpolated by the template
+            // function — setAttribute auto-encodes.
+            var ariaFn = CITE_TYPE_TO_ARIA[citeType];
+            if (ariaFn) {
+                chip.setAttribute('aria-label', ariaFn(citeId));
+            }
+            // Visual textContent: preserve the canonical bracket form
+            // (with klass when present, matching the Markdown source).
+            var visualText = '[' + citeType + ':' + citeId + (citeKlass ? ':' + citeKlass : '') + ']';
+            chip.textContent = visualText;
             parentNode.appendChild(chip);
             lastIdx = match.index + match[0].length;
         }

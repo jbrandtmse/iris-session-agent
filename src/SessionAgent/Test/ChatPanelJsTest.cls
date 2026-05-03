@@ -252,4 +252,50 @@ Method TestWelcomeMessagePresent()
     Do $$$AssertTrue(..FileContents [ "I can read this session's headers", "welcome message capability-summary fragment present (Story 3.3 AC-4)")
 }
 
+/// <p>Story 3.4 AC-6 — citation-chip click delegation listener
+/// present. Asserts the JS source attaches a delegated <code>click</code>
+/// listener on <code>.sa-message-transcript</code> AND uses
+/// <code>closest('.sa-citation-chip')</code> to detect chip clicks
+/// regardless of which inner node the operator clicked. Together these
+/// two fragments prove the AC-6 delegation mechanism is wired (no
+/// per-chip onclick — chips are emitted with no inline handler per
+/// UX-DR19, so the listener MUST be on the transcript ancestor).</p>
+Method TestCitationDelegationListenerPresent()
+{
+    Do $$$AssertStatusOK(..LoadFile(), "LoadFile resolved chat-panel.js at " _ ..FilePath)
+    Do $$$AssertTrue(..FileContents [ "transcriptEl.addEventListener('click'", "transcript-level click listener attached (Story 3.4 AC-6)")
+    Do $$$AssertTrue(..FileContents [ "closest('.sa-citation-chip')", "delegated handler uses closest('.sa-citation-chip') (Story 3.4 AC-6)")
+    Do $$$AssertTrue(..FileContents [ "zenPage.onCitationClick", "delegated handler dispatches to zenPage.onCitationClick (Story 3.4 AC-6)")
+}
+
+/// <p>Story 3.4 AC-4 / Carry-Forward closure (Path 2) — the
+/// <code>renderToolCard</code> helper emits
+/// <code>data-tool-name</code> on every card alongside the existing
+/// <code>data-tool-call-id="tc-N"</code>. Asserts the
+/// <code>setAttribute('data-tool-name'</code> fragment is present in
+/// the JS source. This closes the Story 3.2 reviewer's binding
+/// deferral about <code>tc-N</code> synthesis vs LLM-emitted
+/// <code>data-cite-id</code> mismatch — the
+/// <code>onCitationClick</code> handler now has a tool-name-keyed
+/// lookup primary path with the dispatch-index fallback retained.</p>
+Method TestRenderToolCardEmitsToolNameAttr()
+{
+    Do $$$AssertStatusOK(..LoadFile(), "LoadFile resolved chat-panel.js at " _ ..FilePath)
+    Do $$$AssertTrue(..FileContents [ "setAttribute('data-tool-name'", "renderToolCard tags every card with data-tool-name (Story 3.4 Carry-Forward Path 2 closure)")
+}
+
+/// <p>Story 3.4 AC-7 — <code>parseInlineCitations</code> regex widened
+/// to capture an OPTIONAL third group (the body class name needed by
+/// parent <code>selectItem</code>'s <code>extraType</code> param).
+/// Asserts the new regex literal contains the optional third group
+/// pattern <code>(?::([^\]]+))?</code> AND that the chip emits
+/// <code>data-cite-klass</code> when the third group matches.</p>
+Method TestParseInlineCitationsKlassCapture()
+{
+    Do $$$AssertStatusOK(..LoadFile(), "LoadFile resolved chat-panel.js at " _ ..FilePath)
+    Do $$$AssertTrue(..FileContents [ "(?::([^\]]+))?", "Citation regex includes the optional klass capture group (Story 3.4 AC-7)")
+    Do $$$AssertTrue(..FileContents [ "setAttribute('data-cite-klass'", "Chip writes data-cite-klass when klass capture matched (Story 3.4 AC-7)")
+    Do $$$AssertTrue(..FileContents [ "setAttribute('aria-label'", "Chip writes aria-label per citation type (Story 3.4 AC-5)")
+}
+
 }

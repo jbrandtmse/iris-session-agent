@@ -132,6 +132,61 @@ This file accumulates findings, follow-ups, and architect-decision items that ar
 
 ---
 
+## Deferred from: code review of story-2.3-util-envsecret-credential-resolution (2026-05-03)
+
+- **No public IRIS API mutates a process's environment variables from inside the same process — affects every future story whose tests need to plant a sentinel env-var.**
+
+  - **Source:** Story 2.3 Task 0 (irislib API verification) + code review.
+  - **Severity:** LOW (Story 2.3 itself is unaffected — the test strategy adapted to read the OS-set `PATH` env-var as the env-var-rung input, which exercises the same code path empirically).
+  - **The cross-cutting finding:** The Story 2.3 spec proposed using `$SYSTEM.Util.SetEnviron(name, value)` to plant a sentinel env-var per test. Empirical Task 0 probing on the dev host showed: (a) `$SYSTEM.Util.SetEnviron` does NOT exist on this IRIS install (`<METHOD DOES NOT EXIST>` error from `iris_execute_command`); (b) `$ZF(-2, name, value)` returns 0 but the value is silently discarded — a subsequent `$SYSTEM.Util.GetEnviron(name)` returns empty; (c) per Perplexity research, env vars are inherited at IRIS process startup and cannot be retroactively set from inside the same IRIS process. `%SYSTEM.Util` (irislib snapshot, line 86) exposes only `GetEnviron`.
+  - **Story 2.3 mitigation (the PATH-pattern):** tests capture `$SYSTEM.Util.GetEnviron("PATH")` once at `OnBeforeAllTests` into a property `OsPathValue`, assert it is non-empty (test-host invariant), and use the captured value as the expected return from the env-var rung. `Resolve("PATH", "")` empirically traverses the same code path (`$SYSTEM.Util.GetEnviron(<non-empty name>)` returning a non-empty value) without needing a SetEnviron API. No env-var mutation occurs, so no env-var cleanup is needed. Documented in detail in the test class doc-comment at `src/SessionAgent/Test/EnvSecretTest.cls` lines 1-40.
+  - **Why this is worth recording at the project level:** any future story whose tests need to plant a sentinel env-var inside IRIS will hit the same wall. Two viable workarounds emerged:
+    1. **PATH-pattern (used by Story 2.3):** read an OS-set env-var that is reliably non-empty on every test host (PATH on Windows / Unix). Works when the test only needs to assert "the env-var rung returns the OS value"; doesn't work when the test needs to inject a specific sentinel value (e.g., to assert precedence over a competing source with a known string).
+    2. **Subprocess-with-injected-env pattern (not yet used):** invoke a child IRIS process via `$ZF(-100)` with the `IRIS_*=val` injected into the child's environment; the child can `GetEnviron` it. Heavyweight; only justified when sentinel-value injection is mandatory.
+    3. **Mock the resolver in tests (rejected for Story 2.3):** restructure the production class to take the env-var lookup as a callable / strategy and inject a stub in tests. Rejected because it changes the production class shape just to satisfy a test, and the PATH-pattern empirically tests the same code path without that change.
+  - **Future-story considerations:** the most likely candidates are Story 2.9 (`OpenAIProvider` end-to-end test that wants `OPENAI_API_KEY` set to a known value) and any growth-tier provider story (Anthropic/Gemini/Ollama). When those stories enter dev, the story-creation skill should consider: (a) does the test only need "env-var resolves SOME non-empty value" (PATH-pattern works); (b) does the test need a specific sentinel value AND can it use `Ens.Config.Credentials` (rung 2) instead, where `SetCredential(...)` is a clean fixture API; (c) only if neither (a) nor (b) works, escalate to subprocess-with-injected-env or production-class mocking.
+  - **Owner:** None at story creation — applies to whoever drafts a story whose tests need sentinel-env-var injection. Reference this entry from the story spec's Dev Notes if the story explicitly chooses one of the workarounds.
+  - **Blocking?** Not blocking. Story 2.3 ships with the PATH-pattern; downstream stories inherit the documented options.
+
+- **No test for "credential row exists with empty `Password`" — rung 2 falls through correctly but edge case not asserted.**
+
+  - **Source:** Story 2.3 code review (Edge Case Hunter EC-1).
+  - **Severity:** LOW (production behavior is correct: `tCredValue '= ""` check at line 101 means an empty Password causes fall-through to rung 3; an empty Password is not a valid API key and falling through is the right behavior).
+  - **The observation:** `TestCredentialPathResolves` covers Password = `"cred-value-xyz789"` (non-empty). No test covers Password = `""` (operator created a credential row with Username only and forgot to set the password, or set it to empty deliberately). The fall-through to rung 3 (AES stub → empty) is the right behavior, but not asserted.
+  - **What to do if it bites:** add `TestCredentialEmptyPasswordFallsThrough` that creates a credential row with `SetCredential("X", "user", "", 1)` and asserts `Resolve("", "X")` returns `""`. Two-line test plus one-line cleanup.
+  - **Owner:** None — defer until Story 2.9 (`OpenAIProvider`) actually surfaces an empty-Password operator misconfig in a real test scenario; if it never does, the fall-through behavior is implicit and safe.
+  - **Blocking?** Not blocking.
+
+- **No test exercises the `Resolve` Try/Catch swallow path on a real exception — covered by inspection + contract only.**
+
+  - **Source:** Story 2.3 code review (Edge Case Hunter EC-2).
+  - **Severity:** LOW (the catch block is defensive against `tCred.Password` getter failures from `%CSP.Util.Passwd` → `%SYS.Ensemble.SecondaryGet`; forcing such a failure in a unit test would require corrupting secondary storage, which is impractical and risky).
+  - **The observation:** The Try/Catch around lines 88-100 protects against any exception from `%OpenId` or the `.Password` getter. The `%ExistsId = 1` precondition (line 89) means `%OpenId` should always succeed; the real risk surface is the `%CSP.Util.Passwd.PasswordGet` delegation. No test forces this catch-path to execute. The comment at lines 97-98 documents the intent explicitly (swallow + no-log), and code-review inspection verifies the catch never embeds credential content into any log surface — but the empirical guarantee is missing.
+  - **What to do if it bites:** if a future operator reports a credentials-row-corrupted scenario in production, add a regression test that uses a mocked credentials class (subclass of `Ens.Config.Credentials` with a `PasswordGet` that throws) injected via a story-specific test helper. Until then, the catch is correct by inspection.
+  - **Owner:** None — defer until a real corruption scenario emerges.
+  - **Blocking?** Not blocking.
+
+- **`^ClineDebug` cleanup in `TestResolveDoesNotMutateClineDebug` is in-method rather than in `OnAfterOneTest` — if the prior assert fails, the `Kill` is skipped.**
+
+  - **Source:** Story 2.3 code review (Blind Hunter B-4).
+  - **Severity:** LOW (cosmetic — `^ClineDebug` is a transient debug global; leaking the sentinel string `"sentinel-before-resolve-call"` between tests has no functional impact, and any subsequent test that reads `^ClineDebug` would either ignore the existing value or set its own sentinel first).
+  - **The observation:** `src/SessionAgent/Test/EnvSecretTest.cls` line 200 calls `Kill ^ClineDebug` at the end of the test method body, after the assertion at line 197. If the assert fails, the `Kill` is skipped and the sentinel persists in `^ClineDebug` until the next test runs (or until manual cleanup). The `OnAfterOneTest` cleanup at lines 80-88 only deletes the test credential row, not `^ClineDebug`.
+  - **What to do if it bites:** move `Kill ^ClineDebug` into `OnAfterOneTest` (wrap in try-around-each-cleanup per the existing pattern). One-line change in `OnAfterOneTest`. Not worth a dedicated edit unless `OnAfterOneTest` is touched for unrelated reasons.
+  - **Owner:** None (cosmetic).
+  - **Blocking?** Not blocking.
+
+- **Package-level `iris_execute_tests SessionAgent.Test` undercounts (returned 25 vs aggregate 35) — class-level runs confirm 35/35 pass.**
+
+  - **Source:** Story 2.3 code review (verification step).
+  - **Severity:** INFO (no functional impact — every test passes when invoked at class level; the dev's claim of 35/35 is correct and verifiable).
+  - **The observation:** Running `mcp__iris-dev-mcp__iris_execute_tests SessionAgent.Test` at `package` level returned `total:25, passed:25`, missing all 9 RetryWithBackoff tests and 1 each of Json and ReadOnlyRole. Running each class individually at `class` level returned the expected counts: AuditEmit=3, EnvSecret=8, Json=9, ReadOnlyRole=6, RetryWithBackoff=9, total 35. All 35 pass.
+  - **Probable cause:** test-runner discovery quirk in the package-level path (possibly stale class metadata after recent compile, or queue ordering). Not a real test failure.
+  - **What to do if it bites:** if a future story claims an `N/N` count that doesn't match the package-level run, fall back to class-level invocations to confirm. Add a brief note to the story-3 retro if this recurs.
+  - **Owner:** None — environmental; class-level runs are the authoritative source until package-level discovery stabilizes.
+  - **Blocking?** Not blocking.
+
+---
+
 ## Resolved during Story 1.5 verification (2026-05-02) — superseded by README §"Operator Prerequisites" §1
 
 - **`zpm` was installed in `%SYS` but not mapped into HSCUSTOM. Required `zpm "enable -map -globally"`.**

@@ -63,16 +63,54 @@ Method OnAfterOneTest() As %Status
 }
 
 /// <p>End-of-class restoration (Story 3.0 carry-forward fix): re-seed
-/// the two Config.Agent rows so that downstream test classes
-/// (AgentLoopTest, AgentLoopGuardsTest, SmokeTest) that depend on
-/// <code>session-inspection</code> being configured don't fail when
-/// the suite runs in package order. Without this, the per-test kills
-/// above leave the global empty after the last test method, breaking
-/// the suite.</p>
+/// the two Config.Agent rows AND restore any operator-customized
+/// fields captured at the start of the class (Enabled, CredentialName,
+/// EnvVarName, EndpointUrl). Without this, the per-test kills above
+/// leave the global empty after the last test method (breaking the
+/// suite) AND any pre-test live operator config (e.g., CredentialName
+/// pointing at an operator-supplied credential, Enabled=1) gets
+/// silently nuked. Capturing in <method>OnBeforeAllTests</method>
+/// preserves live state across test runs.</p>
 Method OnAfterAllTests() As %Status
 {
     Try {
+        ; Re-seed both rows with default shape (idempotent — skips if present).
         Do ##class(SessionAgent.Installer).SeedDefaultAgentConfigs()
+        ; Restore captured operator-side fields per agent. The pre-state
+        ; map lives in ^||SessionAgentTestConfigPreState{name} where each
+        ; node is $LB(Enabled, CredentialName, EnvVarName, EndpointUrl).
+        For tName = "session-inspection", "message-search" {
+            If $Data(^||SessionAgentTestConfigPreState(tName)) {
+                Set tList = ^||SessionAgentTestConfigPreState(tName)
+                Set tCfg = ##class(SessionAgent.Config.Agent).AgentNameIdxOpen(tName)
+                If $IsObject(tCfg) {
+                    Set tCfg.Enabled = $List(tList, 1)
+                    Set tCfg.CredentialName = $List(tList, 2)
+                    Set tCfg.EnvVarName = $List(tList, 3)
+                    Set tCfg.EndpointUrl = $List(tList, 4)
+                    Do tCfg.%Save()
+                }
+            }
+        }
+        Kill ^||SessionAgentTestConfigPreState
+    } Catch {}
+    Quit $$$OK
+}
+
+/// <p>Capture operator-side fields BEFORE the destructive per-test
+/// kills run, so <method>OnAfterAllTests</method> can restore them.
+/// Stores in process-private global keyed by agent name. No-op if no
+/// row exists for an agent (first install, etc.).</p>
+Method OnBeforeAllTests() As %Status
+{
+    Try {
+        For tName = "session-inspection", "message-search" {
+            Set tCfg = ##class(SessionAgent.Config.Agent).AgentNameIdxOpen(tName)
+            If $IsObject(tCfg) {
+                Set ^||SessionAgentTestConfigPreState(tName) = $ListBuild(
+                    tCfg.Enabled, tCfg.CredentialName, tCfg.EnvVarName, tCfg.EndpointUrl)
+            }
+        }
     } Catch {}
     Quit $$$OK
 }
@@ -155,7 +193,7 @@ Method TestGetSeedConfigInspectionDefaults()
     If $IsObject(tAgent) {
         Do $$$AssertEquals(tAgent.AgentName, "session-inspection", "AgentName")
         Do $$$AssertEquals(tAgent.Provider, "openai", "Provider=openai")
-        Do $$$AssertEquals(tAgent.Model, "gpt-4o", "Model=gpt-4o")
+        Do $$$AssertEquals(tAgent.Model, "gpt-4.1-mini", "Model=gpt-4.1-mini")
         Do $$$AssertEquals(tAgent.MaxTokens, 4096, "MaxTokens=4096")
         Do $$$AssertEquals(tAgent.Temperature, 0.0, "Temperature=0.0")
         Do $$$AssertEquals(tAgent.EnvVarName, "OPENAI_API_KEY", "EnvVarName=OPENAI_API_KEY")
@@ -176,7 +214,7 @@ Method TestGetSeedConfigSearchDefaults()
     If $IsObject(tAgent) {
         Do $$$AssertEquals(tAgent.AgentName, "message-search", "AgentName")
         Do $$$AssertEquals(tAgent.Provider, "openai", "Provider=openai")
-        Do $$$AssertEquals(tAgent.Model, "gpt-4o", "Model=gpt-4o")
+        Do $$$AssertEquals(tAgent.Model, "gpt-4.1-mini", "Model=gpt-4.1-mini")
         Do $$$AssertEquals(tAgent.MaxTokens, 4096, "MaxTokens=4096")
         Do $$$AssertEquals(tAgent.Temperature, 0.0, "Temperature=0.0")
         Do $$$AssertEquals(tAgent.EnvVarName, "OPENAI_API_KEY", "EnvVarName=OPENAI_API_KEY")

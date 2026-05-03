@@ -60,8 +60,8 @@ Property ChatHistoryId As %String;
 /// joins work without translation.</p>
 Property Provider As %String;
 
-/// <p>Provider model identifier (e.g., <code>gpt-4o</code>,
-/// <code>claude-3-5-sonnet-20241022</code>). Free-form pass-through from
+/// <p>Provider model identifier (e.g., <code>gpt-4.1-mini</code>,
+/// <code>claude-sonnet-4-5</code>). Free-form pass-through from
 /// <code>SessionAgent.Config.Agent.Model</code>.</p>
 Property Model As %String;
 

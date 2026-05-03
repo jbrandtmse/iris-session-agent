@@ -813,7 +813,7 @@ So that the AgentLoop can read live config on every turn (NFR-O2 hot config chan
 **Given** the developer is implementing `SessionAgent.Config.AgentDefaults`
 **When** they implement the helper class
 **Then** `GetSystemPrompt(pAgentName) As %String` returns a per-agent default system prompt string (Inspection: explains read-only invariant + 13-tool affordance; Search: explains bounded-WHERE invariant + curated-list affordance — content from architecture / research)
-**And** `GetSeedConfig(pAgentName) As Config.Agent` returns a populated (un-saved) `Config.Agent` instance with provider/model defaults per architecture OD4 (OpenAI: `gpt-4o`; Anthropic: `claude-sonnet-4-5`; Gemini: `gemini-2.5-pro`; Ollama-compat: `qwen2.5:32b`) — used by `Installer.Install` Story 1.5 to seed the two agent rows
+**And** `GetSeedConfig(pAgentName) As Config.Agent` returns a populated (un-saved) `Config.Agent` instance with provider/model defaults per architecture OD4 (OpenAI: `gpt-4.1-mini`; Anthropic: `claude-sonnet-4-5`; Gemini: `gemini-2.5-pro`; Ollama-compat: `qwen2.5:32b`) — used by `Installer.Install` Story 1.5 to seed the two agent rows
 
 **Given** the Story 1.5 `Installer.Install` defensive seeding logic was originally guarded against `Config.Agent` not existing
 **When** Epic 2 ships Story 2.4 and the install runs again
@@ -1329,7 +1329,7 @@ So that we explicitly satisfy the [PRD §"Product Scope MVP exit criteria"](prd.
 **Given** the MVP is built (Stories 3.1–3.6 + Epic 1 + Epic 2 complete) and installed on a pilot IRIS instance
 **When** the maintainer prepares the pilot operator walkthrough
 **Then** the maintainer identifies a real failed Ens session from the pilot operator's recent on-call history (not a synthetic test fixture)
-**And** the maintainer ensures Web Gateway timeout is raised to 300s (Story 1.2 README prereq), `SessionAgent_ReadOnly` is granted to the pilot operator (Story 1.4), an OpenAI API key is configured (Story 2.3 EnvSecret resolution), and the `Config.Agent` row for `session-inspection` is `Enabled=1` with provider=openai, model=gpt-4o (Story 1.5 Installer seeded; flipped to enabled manually)
+**And** the maintainer ensures Web Gateway timeout is raised to 300s (Story 1.2 README prereq), `SessionAgent_ReadOnly` is granted to the pilot operator (Story 1.4), an OpenAI API key is configured (Story 2.3 EnvSecret resolution), and the `Config.Agent` row for `session-inspection` is `Enabled=1` with provider=openai, model=gpt-4.1-mini (Story 1.5 Installer seeded; flipped to enabled manually)
 
 **Given** the pilot operator opens Visual Trace on the chosen real-failed session
 **When** they click "Ask the agent" and type *"what happened?"* (or an equivalent natural-language opening)
@@ -1753,7 +1753,7 @@ So that I can configure each agent without writing SQL or editing class code, an
 **And** the form contains in order:
   - **Agent selector** (`<select id="agentSelect" label="Agent" valueList="session-inspection,message-search" displayList="Session Inspection,Message Search">`) — change handler loads the chosen agent's `Config.Agent` row into the form below
   - **Provider** (`<select id="providerSelect" label="Provider" valueList="openai,anthropic,gemini,openai-compatible" displayList="OpenAI,Anthropic,Google Gemini,OpenAI-Compatible (Ollama/vLLM)">`) — change handler updates the model combobox suggestions
-  - **Model** (`<combobox id="modelCombo" label="Model">`) — provider-specific suggestions populated from a server-side helper (`OpenAI`: `gpt-4o`, `gpt-4o-mini`; `Anthropic`: `claude-sonnet-4-5`, `claude-opus-4-7`; `Gemini`: `gemini-2.5-pro`, `gemini-3-pro`; `OpenAI-Compatible`: `qwen2.5:32b`, `llama3.3:70b`) — operator can also type free-text per architecture OD4 model-name-drift guidance
+  - **Model** (`<combobox id="modelCombo" label="Model">`) — provider-specific suggestions populated from a server-side helper (`OpenAI`: `gpt-4.1-mini`, `gpt-4.1-nano`, `gpt-5-mini`; `Anthropic`: `claude-sonnet-4-5`, `claude-opus-4-7`; `Gemini`: `gemini-2.5-pro`, `gemini-3-pro`; `OpenAI-Compatible`: `qwen2.5:32b`, `llama3.3:70b`) — operator can also type free-text per architecture OD4 model-name-drift guidance
   - **Endpoint URL** (`<text id="endpointUrlText" label="Endpoint URL (OpenAI-Compatible only)">`) — visible only when provider is `openai-compatible`; validation message if provider is `openai-compatible` and field is empty
   - **Credential Reference Type** (`<radioSet id="credTypeRadio" displayList="Environment Variable,Ens.Config.Credentials">`) — change handler shows the appropriate field below
   - **Env Var Name** (`<text id="envVarText" label="Environment Variable Name">`) — visible when credTypeRadio is "Environment Variable" (default `OPENAI_API_KEY` for OpenAI provider, etc.)

@@ -75,7 +75,7 @@ Method TestBuildPayloadShape()
     ; Build a transient Config.Agent (not %Save'd) for the payload-build
     ; pass. BuildPayload reads model/temperature/max_tokens off it.
     Set tCfg = ##class(SessionAgent.Config.Agent).%New()
-    Set tCfg.Model = "gpt-4o"
+    Set tCfg.Model = "gpt-4.1-mini"
     Set tCfg.Temperature = 0.0
     Set tCfg.MaxTokens = 1000
 
@@ -87,7 +87,7 @@ Method TestBuildPayloadShape()
     Do $$$AssertTrue(tPayload.%IsDefined("messages"), "payload has messages key")
     Do $$$AssertTrue(tPayload.%IsDefined("tools"), "payload has tools key")
 
-    Do $$$AssertEquals(tPayload.%Get("model"), "gpt-4o", "model = gpt-4o")
+    Do $$$AssertEquals(tPayload.%Get("model"), "gpt-4.1-mini", "model = gpt-4.1-mini")
     Do $$$AssertEquals(+tPayload.%Get("max_tokens"), 1000, "max_tokens = 1000")
 
     ; NFR-S3 — never embed the api key in the payload.
@@ -115,7 +115,7 @@ Method TestSystemPromptPrependedAsSystemRoleMessage()
     Set tHistory = ..BuildSimpleUserHistory("user message")
     Set tToolDefs = ##class(%DynamicArray).%New()
     Set tCfg = ##class(SessionAgent.Config.Agent).%New()
-    Set tCfg.Model = "gpt-4o"
+    Set tCfg.Model = "gpt-4.1-mini"
     Set tCfg.MaxTokens = 1000
 
     Set tPayload = tProv.BuildPayload(tHistory, tToolDefs, "you are X", tCfg)
@@ -299,7 +299,7 @@ ClassMethod BuildTransientConfigAgent() As SessionAgent.Config.Agent [ Internal 
     Set tCfg = ##class(SessionAgent.Config.Agent).%New()
     Set tCfg.AgentName = "test-agent"
     Set tCfg.Provider = "openai"
-    Set tCfg.Model = "gpt-4o"
+    Set tCfg.Model = "gpt-4.1-mini"
     Set tCfg.Temperature = 0.0
     Set tCfg.MaxTokens = 1000
     ; Set EnvVarName to a name we know is set, so the api-key resolve

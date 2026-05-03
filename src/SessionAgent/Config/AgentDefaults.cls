@@ -10,7 +10,7 @@
 /// row's <code>SystemPromptOverride</code> property is non-empty.</li>
 /// <li><method>GetSeedConfig</method> returns a populated
 /// <i>un-saved</i> <CLASS>SessionAgent.Config.Agent</CLASS> instance with
-/// the OD4 default shape (provider=openai, model=gpt-4o, max-tokens=4096,
+/// the OD4 default shape (provider=openai, model=gpt-4.1-mini, max-tokens=4096,
 /// temperature=0.0, env-var=OPENAI_API_KEY, enabled=0, read-only=1,
 /// retention=30 days). Caller is responsible for <method>%Save</method>
 /// and <code>%Status</code> checking.</li>
@@ -76,7 +76,7 @@ ClassMethod GetSeedConfig(pAgentName As %String) As SessionAgent.Config.Agent
     Set tAgent = ##class(SessionAgent.Config.Agent).%New()
     Set tAgent.AgentName = pAgentName
     Set tAgent.Provider = "openai"
-    Set tAgent.Model = "gpt-4o"
+    Set tAgent.Model = "gpt-4.1-mini"
     Set tAgent.MaxTokens = 4096
     Set tAgent.Temperature = 0.0
     Set tAgent.SystemPromptOverride = ""

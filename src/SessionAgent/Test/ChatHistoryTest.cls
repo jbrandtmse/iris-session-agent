@@ -245,7 +245,7 @@ Method TestUpdatedAtAdvancesOnSave()
     Do $$$AssertTrue($IsObject(tHist2), "%OpenId(4) of existing row returns non-null")
     Set tFuture = "2099-12-31T23:59:59Z"
     Set tHist2.UpdatedAt = tFuture
-    Set tHist2.ConfigSnapshot = "{""provider"":""openai"",""model"":""gpt-4o""}"
+    Set tHist2.ConfigSnapshot = "{""provider"":""openai"",""model"":""gpt-4.1-mini""}"
     Do $$$AssertStatusOK(tHist2.%Save(), "second %Save OK")
 
     Do $$$AssertNotEquals(tFuture, tFirstUpdatedAt, "synthetic UpdatedAt differs from first")

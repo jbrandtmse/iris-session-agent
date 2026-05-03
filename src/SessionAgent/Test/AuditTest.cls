@@ -150,7 +150,7 @@ Method TestLogLlmCallWritesOneRow()
 {
     For i = 1:1:5 {
         Set tSC = ##class(SessionAgent.Audit.Emit).LogLlmCall(
-            "chat-" _ i, "openai", "gpt-4o", 3, 100, 50, 1234, "stop", 0, 0, "")
+            "chat-" _ i, "openai", "gpt-4.1-mini", 3, 100, 50, 1234, "stop", 0, 0, "")
         Do $$$AssertStatusOK(tSC, "LogLlmCall #" _ i _ " returns OK")
     }
 
@@ -220,7 +220,7 @@ Method TestLogLlmCallStatusFailureSurfaces()
     }
 
     Set tSC = ##class(SessionAgent.Audit.Emit).LogLlmCall(
-        "chat-fail", "openai", "gpt-4o", 1, 1, 1, 1, "stop", 0, 1, tBig)
+        "chat-fail", "openai", "gpt-4.1-mini", 1, 1, 1, 1, "stop", 0, 1, tBig)
 
     Do $$$AssertEquals($$$ISERR(tSC), 1, "LogLlmCall surfaces %Save failure when ErrorText exceeds MAXLEN=4096")
     Quit

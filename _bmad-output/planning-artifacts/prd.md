@@ -254,7 +254,7 @@ Devin clicks session `1184885` (the rural clinic one). The portal navigates to V
 
 She runs `zpm install iris-session-agent` in HSCUSTOM. The Installer compiles `SessionAgent.*` cleanly — no Python required, no transitive Open Exchange deps. The bookmark `/csp/healthshare/HSCUSTOM/SessionAgent.EnsPortal.VisualTrace.zen` shows up in the Mgmt Portal bookmark list. She clicks it on a known-failed session from yesterday. The agent config tab is empty — no provider yet.
 
-She opens **Agent Configuration**, picks `OpenAI` from the provider dropdown, model `gpt-4o`, temperature `0.1`, leaves system prompt at default. The credential dropdown lists her `Ens.Config.Credentials` named `OPENAI_PROD` (configured 5 minutes ago). Saves. Returns to Visual Trace. Types "what happened?" The agent answers in 6 seconds. The diagnosis matches the post-mortem her team wrote yesterday.
+She opens **Agent Configuration**, picks `OpenAI` from the provider dropdown, model `gpt-4.1-mini`, temperature `0.1`, leaves system prompt at default. The credential dropdown lists her `Ens.Config.Credentials` named `OPENAI_PROD` (configured 5 minutes ago). Saves. Returns to Visual Trace. Types "what happened?" The agent answers in 6 seconds. The diagnosis matches the post-mortem her team wrote yesterday.
 
 **Resolution.** Total elapsed: 18 minutes including the README. Aishah schedules production rollout review for next sprint and posts to her team Slack: *"This is good. Here's how to use it."* Links the Open Exchange page.
 

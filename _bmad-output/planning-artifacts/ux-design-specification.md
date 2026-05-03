@@ -918,7 +918,7 @@ flowchart TD
     ChatTab --> ConfigEmpty{Provider configured?}
     ConfigEmpty -->|No| OpenConfig[Open SessionAgent.UI.AgentConfig.zen<br/>via portal navigation]
     ConfigEmpty -->|Yes existing config| TestQuestion
-    OpenConfig --> Configure[Form: Pick OpenAI gpt-4o<br/>temp 0.1, max-tokens 4000<br/>credential ref OPENAI_PROD]
+    OpenConfig --> Configure[Form: Pick OpenAI gpt-4.1-mini<br/>temp 0.1, max-tokens 4000<br/>credential ref OPENAI_PROD]
     Configure --> SaveConfig[Click Save]
     SaveConfig --> ReturnVT[Return to Visual Trace]
     ReturnVT --> TestQuestion[Type 'what happened?']

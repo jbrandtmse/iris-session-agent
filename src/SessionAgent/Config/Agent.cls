@@ -53,7 +53,7 @@ Property AgentName As %String;
 /// adapter.</p>
 Property Provider As %String;
 
-/// <p>Provider model identifier (e.g., <code>gpt-4o</code>). Free-form
+/// <p>Provider model identifier (e.g., <code>gpt-4.1-mini</code>). Free-form
 /// string passed through to the provider; the abstract adapter does not
 /// validate model names so operators can adopt new models without an
 /// agent-side code change.</p>

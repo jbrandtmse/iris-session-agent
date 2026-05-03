@@ -266,7 +266,7 @@ ClassMethod ScheduleTaskIfClassExists(pTaskName As %String, pTaskClass As %Strin
 ///
 /// <p><b>Seed shape</b> comes from
 /// <method>SessionAgent.Config.AgentDefaults.GetSeedConfig</method>
-/// (Story 2.4): Provider=<code>openai</code>, Model=<code>gpt-4o</code>,
+/// (Story 2.4): Provider=<code>openai</code>, Model=<code>gpt-4.1-mini</code>,
 /// MaxTokens=<code>4096</code>, Temperature=<code>0.0</code>,
 /// ReadOnly=<code>1</code>, EnvVarName=<code>OPENAI_API_KEY</code>,
 /// Enabled=<code>0</code> (operator must explicitly opt in via Story 6

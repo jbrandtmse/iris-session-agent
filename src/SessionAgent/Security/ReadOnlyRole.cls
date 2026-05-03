@@ -70,6 +70,21 @@ ClassMethod Install() As %Status
 {
     Set tSC = $$$OK
     Set tOrigNS = $NAMESPACE
+
+    ; %SYS-caller resilience (Story 1.5 follow-up): if invoked from %SYS
+    ; (e.g., operator ran `zpm "load /path"` without first issuing
+    ; `zn "HSCUSTOM"`, or this is the standalone <Invoke> of this method
+    ; in module.xml — the orchestrator switches its own context but each
+    ; <Invoke> sees a fresh $NAMESPACE), pick a sensible target namespace
+    ; for the SQL grant in step (2). Ens.* tables are projected in the
+    ; operator's interop namespace (typically HSCUSTOM), not in %SYS, so
+    ; the grant would fail with SQLCODE -30 if invoked while pinned to
+    ; %SYS. We pick HSCUSTOM as the default; an operator running on
+    ; plain-IRIS may need to manually re-grant in their chosen namespace.
+    If tOrigNS = "%SYS" {
+        Set tOrigNS = "HSCUSTOM"
+    }
+
     Try {
         Set $NAMESPACE = "%SYS"
 

@@ -37,7 +37,7 @@
 generated: 2026-05-02
 last_updated: 2026-05-02
 project: iris-session-agent
-# Story 1.4 review-pending — Layer 3 RBAC role installer + tests
+# Story 1.5 in-progress — Installer scaffold + Install method
 project_key: NOKEY
 tracking_system: file-system
 story_location: "{project-root}/_bmad-output/implementation-artifacts"
@@ -48,7 +48,7 @@ development_status:
   1-2-web-gateway-timeout-task-0-probe-readme-operator-prerequisites: review
   1-3-audit-event-pre-registration: review
   1-4-read-only-rbac-role-install: review
-  1-5-installer-scaffold-install-method: backlog
+  1-5-installer-scaffold-install-method: review
   1-6-operator-quickstart-documentation: backlog
   1-7-lightweight-ci-scaffolding: backlog
   epic-1-retrospective: optional

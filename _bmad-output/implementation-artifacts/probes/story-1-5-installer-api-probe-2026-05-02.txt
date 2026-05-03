@@ -1,0 +1,122 @@
+Story 1.5 — Installer API probe
+Date: 2026-05-02
+Probed by: dev agent (Opus 4.7)
+Target: %Dictionary.ClassDefinition.%ExistsId, %SYS.Task
+
+================================================================================
+PROBE 1: %Dictionary.ClassDefinition.%ExistsId — class existence check
+================================================================================
+
+Command (HSCUSTOM):
+    Write "Audit.Emit exists: ",##class(%Dictionary.ClassDefinition).%ExistsId("SessionAgent.Audit.Emit"),!
+    Write "Config.Agent (missing) exists: ",##class(%Dictionary.ClassDefinition).%ExistsId("SessionAgent.Config.Agent"),!
+    Write "Task.PurgeOrphanedChatHistory (missing) exists: ",##class(%Dictionary.ClassDefinition).%ExistsId("SessionAgent.Task.PurgeOrphanedChatHistory"),!
+
+Output:
+    Audit.Emit exists: 1
+    Config.Agent (missing) exists: 0
+    Task.PurgeOrphanedChatHistory (missing) exists: 0
+
+VERDICT: %ExistsId returns 1 for an existing class, 0 for a missing class.
+This is the canonical check for `ScheduleTaskIfClassExists` and
+`SeedDefaultAgentConfigs` defensive guards.
+
+================================================================================
+PROBE 2: %SYS.Task — canonical creation shape
+================================================================================
+
+Command (switch into %SYS, create a probe task, save):
+    Set tNS = $NAMESPACE
+    Set $NAMESPACE = "%SYS"
+    Set tTask = ##class(%SYS.Task).%New()
+    Set tTask.Name = "TEST_PROBE_TASK_DELETE_ME"
+    Set tTask.NameSpace = tNS              ; HSCUSTOM
+    Set tTask.TaskClass = "SessionAgent.Audit.Emit"
+    Set tTask.TimePeriod = 0               ; DAILY
+    Set tTask.DailyFrequency = 0           ; ONCE per day
+    Set tTask.DailyStartTime = 7200        ; 02:00:00 in $H seconds-since-midnight
+    Set tSC = tTask.%Save()
+    Write "Save status: ",$System.Status.GetErrorText(tSC),!
+    Write "ID: ",tTask.%Id(),!
+
+Output:
+    Save status:
+    ID: 1004
+
+(Empty status text = $$$OK; a numeric ID was assigned.)
+
+%SYS.Task properties exposed for scheduling (via %Dictionary.CompiledClass):
+    Name (%String)             — task name (NOT unique on its own; see Probe 3)
+    NameSpace (%String)         — namespace where the task is run
+    TaskClass (%String)         — full class name implementing the task body
+    TimePeriod (%Integer)       — 0 DAILY, 1 WEEKLY, 2 MONTHLY, 3 MONTHLYSPECIAL, 4 RUNAFTER, 5 ONDEMAND
+    TimePeriodEvery             — every-X interval governed by TimePeriod
+    TimePeriodDay               — day-mask governed by TimePeriod
+    DailyFrequency (%Integer)   — 0 ONCE-per-day, 1 SEVERAL-per-day
+    DailyStartTime (%Time)      — seconds-since-midnight ($H format) for first run
+    DailyEndTime, DailyIncrement, DailyFrequencyTime — only used when DailyFrequency=1
+
+For SessionAgent's three sweep tasks the canonical shape is:
+    PurgeOrphanedChatHistory: TimePeriod=0 DAILY, every 1 day, DailyStartTime=7200 (02:00)
+    PurgeStaleSearchChat:     TimePeriod=0 DAILY, every 1 day, DailyStartTime=10800 (03:00)
+    UserVocabularyDecay:      TimePeriod=1 WEEKLY, every 1 week, TimePeriodDay=1 (Sunday), DailyStartTime=14400 (04:00)
+
+================================================================================
+PROBE 3: %SYS.Task DEDUP STRATEGY — *no* built-in Exists check
+================================================================================
+
+Hypothesis: rerun the same Save with the same Name to see if the framework
+rejects duplicates. (If it errored on duplicate, dedup could be try/catch.)
+
+Command:
+    [save same probe task again with the same Name]
+
+Output:
+    Duplicate ID: 1005
+
+VERDICT: %SYS.Task does NOT enforce uniqueness on Name. A naive re-save with
+the same Name produces a SECOND row with a different ID.
+
+Verified via SQL:
+    SELECT ID, Name FROM %SYS.Task WHERE Name = ?  -- 'TEST_PROBE_TASK_DELETE_ME'
+    Row: ID=1004 Name=TEST_PROBE_TASK_DELETE_ME
+    Row: ID=1005 Name=TEST_PROBE_TASK_DELETE_ME
+
+CONSEQUENCE: `ScheduleTaskIfClassExists` MUST do an explicit existence check
+BEFORE calling %Save(). The chosen pattern is:
+
+    Set tFound = 0
+    &sql(SELECT ID INTO :tID FROM %SYS.Task WHERE Name = :pTaskName)
+    If SQLCODE = 0 { Set tFound = 1 }   ; row found, skip insert
+    If 'tFound {
+        Set tTask = ##class(%SYS.Task).%New()
+        Set tTask.Name = pTaskName
+        ; ... set NameSpace, TaskClass, TimePeriod, DailyFrequency, DailyStartTime ...
+        Set tSC = tTask.%Save()
+    }
+
+Both probe tasks (ID 1004, 1005) were cleanly deleted via %DeleteId. SQL
+confirmed zero remaining rows with Name = 'TEST_PROBE_TASK_DELETE_ME'.
+
+================================================================================
+SUMMARY (for Story 1.5 Task 0 Output block)
+================================================================================
+
+%SYS.Task API:
+  - Properties: Name, NameSpace, TaskClass, TimePeriod (0=DAILY, 1=WEEKLY),
+    TimePeriodEvery, TimePeriodDay, DailyFrequency (0=ONCE), DailyStartTime
+    (seconds since midnight in $H format).
+  - Save: standard %Save() returns %Status.
+
+%SYS.Task dedup strategy:
+  - NO built-in Exists; explicit SQL check on Name BEFORE Save.
+  - Pattern: SELECT ID FROM %SYS.Task WHERE Name = :pTaskName, skip insert
+    when SQLCODE=0.
+
+%Dictionary.ClassDefinition.%ExistsId test:
+  - Returns 1 for existing class, 0 for missing.
+  - Used as defensive guard in ScheduleTaskIfClassExists and
+    SeedDefaultAgentConfigs.
+
+Probe transcript saved to:
+  _bmad-output/implementation-artifacts/probes/story-1-5-installer-api-probe-2026-05-02.txt

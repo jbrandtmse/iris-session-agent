@@ -22,11 +22,10 @@
                       UseCookies="0"
                       AuthenticationMethods="64"/>
 
-      <!-- Install-time hooks - Uncommented in Story 1.5 once installer ships
+      <!-- Install-time hooks (activated in Story 1.5 — orchestrator + audit + RBAC). -->
       <Invoke Method="Install" Class="SessionAgent.Installer"/>
       <Invoke Method="EnsureEvents" Class="SessionAgent.Audit.Emit"/>
       <Invoke Method="Install" Class="SessionAgent.Security.ReadOnlyRole"/>
-      -->
 
       <!-- No external ZPM dependencies (per PRD NFR-M9 / NFR-C4 lineage) -->
     </Module>

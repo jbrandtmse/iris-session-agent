@@ -85,3 +85,13 @@ This file accumulates findings, follow-ups, and architect-decision items that ar
   - **Live-IRIS confirmation (2026-05-02 code review):** `Security.Roles.Exists("SessionAgent_ReadOnly")` returns 1; `Security.Roles.Exists("%SessionAgent_ReadOnly")` returns 0. The live role is correct.
   - **Owner:** None — historical preservation is the resolution. Future stories that re-cite `%SessionAgent_ReadOnly` should be flagged in code review as a stale reference.
   - **Blocking?** Not blocking. Story 1.5 (the natural carrier for installer-orchestrator wiring) inherits the corrected name from the updated planning artifacts.
+
+---
+
+## Resolved during Story 1.5 verification (2026-05-02) — superseded by README §"Operator Prerequisites" §1
+
+- **`zpm` was installed in `%SYS` but not mapped into HSCUSTOM. Required `zpm "enable -map -globally"`.**
+  - **First-attempt symptom:** `zpm "load c:/git/iris-session-agent"` errored with `<CLASS DOES NOT EXIST>DisplayError *%IPM.Repo.UniversalSettings`. The class actually exists and is fully compiled in `%SYS` (verified empirically via `%Dictionary.ClassDefinition.%ExistsId` returning 1 and `##class(%IPM.Repo.UniversalSettings).%New()` succeeding). The error appeared because the IPM lifecycle's Configure phase context-switches into the install target namespace (HSCUSTOM), where `%IPM.*` classes had no mapping.
+  - **Resolution (single command from `%SYS`):** `zpm "enable -map -globally"` — maps the `%IPM` package and `%IPM.*` routines from `%SYS` into HSCUSTOM, HSSYS, HSSYSLOCALTEMP, IRISCOUCH, USER. After the mapping, `zpm load` from HSCUSTOM succeeded end-to-end across all six IPM lifecycle phases on first install AND on idempotent reinstall.
+  - **Architecture confirmation (Perplexity research, training-knowledge basis):** IPM follows install-once-in-`%SYS` plus map-across-namespaces. The bundled HealthShare 0.9.0+snapshot in HSLIB/HSSYS is read-only DeveloperMode and exists only for HealthShare's own internal package management; not relevant to user-namespace mapping.
+  - **Operator-observable state propagated:** README §"Operator Prerequisites" §1 now documents the install-IPM-and-enable-globally sequence as a one-time setup step. Story 1.5's commit carries this README change (per `research-first.md` rule 5: operator-observable state must ride the commit). No follow-up work needed; Story 1.7 (CI scaffolding) inherits the documented prerequisite as a normal CI environment-setup step.

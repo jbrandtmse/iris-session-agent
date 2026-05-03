@@ -11,13 +11,39 @@ An open-source InterSystems IRIS module that adds an AI assistant chat experienc
 
 ## Operator Prerequisites
 
-Before installing this module, complete the following on your IRIS instance. Most operators finish all seven steps in under 30 minutes. Each step is independent — you can do them in any order, but the install will fail or behave unexpectedly until they are all in place.
+Before installing this module, complete the following on your IRIS instance. Most operators finish all eight steps in under 30 minutes. Each step is independent — you can do them in any order, but the install will fail or behave unexpectedly until they are all in place.
 
 ### 1. Supported IRIS versions
 
 IRIS / IRIS for Health **2024.1 or later**. The agent runtime is pure ObjectScript; no embedded Python is required on the IRIS host.
 
-### 2. Web Gateway timeout
+### 2. IPM (InterSystems Package Manager) availability
+
+This module is distributed via IPM (`zpm`). IRIS does **not** include IPM by default in user namespaces — even on IRIS for Health 2024.1+, where a developer-mode IPM ships in the read-only `HSLIB` namespace, the module's target namespace (typically `HSCUSTOM` or your interop namespace) starts with **no IPM available**. One-time setup, run once per IRIS instance:
+
+**Step 2a — Install IPM into `%SYS`** *(skip if `zpm version` from `%SYS` already reports a version)*
+
+From the `%SYS` shell:
+
+```
+Do $System.OBJ.Load("https://pm.community.intersystems.com/packages/zpm/latest/installer","ck")
+```
+
+This loads the canonical IPM bootstrap from the InterSystems community package repository, compiling all `%IPM.*` classes into `%SYS`. Verify with `zpm version` — should report a 0.10.x or later version.
+
+**Step 2b — Enable IPM across your namespaces**
+
+Still from the `%SYS` shell:
+
+```
+zpm "enable -map -globally"
+```
+
+This maps the `%IPM` package and `%IPM.*` routines from `%SYS` into every non-system namespace (HSCUSTOM, HSSYS, USER, etc.). Without this step, `zpm "load /path/to/iris-session-agent"` fails with `<CLASS DOES NOT EXIST>DisplayError *%IPM.Repo.UniversalSettings` during the install lifecycle's Configure phase, because the phase context-switches into the install target namespace where the `%IPM.*` classes weren't visible.
+
+After Step 2b, verify by running `zpm version` from your target namespace (e.g., `HSCUSTOM`) — should report the same version as `%SYS`, with `Installed In: %SYS` indicating the mapping is active.
+
+### 3. Web Gateway timeout
 
 The Web Gateway's default **"Server Response Timeout"** on a fresh IRIS 2024.1+ install is **`60` seconds** (verified on IRIS for Windows 2025.1 — see [Story 1.2 Task-0 probe](_bmad-output/implementation-artifacts/1-2-web-gateway-timeout-task-0-probe-readme-operator-prerequisites.md#task-0-output) for the live capture). LLM-call latencies often sit in the 30–90s band, and an agent turn typically chains 2–3 tool calls plus one LLM round-trip — the 60s default kills these mid-stream. **Raise it to `300` seconds before installing.**
 
@@ -35,11 +61,11 @@ Web Gateway management page
 
 The 300s value gives a 90s per-call cap × 3-tool-call agent turn comfortable headroom — see [PRD NFR-P1](_bmad-output/planning-artifacts/prd.md) and the [architecture timeout-cascade rationale at architecture.md line 1131](_bmad-output/planning-artifacts/architecture.md) (Web Gateway 300s prereq ↔ 90s per-call cap ↔ max-iter 10).
 
-### 3. RBAC
+### 4. RBAC
 
 The module installer creates the **`SessionAgent_ReadOnly`** role automatically with `SELECT`-only grants on `Ens.*` tables (this role install ships in [Epic 1 Story 1.4](_bmad-output/planning-artifacts/epics.md)). After install completes, assign this role to the IRIS user that the portal user maps to (typically the same user — verify via Security Management).
 
-### 4. Package mapping
+### 5. Package mapping
 
 Map `SessionAgent.*` from `HSCUSTOMCODE` to your interoperability namespaces (or `%ALL`):
 
@@ -49,7 +75,7 @@ Management Portal
   → <target NS> → Package Mappings → Add: SessionAgent.*  ←  HSCUSTOMCODE
 ```
 
-### 5. API key for the LLM provider
+### 6. API key for the LLM provider
 
 Pick **one** of the two delivery mechanisms:
 
@@ -58,7 +84,7 @@ Pick **one** of the two delivery mechanisms:
 
 API keys are **never** stored inside `SessionAgent.Config.Agent` itself.
 
-### 6. Bookmark URLs
+### 7. Bookmark URLs
 
 After install, both Management Portal entry points are bookmarkable. **Use the URL pattern that matches your IRIS deployment style** — HealthShare-based deployments include the `/healthshare/` segment; plain IRIS deployments do not:
 
@@ -71,7 +97,7 @@ After install, both Management Portal entry points are bookmarkable. **Use the U
 
 The Search Agent path is for the operator's "find the session I care about" entry; the Visual Trace path opens the Inspection Agent on a specific session that the operator already has selected.
 
-### 7. Daily purge task
+### 8. Daily purge task
 
 The installer schedules `SessionAgent.Task.PurgeOrphanedChatHistory` to run daily at 02:00 UTC (this task ships in [Epic 7 Story 7.2](_bmad-output/planning-artifacts/epics.md)). Verify it's enabled in **Task Manager** after install. The task removes chat-history rows whose linked `Ens.MessageHeader` session has been purged, so no orphaned conversations accumulate.
 

@@ -1,0 +1,59 @@
+name: ci
+
+# Lightweight PR-time gate (per architecture OD1):
+#   - markdown lint
+#   - structural file/heading presence
+#   - NFR-C2 invariant: no `[Language = python]` in shipped ObjectScript
+#   - NFR-C5 invariant: no CDN references in vendored static assets
+#
+# TODO: add `%UnitTest` execution step once a Python-less IRIS 2024.1
+# community Docker image is publicly available. Tracked in
+# _bmad-output/implementation-artifacts/deferred-work.md. Until then,
+# dev-host `iris_execute_tests` is the integration-test surface.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  lint-and-structure:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Markdown lint
+        uses: DavidAnson/markdownlint-cli2-action@v17
+        with:
+          globs: "**/*.md"
+
+      - name: Structural checks + invariant gates
+        run: |
+          set -e
+
+          echo "::group::Structural file/heading presence"
+          test -f module.xml || { echo "::error::module.xml is missing"; exit 1; }
+          test -f LICENSE || { echo "::error::LICENSE is missing"; exit 1; }
+          grep -q "^## Operator Prerequisites" README.md || { echo "::error::README.md is missing the '## Operator Prerequisites' H2 heading"; exit 1; }
+          test -d src/SessionAgent || { echo "::error::src/SessionAgent/ directory is missing"; exit 1; }
+          test -d src/static || { echo "::error::src/static/ directory is missing"; exit 1; }
+          echo "Structural checks PASS"
+          echo "::endgroup::"
+
+          echo "::group::NFR-C2 invariant — no [Language = python] in src/SessionAgent/"
+          if grep -rn "Language = python" src/SessionAgent/; then
+            echo "::error::NFR-C2 violation: [Language = python] found in src/SessionAgent/ (see grep output above). Pure-OS-runtime invariant prohibits embedded Python in shipped classes."
+            exit 1
+          fi
+          echo "NFR-C2 gate PASS"
+          echo "::endgroup::"
+
+          echo "::group::NFR-C5 invariant — no CDN references in src/static/"
+          if grep -rEn "https://cdn\." src/static/; then
+            echo "::error::NFR-C5 violation: CDN reference found in src/static/ (see grep output above). Vendored static assets must be self-hosted (no CDN dependencies per PRD)."
+            exit 1
+          fi
+          echo "NFR-C5 gate PASS"
+          echo "::endgroup::"

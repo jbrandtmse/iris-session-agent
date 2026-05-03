@@ -50,7 +50,7 @@ development_status:
   1-4-read-only-rbac-role-install: review
   1-5-installer-scaffold-install-method: review
   1-6-operator-quickstart-documentation: review
-  1-7-lightweight-ci-scaffolding: backlog
+  1-7-lightweight-ci-scaffolding: review
   epic-1-retrospective: optional
 
   epic-2: backlog

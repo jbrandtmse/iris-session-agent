@@ -1,0 +1,124 @@
+/// <p>CSS contributor for the Session Agent chat panel — emits a
+/// <code>&lt;style&gt;</code> block defining the minimum 10
+/// <code>--sa-*</code> tokens and the matching <code>sa-*</code>
+/// component-class rules per Story 3.1 AC-3 / AC-4 (UX-DR12-MVP-subset,
+/// UX-DR26).</p>
+///
+/// <p>This class is shared between the Inspection (Story 3.3, this epic)
+/// and Search (Epic 10) EnsPortal subclasses — both call
+/// <CLASS>SessionAgent.UI.ChatPanel</CLASS>.<METHOD>EmitStyle</METHOD>
+/// from their <code>OnPageHeadStyle</code> / <code>XData Style</code>
+/// hooks. Don't bake any inspection- or search-specific behavior here.</p>
+///
+/// <p><b>Token inheritance contract (UX-DR26).</b> Each token's value is
+/// of the form <code>var(--parent-token-name, fallback)</code>. The
+/// fallback is a reasonable approximation of the parent Mgmt Portal Zen
+/// palette per architecture §"Token Initial Values" (lines 622–629); the
+/// fallback IS the rendered value in MVP — Mgmt Portal Zen does not
+/// publish a public <code>--*</code> CSS-variable namespace, so the
+/// <code>var()</code> reference will always degrade to the fallback for
+/// MVP. A future Epic 10.7+ work item will replace the fallbacks with
+/// live parent-palette lookups when the vendored UX components land.</p>
+///
+/// <p>Per AC-4, the foundation layer (font-family, font-size, line-height,
+/// button styles, form controls) is NOT overridden — the host page's
+/// parent Mgmt Portal styling carries through. The <code>sa-*</code>
+/// rules here only set layout (flex, overflow) and color (via tokens)
+/// — no <code>position: fixed</code> overlays, no z-index games, no
+/// custom keyframes (per UX-DR28's seven anti-patterns of no-modals).</p>
+///
+/// <p>References:</p>
+/// <ul>
+/// <li>Story 3.1 spec AC-3 (10-token list, exact), AC-4 (no overrides,
+/// no anti-patterns).</li>
+/// <li>UX-design-spec §"Component Strategy MVP" (lines 1268–1276) and
+/// §"Component 1 — sa-chat-panel" (line 984).</li>
+/// <li>architecture.md §"Token Initial Values" (lines 622–629) — parent-
+/// palette guess list.</li>
+/// </ul>
+Class SessionAgent.UI.ChatPanel Extends %RegisteredObject
+{
+
+/// <p>Emit the chat-panel CSS as a <code>&lt;style&gt;</code> block to
+/// the current device. Called from a host page's
+/// <code>OnPageHeadStyle</code> (or equivalent) so the styles arrive
+/// before the panel HTML is rendered.</p>
+///
+/// <p>Returns <code>$$$OK</code> always — emission has no failure mode
+/// (no I/O check beyond what <code>&amp;html</code> already provides).</p>
+///
+/// <p>Emits exactly 10 <code>--sa-*</code> tokens per AC-3 and the
+/// minimum component-class rules per AC-4 task spec (Task 2). Token
+/// values use <code>var(--parent, fallback)</code> form — the fallback
+/// values are commented inline citing the architecture-suggested parent-
+/// palette source.</p>
+ClassMethod EmitStyle() As %Status
+{
+    &html<<style type="text/css">>
+
+    ; --- The 10 MVP tokens (exact set per UX-DR12-MVP-subset, AC-3) ---
+    ; Each value: var(--parent-token, fallback). Fallback is the
+    ; architecture-cited approximation; the var() inheritance is forward-
+    ; compatible with Epic 10.7+ live parent-palette lookups.
+    &html<:root {>
+
+    ; UX-design-spec §"Token Initial Values" line 622: operator-bg from
+    ; parent's low-contrast surface variant. Mgmt Portal uses a near-white
+    ; subtle surface for input/operator turns.
+    &html<  --sa-message-operator-bg: var(--zen-portal-surface-subtle, #f0f4f8);>
+
+    ; UX-design-spec line 623: agent-bg from parent default content
+    ; background. Mgmt Portal default content area is white.
+    &html<  --sa-message-agent-bg: var(--zen-portal-surface-default, #ffffff);>
+
+    ; UX-design-spec line 624: tool-card border from parent's standard
+    ; rule color. Mgmt Portal uses #d0d0d0-ish for table/section rules.
+    &html<  --sa-tool-card-border: var(--zen-portal-rule, #d0d0d0);>
+
+    ; UX-design-spec line 625: tool-card status — running uses parent's
+    ; in-progress / accent color (Mgmt Portal accent yellow approximation).
+    &html<  --sa-tool-card-status-running: var(--zen-portal-accent, #c6930a);>
+
+    ; UX-design-spec line 626: complete — parent's success / OK color.
+    ; Mgmt Portal uses a muted green for OK badges.
+    &html<  --sa-tool-card-status-complete: var(--zen-portal-success, #2e7d32);>
+
+    ; UX-design-spec line 627: error — parent's existing error/warning
+    ; color. Mgmt Portal red is approximately #c62828.
+    &html<  --sa-tool-card-status-error: var(--zen-portal-error, #c62828);>
+
+    ; UX-design-spec line 628: citation chip background — parent's chip /
+    ; tag surface. Light surface, slightly tinted.
+    &html<  --sa-citation-chip-bg: var(--zen-portal-chip-bg, #ffeeaa);>
+
+    ; UX-design-spec line 628: citation chip text — parent's link color.
+    ; Mgmt Portal links are a muted blue.
+    &html<  --sa-citation-chip-text: var(--zen-portal-link, #0066cc);>
+
+    ; UX-design-spec line 629: status text — parent's secondary text /
+    ; muted color. Mgmt Portal uses gray for status messages.
+    &html<  --sa-status-text-color: var(--zen-portal-text-muted, #606060);>
+
+    ; UX-design-spec line 629: error text — same parent error color as
+    ; the tool-card status, but emitted as a separate token because
+    ; UX-DR12 keeps them distinct (a future story may diverge them).
+    &html<  --sa-error-text-color: var(--zen-portal-error, #c62828);>
+
+    &html<}>
+
+    ; --- Component-class rules (Task 2 minimums per Story 3.1) ---
+    ; Layout-only rules: flex / overflow. Foundation (font, button,
+    ; form control) intentionally NOT overridden per AC-4. No
+    ; position:fixed, no z-index, no @keyframes per UX-DR28.
+
+    &html<.sa-chat-panel { display: flex; flex-direction: column; height: 100%; }>
+    &html<.sa-message-transcript { flex: 1 1 auto; overflow-y: auto; }>
+    &html<.sa-input-area { display: flex; }>
+    &html<.sa-input-field { flex: 1 1 auto; }>
+    &html<.sa-status-text { color: var(--sa-status-text-color); font-style: italic; }>
+
+    &html<</style>>
+    Quit $$$OK
+}
+
+}

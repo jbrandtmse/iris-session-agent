@@ -208,6 +208,28 @@ This file accumulates findings, follow-ups, and architect-decision items that ar
 
 ---
 
+## Deferred from: code review of story-2.6-chat-history-chat-turn-persistence-concurrency-lock (2026-05-03)
+
+- **`TestUpdatedAtAdvancesOnSave` test name no longer matches its body.** After the dev's wall-clock `Hang 1.1` workaround (the test runner silently dropped the method when wall-clock sleep was used; replaced with synthetic future timestamp `"2099-12-31T23:59:59Z"`), the test now validates timestamp **construction format** (length=20, T at char 11, Z at char 20) and byte-identical persistence round-trip — NOT the "advances on save" semantic the method name promises. AC-4's spec note explicitly says "this story doesn't require LoadOrCreate to advance UpdatedAt; AgentLoop Story 2.12 will set it on each turn save. This test verifies the timestamp construction works — set it manually in the test." So the body matches the spec's scoped intent; only the method name overshoots.
+  - **Severity:** LOW (cosmetic; test passes; AC-4 contract satisfied).
+  - **Location:** `src/SessionAgent/Test/ChatHistoryTest.cls:226–255`.
+  - **What to do if it bites:** rename to `TestUpdatedAtRoundTripsByteIdentical` (or similar) when Story 2.12 (AgentLoop) adds the real "advances on save" behavior — at that point a sibling test `TestUpdatedAtAdvancesOnAgentLoopTurnSave` should be added under the AgentLoop test class, leaving this one to assert the lower-level construction/round-trip invariant.
+  - **Owner:** Story 2.12 dev (natural carrier — they will implement the "advances on save" behavior in `AgentLoop.RunTurn` and own the test that verifies it).
+
+- **`LoadOrCreate` empty-string parameter validation.** No guard against `pAgentName=""`, `pSessionKey=""`, or `pPortalUser=""`. The unique `ConvKeyIdx` would still be enforced on `("", "", "")` so a single empty-tuple row could be created and reopened on subsequent calls. Caller is currently trusted (`AgentLoop` will pass real values); v1 acceptable.
+  - **Severity:** LOW (defensive validation gap; no operator-observable break for trusted callers).
+  - **Location:** `src/SessionAgent/Chat/History.cls:157`.
+  - **What to do if it bites:** add a 3-line guard at top of `LoadOrCreate`: `If (pAgentName="")||(pSessionKey="")||(pPortalUser="") { Set pStatus = $$$ERROR($$$GeneralError,"LoadOrCreate requires non-empty AgentName, SessionKey, PortalUser") Quit $$$NULLOREF }`. Natural carrier: Story 2.12 (AgentLoop) when wiring the real call sites — defensive validation belongs at the trust boundary, not here.
+
+- **`Turn.FromCanonical` accepts non-string `role` without validation.** A malformed canonical input like `{role: {nested: "x"}, content: [...]}` would assign an OREF to `Turn.Role` (`%String`). Since `Turn` is `%RegisteredObject` (no `%Save`), no validation surfaces — the malformed value silently lands in memory and propagates to whatever serializes the turn back out.
+  - **Severity:** LOW (defensive validation gap; trusted internal callers only — `Turn` is constructed from JSON the AgentLoop owns or from LLM provider responses validated upstream).
+  - **Location:** `src/SessionAgent/Chat/Turn.cls:102`.
+  - **What to do if it bites:** add a guard `If '$IsObject(pCanonicalTurnObj.role) { Set tTurn.Role = pCanonicalTurnObj.role } Else { Set tTurn.Role = "" }` or use `$Get` semantics on the dynamic-object property. Natural carrier: Story 2.9 (LLM OpenAI provider) or 2.12 (AgentLoop) when actual untrusted inputs flow into `FromCanonical`.
+
+- **Source:** Story 2.6 code review (2026-05-03). One MED finding was auto-fixed in the same review pass: `LoadOrCreate` now accepts `ByRef pStatus As %Status` so callers can distinguish lock-conflict from save-failure from not-found, fixing the doc-comment claim that `tSC` was caller-visible (it was local-scope only). Compile clean; 9/9 ChatHistoryTest still passing; 62/62 full regression intact.
+
+---
+
 ## Resolved during Story 1.5 verification (2026-05-02) — superseded by README §"Operator Prerequisites" §1
 
 - **`zpm` was installed in `%SYS` but not mapped into HSCUSTOM. Required `zpm "enable -map -globally"`.**

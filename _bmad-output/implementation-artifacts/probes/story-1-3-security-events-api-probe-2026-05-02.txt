@@ -1,0 +1,112 @@
+================================================================
+Story 1.3 Task 0 — Security.Events API probe (live IRIS)
+Date: 2026-05-02
+Namespace: %SYS
+IRIS version: 2025.1 (per Story 1.1 confirmation)
+================================================================
+
+----------------------------------------------------------------
+Probe 1: Security.Events.Help() — capture full method signatures
+----------------------------------------------------------------
+
+Command: Do ##class(Security.Events).Help()
+
+Output:
+
+'Do Security.Events.Help(method)' will display a full description of an individual method.
+
+Methods of the class: Security.Events
+
+Clear(EventSources,EventTypes,EventNames)
+     Clear the in memory event counters for the specified events.
+Create(Source,Type,Name,Description,Enabled,Flags)
+     Create an Event.
+Delete(Source,Type,Name)
+     Delete an Event.
+Exists(Source,Type,Name,&Event,&Status)
+     Event exists.
+Export(FileName,&NumExported,Sources,Types,Names)
+     This method exports Event records to a file in xml format.
+Get(Source,Type,Name,&Properties)
+     Get an Events properties.
+Help(method)
+     Write out a list of the methods of this object to the console.
+Import(FileName,&NumImported,Flags)
+     Import Event records from an xml file.
+Modify(Source,Type,Name,&Properties)
+     Modify an Event's properties.
+[XML serialization methods omitted]
+
+----------------------------------------------------------------
+Probe 2: Wildcard-Name acceptability — does IRIS treat a literal
+"<provider>" string as a wildcard pattern when matching audit
+emissions?
+----------------------------------------------------------------
+
+Command: Set tSC = ##class(Security.Events).Create("ProbeTest","WildcardTest","<provider>","Probe of wildcard placeholder",1)
+         Write "Exists check: ",##class(Security.Events).Exists("ProbeTest","WildcardTest","<provider>"),!
+
+Output:
+  Status: (empty -> $$$OK)
+  Exists check: 1
+
+The literal string "<provider>" was accepted by Create() as the Name
+field. So far so good — no syntactic rejection.
+
+----------------------------------------------------------------
+Probe 3: Does an audit call with a literal name (e.g. "openai")
+match a registered "<provider>" placeholder triple?
+----------------------------------------------------------------
+
+Command: Set ev1 = ##class(Security.Events).Exists("ProbeTest","WildcardTest","openai")
+         Write "Exists openai literal vs <provider> reg: ",ev1,!
+         Set tAudit = $System.Security.Audit("ProbeTest","WildcardTest","openai","probe test","probe data")
+         Write "Audit return for unmatched literal name: ",tAudit,!
+
+Output:
+  Exists openai literal vs <provider> reg: 0
+  Audit return for unmatched literal name: 0
+
+DEFINITIVE RESULT: IRIS does NOT treat "<provider>" as a wildcard.
+With only the placeholder registered, an audit emission of literal
+"openai" returns 0 — the silent-failure pattern the project rule
+warns about.
+
+----------------------------------------------------------------
+Probe 4: Cleanup
+----------------------------------------------------------------
+
+Command: Set tSC = ##class(Security.Events).Delete("ProbeTest","WildcardTest","<provider>")
+         Write "Still exists: ",##class(Security.Events).Exists("ProbeTest","WildcardTest","<provider>"),!
+
+Output:
+  Cleanup status: (empty -> $$$OK)
+  Still exists: 0
+
+----------------------------------------------------------------
+DECISION (recorded in story Task 0 Output)
+----------------------------------------------------------------
+
+Signature:                    Create(Source, Type, Name, Description, Enabled, Flags) As %Status
+Wildcard Name acceptable?:    NO (literal placeholder strings register but do not match audit emissions)
+Chosen registration approach: Approach 1 — literal names per provider/enum/task.
+                              ToolCall is deferred to lazy registration in Epic 2+ because the
+                              tool name universe is not known at Story 1.3 install time.
+
+Concrete triples registered by EnsureEvents():
+  ("SessionAgent","LlmCall","openai")
+  ("SessionAgent","LlmCall","anthropic")
+  ("SessionAgent","LlmCall","gemini")
+  ("SessionAgent","LlmCall","ollama")
+  ("SessionAgent","VocabWrite","clickthrough")
+  ("SessionAgent","VocabWrite","explicit")
+  ("SessionAgent","VocabWrite","extracted")
+  ("SessionAgent","VocabWrite","seed")
+  ("SessionAgent","TaskRun","PurgeOrphanedChatHistory")
+  ("SessionAgent","TaskRun","PurgeStaleSearchChat")
+  ("SessionAgent","TaskRun","UserVocabularyDecay")
+
+ToolCall: deferred to lazy registration in Epic 2+ (Story 2.10's tool registry
+boundary is the natural place to register tool-specific event names on first
+emit).
+================================================================

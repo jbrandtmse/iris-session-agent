@@ -1,5 +1,5 @@
 # generated: 2026-05-02
-# last_updated: 2026-05-02 (Story 1.2 ready for review)
+# last_updated: 2026-05-02 (Story 1.3 ready for review)
 # project: iris-session-agent
 # project_key: NOKEY
 # tracking_system: file-system
@@ -45,7 +45,7 @@ development_status:
   epic-1: in-progress
   1-1-project-initialization: review
   1-2-web-gateway-timeout-task-0-probe-readme-operator-prerequisites: review
-  1-3-audit-event-pre-registration: backlog
+  1-3-audit-event-pre-registration: review
   1-4-read-only-rbac-role-install: backlog
   1-5-installer-scaffold-install-method: backlog
   1-6-operator-quickstart-documentation: backlog

@@ -34,3 +34,26 @@ This file accumulates findings, follow-ups, and architect-decision items that ar
   - **Recommendation for the next story-template revision (PM/SM, applies to Stories 2.10, 7.1, 9.1 and any other future Task-0 stories):** When AC enumerates "the install-blocking" steps and Task 1 expands them within a wider canonical structure, AC should say *"the **blocking** steps appear in this **relative** order — non-blocking sections may be interspersed per the canonical structure cited in Task 1"*, OR Task 1 should say *"adapt the canonical structure to put blocking steps in the AC-mandated order; deviate from the research doc's section numbering as needed."* Either phrasing eliminates the trap.
   - **Owner:** PM (John) or SM, on the next story-template revision pass — single one-paragraph clarification in the BMAD `bmad-create-story` workflow's AC-vs-Task guidance.
   - **Blocking?** Not blocking. Cosmetic/process improvement item.
+
+---
+
+## Deferred from: code review of story-1.3-audit-event-pre-registration (2026-05-02)
+
+- **`ToolCall` audit event registration deferred to Epic 2 lazy-on-first-use — confirm Story 2.10 picks this up or extend Story 1.3 retroactively.**
+
+  - **Source:** Story 1.3 code review.
+  - **Severity:** LOW (acceptable design choice for Story 1.3 scope; no operator-observable impact until Story 2.10 ships the tool registry).
+  - **The deferral:** `EnsureEvents()` registers 11 triples (4 LlmCall + 4 VocabWrite + 3 TaskRun) but registers ZERO `ToolCall` triples at install time. The architecture (architecture.md line 822 onward) already enumerates 13 inspection tool names (`session_summary`, `session_timeline`, `message_headers`, `event_log`, `rule_log`, `find_related_sessions`, `find_sessions_by_body`, `get_message_body`, `get_message_detail`, `get_business_process_source`, `get_business_process_instance`, `list_business_process_methods`, `explain_error`) plus 8+ Search tools (line 836+) — so technically all known tool names COULD have been registered now.
+  - **Why deferring is acceptable:** (a) Story 2.10 explicitly owns the tool-registry boundary; (b) the architecture text says ToolCall emissions originate at `SessionAgent.Tool.Registry.Dispatch` "(Story 2.10 onward)"; (c) Search tools (Epic 8) and any growth-tier additions (Epic 10) would also need registration entries — a centralized lazy-register-on-dispatch helper inside Story 2.10's tool registry is cleaner than splitting registration between EnsureEvents() (for the inspection 13) and the registry path (for everything else).
+  - **What needs to happen in Story 2.10:** add a `RegisterIfMissing(source, type, name)` helper to `SessionAgent.Audit.Emit` (or to the tool registry itself), and call it from the registry's `Dispatch` boundary on first emit per tool. Alternative: extend `EnsureEvents()` with the then-known tool name universe at the time Story 2.10 ships, AND add the lazy helper for any tools added later.
+  - **Owner:** Dev (when implementing Story 2.10 — `2-10-tool-base-abstract-tool-registry-task-0-probe`).
+  - **Blocking?** Not blocking Stories 1.4–1.7 or any of Epic 2 prior to Story 2.10. Becomes blocking on Story 2.10 entering dev — that story MUST address ToolCall registration as part of its own scope.
+
+- **Inline-comment clarity around the argumentless `Quit` inside the While loop in `Emit.cls` line 72.**
+
+  - **Source:** Story 1.3 code review.
+  - **Severity:** LOW (cosmetic — code is correct as written; reviewer preference only).
+  - **The observation:** The argumentless `Quit` at line 72 breaks out of the While loop (per ObjectScript semantics: `Quit` inside a While exits the loop, not the enclosing block). Control then falls through to line 77 (`Set $NAMESPACE = tOrigNS`) and the try block closes naturally. Status is correctly carried in `tSC` and returned by the outer `Quit tSC` at line 83. The existing inline comment "argumentless quit out of While; try/catch closes below" is accurate but a future maintainer who hasn't internalized that "Quit-inside-While exits the loop only" might benefit from one extra word, e.g., "argumentless quit exits While loop only; namespace restore on line 77 still runs before try/catch closes."
+  - **Recommendation:** No change required. If a future story touches `Emit.cls` for unrelated reasons, optionally tighten the inline comment then. Not worth a dedicated edit.
+  - **Owner:** None (no action required).
+  - **Blocking?** Not blocking anything.

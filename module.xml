@@ -8,7 +8,7 @@
       <Packaging>module</Packaging>
       <SourcesRoot>src</SourcesRoot>
 
-      <!-- Class packages compiled into HSCUSTOMCODE -->
+      <!-- Class packages compiled into HSCUSTOM (the namespace's code database) -->
       <Resource Name="SessionAgent.PKG"/>
 
       <!-- Static UI assets vendored locally (no CDN dependency per PRD NFR-C5) -->

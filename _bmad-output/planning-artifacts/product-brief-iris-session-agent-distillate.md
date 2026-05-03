@@ -124,7 +124,7 @@ purpose: "Token-efficient context for downstream PRD creation. Dense bullets; ea
 ### Operational
 
 - **Web Gateway "Server Response Timeout"** default 60s is the LLM-call cliff (NOT `%session.AppTimeout`). Raise to 300s as operator README prerequisite. Per-call provider timeout cap 90s.
-- **HSCUSTOMCODE database** + package mapping to target namespaces. Standard HealthShare pattern.
+- **HSCUSTOM database** + package mapping to target namespaces. Standard HealthShare pattern.
 - **CSP integration** via ZenMethod hyperevent → `SessionAgent.Agent.AgentLoop.RunTurn(...)` → tool dispatch. Concurrent operator tabs serialize via `%OpenId(id, 4)` exclusive lock on `SessionAgent.Chat.History` row.
 
 ## Tool Catalog (Inspection Agent — 13 tools, content carries from original brief)

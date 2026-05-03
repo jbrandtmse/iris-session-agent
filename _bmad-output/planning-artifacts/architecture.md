@@ -89,7 +89,7 @@ _This document builds collaboratively through step-by-step discovery. Sections a
 - **No AI Hub primitives.** `%AI.Agent`, `%AI.ToolSet`, `%AI.Tool`, `%AI.Agent.Session`, `%AI.Policy.Authorization`, `%AI.Shell.Console`, `%AI.MCP.Service` — all out of bounds. Replacements built directly on `%Net.HttpRequest` + `%DynamicObject` + `%Persistent` + `%Dictionary.*` + `%SQL.Statement`.
 - **Single ZPM module** (`zpm install iris-session-agent`) with one `<Resource Name="SessionAgent.PKG"/>` and zero transitive Open Exchange dependencies.
 - **All custom classes under `SessionAgent.*`** (single root package, including portal subclasses — no `Custom.EnsPortal.*`). RBAC role: `SessionAgent_ReadOnly`.
-- **HSCUSTOMCODE database** with operator-controlled package mapping to interop namespaces (HealthShare convention).
+- **HSCUSTOM database** with operator-controlled package mapping to interop namespaces (HealthShare convention).
 - **`$NAMESPACE` switching forbidden in CSP context** (per project rule applied to Zen pages and ZenMethod hyperevents). Each bookmark targets one namespace.
 - **MCP serving deferred** to sibling `iris-execute-mcp-v2` project. Tool dispatch contract stays MCP-exportable: `(toolName, jsonArgs) → jsonResult` with no `%session`/`%request`/Zen state coupling, no `%CSP.Response.Write`, no `$NAMESPACE` side effects, no exceptions as error signals.
 
@@ -168,7 +168,7 @@ There is no `iris init` CLI. The first implementation story creates by hand at t
 - **Module shape:** Single ZPM module, single `<Resource>`, no transitive deps (NFR-C4).
 - **Static-asset distribution:** Self-hosted under `/csp/static/iris-session-agent/`, no CDN (NFR-C5).
 - **Build tooling:** None custom — IRIS's compiler does the work; tests use `%UnitTest.TestCase`; no transpile, bundle, or post-process step at install.
-- **Code organization:** All classes under `SessionAgent.*` (single root package, per saved memory `project_package_naming.md`); HSCUSTOMCODE database with operator-controlled mapping to interop namespaces.
+- **Code organization:** All classes under `SessionAgent.*` (single root package, per saved memory `project_package_naming.md`); HSCUSTOM database with operator-controlled mapping to interop namespaces.
 - **Development experience:** Standard IRIS dev workflow (Studio or VSCode-ObjectScript extension); no IDE scaffolding shipped by this project.
 
 **Note:** Project initialization (`module.xml` + `LICENSE` + `README.md` + `.gitignore` + empty `src/SessionAgent/` skeleton) should be the first implementation story (Epic 1 Story 1.1 in the inspection-agent epic sequence).
@@ -210,7 +210,7 @@ The architecture for `iris-session-agent` is largely **pre-decided by upstream a
 - Audit interceptor at dispatch boundary, FK-linked rows (FR32–FR34, NFR-S4)
 - Vendored client-side rendering bundle, no CDN (FR54, NFR-C5)
 - Embed-in-Zen-page UX (no separate SPA) (UX spec, research)
-- HSCUSTOMCODE distribution with operator-controlled package mapping (project memory)
+- HSCUSTOM distribution with operator-controlled package mapping (project memory)
 
 **Calibration Decisions (architecture-stage):** OD1–OD10 — see below; recommended defaults accepted.
 
@@ -297,7 +297,7 @@ The architecture for `iris-session-agent` is largely **pre-decided by upstream a
 |---|---|---|
 | Distribution | Single ZPM module `iris-session-agent`, `<Resource Name="SessionAgent.PKG"/>`, no transitive deps | FR53, NFR-C4 |
 | Hosting | Operator runs their own IRIS instance; we don't host anything | brief, PRD |
-| Package mapping | HSCUSTOMCODE database with operator-controlled mapping to interop namespaces (HealthShare convention); plain-IRIS Interop deployments document an alternative pattern in the README | OD2, project memory |
+| Package mapping | HSCUSTOM database with operator-controlled mapping to interop namespaces (HealthShare convention); plain-IRIS Interop deployments document an alternative pattern in the README | OD2, project memory |
 | Bookmark URL pattern | HealthShare: `/csp/healthshare/<NS>/SessionAgent.EnsPortal.{VisualTrace,MessageViewer}.zen`; Plain IRIS: `/csp/<NS>/SessionAgent.EnsPortal.{...}.zen`. Both documented in README; installer prints both | OD3 |
 | Static-asset CSP application | Dedicated `<CSPApplication Url="/csp/static/iris-session-agent" Path="${cspdir}static/iris-session-agent" Resource="" Recurse="1" UseCookies="0" AuthenticationMethods="64"/>` (unauthenticated read for static assets) | research |
 | Install hooks | Three `<Invoke>` blocks: `SessionAgent.Installer.Install`, `SessionAgent.Audit.Emit.EnsureEvents`, `SessionAgent.Security.ReadOnlyRole.Install`; idempotent | NFR-R5, research |
@@ -1234,7 +1234,7 @@ No critical issues found. All seven important gaps are story-scoped (Task-0 prob
 
 - [x] Project context thoroughly analyzed (Step 2)
 - [x] Scale and complexity assessed (medium overall, high in pure-OS runtime / version-floor / 3-layer read-only / 4-provider abstraction / two-stage body search / vocab learning / lifecycle coupling / multi-tab serialization)
-- [x] Technical constraints identified (IRIS 2024.1+, pure ObjectScript, no AI Hub, single ZPM module, all classes under `SessionAgent.*`, HSCUSTOMCODE distribution, MCP-exportable contract)
+- [x] Technical constraints identified (IRIS 2024.1+, pure ObjectScript, no AI Hub, single ZPM module, all classes under `SessionAgent.*`, HSCUSTOM distribution, MCP-exportable contract)
 - [x] Cross-cutting concerns mapped (10 concerns documented in Step 2)
 
 **Architectural Decisions**

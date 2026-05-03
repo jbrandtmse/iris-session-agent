@@ -67,12 +67,12 @@ The module installer creates the **`SessionAgent_ReadOnly`** role automatically 
 
 ### 5. Package mapping
 
-Map `SessionAgent.*` from `HSCUSTOMCODE` to your interoperability namespaces (or `%ALL`):
+Map `SessionAgent.*` from `HSCUSTOM` to your interoperability namespaces (or `%ALL`):
 
 ```
 Management Portal
   → System Administration → Configuration → Namespaces
-  → <target NS> → Package Mappings → Add: SessionAgent.*  ←  HSCUSTOMCODE
+  → <target NS> → Package Mappings → Add: SessionAgent.*  ←  HSCUSTOM
 ```
 
 ### 6. API key for the LLM provider

@@ -246,6 +246,23 @@ This file accumulates findings, follow-ups, and architect-decision items that ar
 
 ---
 
+## Deferred from: code review of story-2.9-llm-openaiprovider-concrete (2026-05-03)
+
+- **`^||` (process-private global) does NOT preserve OREFs — record at project level so future stories don't repeat the trap.**
+  - **Severity:** LOW (informational; Story 2.9 dev empirically discovered and worked around it within the story by refactoring from option-i to option-ii inline retry loop. No outstanding code change.)
+  - **The empirical finding (Story 2.9 dev, verified via `Set ^||X=$This Write $IsObject(^||X)` returning 0):** `^||` process-private globals serialize their stored values to strings the same way persistent globals do. An object reference assigned to a `^||` slot loses its OREF identity on the next read; what comes back is the OID string, not a usable object. This blocks any pattern that tries to back-channel an instance reference across a static dispatch boundary (e.g., `RetryWithBackoff.Execute` → `$ClassMethod(<class>, "WrappedCallMessages")` — the static fixture has no `..` self to dispatch on, so callers that need instance state must find another channel).
+  - **Two clean alternatives that DO preserve OREFs in-process:**
+    1. **Inline orchestration on the instance** (Story 2.9's choice): replicate the orchestrator's logic inline inside the instance method, using only the orchestrator's STATELESS helpers (`IsRetryable`, `ParseRetryAfter`, `ExpBackoffSec`). Virtual dispatch on `..InstanceMethodHook()` works as expected. Cost: ~30 lines of duplicated retry-loop code per concrete; benefit: no cross-cutting infrastructure changes.
+    2. **Refactor the orchestrator to take an instance + method-name pair** (deferred, larger refactor): `RetryWithBackoff.ExecuteOnInstance(pInstance, pMethodName, pArgsList)` that dispatches via `$Method(pInstance, pMethodName, pArgsList...)` — that builtin DOES preserve virtual dispatch. Story 5.x (Anthropic/Gemini/OpenAICompat) MAY adopt this if duplicating the inline retry loop becomes maintenance friction.
+  - **Why deferring (not fixing now) is correct:** Story 2.9 ships clean with option (i)'s inline duplication (30 lines). Stories 5.1–5.3 will each add another ~30 lines of similar inline retry; if the cumulative duplication crosses ~120 lines, the architect should evaluate option (2) as a follow-up cleanup at Epic 5 retro time. Premature refactor before the second concrete ships would commit to a shape that may not fit Anthropic's `Retry-After: HTTP-date` parsing or Gemini's structured `retryDelay` envelope.
+  - **What to do if it bites:** at Epic 5 retro time, audit the four concrete provider classes (`OpenAIProvider`, `AnthropicProvider`, `GeminiProvider`, `OpenAICompatProvider`) for retry-loop duplication. If duplication exceeds the threshold the architect sets, refactor the orchestrator to `ExecuteOnInstance(pInstance, pMethodName, ...)` and migrate all four concretes to it.
+  - **Owner:** Architect at Epic 5 retro (natural carrier — first opportunity to evaluate the duplication-vs-abstraction trade-off across all four concretes).
+  - **Blocking?** Not blocking. Story 2.9 ships; Stories 5.1–5.3 will follow the same inline-retry pattern.
+
+- **Source:** Story 2.9 code review (2026-05-03). Two LOW cosmetic findings were auto-fixed in the same review pass: (a) two stale doc-comment references to `WrappedCallMessages` (the option-i fixture method that was removed when the dev refactored to option-ii inline retry) corrected to `CallMessages` / "inline retry loop in `CallMessages`" at `OpenAIProvider.cls` lines 146 and 502. (b) Story-file regression-count reporting corrected from 82/82 to 87/87 (dev had undercounted AuditTest as 3 — actual is 8; confirmed empirically by `iris_execute_tests SessionAgent.Test.AuditTest` returning `total:8, passed:8`).
+
+---
+
 ## Deferred from: code review of story-2.8-llm-provider-abstract-adapter-utilities (2026-05-03)
 
 - **No test exercises the OpenAI tool_result fan-out path in `MessageAdapter.CanonicalToOpenAi`.**

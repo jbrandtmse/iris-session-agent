@@ -15,7 +15,7 @@
 ///     &lt;textarea class="sa-input-field" aria-label="Ask anything about this session"
 ///               placeholder="Ask anything about this session."&gt;&lt;/textarea&gt;
 ///   &lt;/form&gt;
-///   &lt;script&gt;window.SessionAgentChat = {agentName:"...",sessionKey:"...",portalUser:"..."};&lt;/script&gt;
+///   &lt;script&gt;window.SessionAgentChat = {agentName:"...",sessionKey:"...",portalUser:"...",priorTranscript:[],placeholder:"..."};&lt;/script&gt;
 /// &lt;/section&gt;
 /// </pre>
 ///
@@ -23,12 +23,24 @@
 /// inline JS the helper emits — script-source inclusion (the
 /// <code>&lt;script src="chat-panel.js"&gt;</code> for Story 3.2) is the
 /// host page's responsibility (Story 3.3 wires it via
-/// <code>OnPageHeadStyle</code>/<code>OnPageHeadScript</code>). Per AC-2
+/// <code>%OnDrawHTMLHead</code>). Per AC-2
 /// the bootstrap values are JSON-encoded via <code>%DynamicObject.%ToJSON()</code>
 /// to defeat XSS at the script-data boundary; we additionally post-process
 /// any literal <code>&lt;/script&gt;</code> substring into the JSON-valid
 /// escape <code>&lt;\/script&gt;</code> to defeat script-tag-break-out
 /// (the case AC-5's XSS probe asserts).</p>
+///
+/// <p><b>Bootstrap-context extension (Story 3.3 AC-6).</b> The bootstrap
+/// object now includes two additional fields: <code>priorTranscript</code>
+/// (an array of <code>{role, content}</code> turns from the operator's
+/// prior conversation, or empty array for first-time) and
+/// <code>placeholder</code> (the input-field placeholder text — first-time
+/// vs returning variant). Story 3.2's chat-panel.js init reads these and
+/// renders either the welcome message (empty transcript) or the prior
+/// turns (non-empty), then sets the input placeholder. The two new
+/// parameters default to first-time-empty / first-time-placeholder so
+/// Story 3.1's existing 4 tests (which call the 4-arg form) still pass
+/// untouched.</p>
 ///
 /// <p><b>Output channel.</b> By default the helper writes to the current
 /// device using the Zen <code>&amp;html&lt;...&gt;</code> macro — this is
@@ -46,6 +58,7 @@
 /// <p>References:</p>
 /// <ul>
 /// <li>Story 3.1 spec AC-1, AC-2, AC-5.</li>
+/// <li>Story 3.3 spec AC-6 (bootstrap extension for prior transcript).</li>
 /// <li><code>irislib/EnsPortal/VisualTrace.cls</code> §<code>DrawTraceTop</code>
 /// (line 693) — canonical <code>&amp;html&lt;...&gt;</code> output pattern
 /// for an EnsPortal helper.</li>
@@ -75,12 +88,26 @@ Class SessionAgent.EnsPortal.Util.ChatPanelDrawHelper Extends %RegisteredObject
 /// supplied, the helper writes the rendered HTML to it. When omitted the
 /// helper writes to the current device via the <code>&amp;html</code>
 /// macro.</li>
+/// <li><code>pPriorTranscriptJson</code> — Story 3.3 AC-6. Optional JSON
+/// string of an array of <code>{role, content}</code> turns from the
+/// operator's prior conversation. Defaults to <code>"[]"</code>
+/// (first-time, no prior conversation). Parsed once via
+/// <code>%FromJSON</code> and embedded into the bootstrap object as the
+/// <code>priorTranscript</code> field. Malformed JSON falls back to
+/// empty-array semantics rather than raising — the panel is still usable
+/// even if the prior-conversation surfacing fails (FR37 graceful
+/// degradation).</li>
+/// <li><code>pPlaceholder</code> — Story 3.3 AC-6. Optional input-field
+/// placeholder text. Defaults to
+/// <code>"Ask anything about this session."</code> (first-time variant).
+/// Story 3.3 supplies <code>"Continue the conversation."</code> for
+/// returning conversations per UX-DR17-MVP-subset.</li>
 /// </ul>
 ///
 /// <p><b>Returns:</b> <code>$$$OK</code> on success; <code>$$$ERROR</code>
 /// for parameter validation failures (only invariant: empty
 /// <code>pAgentName</code>).</p>
-ClassMethod DrawChatPanel(pAgentName As %String, pSessionKey As %String = "", pPortalUser As %String = "", pStream As %Stream.Object = "") As %Status
+ClassMethod DrawChatPanel(pAgentName As %String, pSessionKey As %String = "", pPortalUser As %String = "", pStream As %Stream.Object = "", pPriorTranscriptJson As %String = "[]", pPlaceholder As %String = "Ask anything about this session.") As %Status
 {
     Set tSC = $$$OK
     Try {
@@ -103,6 +130,34 @@ ClassMethod DrawChatPanel(pAgentName As %String, pSessionKey As %String = "", pP
         Do tCtx.%Set("agentName", pAgentName)
         Do tCtx.%Set("sessionKey", pSessionKey)
         Do tCtx.%Set("portalUser", pPortalUser)
+
+        ; Story 3.3 AC-6 — embed prior transcript as a parsed array. If
+        ; the input is not parseable JSON (corruption / caller bug) we
+        ; degrade to an empty array rather than raising — the panel must
+        ; still render even if the prior-conversation surfacing fails
+        ; (FR37 graceful degradation). The %ToJSON re-serialization
+        ; preserves the array shape.
+        Set tPrior = ##class(%DynamicArray).%New()
+        If pPriorTranscriptJson '= "" {
+            Try {
+                Set tParsed = ##class(%DynamicArray).%FromJSON(pPriorTranscriptJson)
+                If $IsObject(tParsed) {
+                    Set tPrior = tParsed
+                }
+            }
+            Catch parseEx {
+                ; Swallow — fall through to empty-array default. The
+                ; panel still renders the welcome message; the operator
+                ; sees a fresh-conversation experience instead of a
+                ; broken page.
+            }
+        }
+        Do tCtx.%Set("priorTranscript", tPrior)
+
+        ; Story 3.3 AC-6 — embed placeholder. Story 3.3's caller decides
+        ; first-time vs returning variant; we pass through verbatim.
+        Do tCtx.%Set("placeholder", pPlaceholder)
+
         Set tBootstrapJson = tCtx.%ToJSON()
         Set tBootstrapJson = $Replace(tBootstrapJson, "</script>", "<\/script>")
 

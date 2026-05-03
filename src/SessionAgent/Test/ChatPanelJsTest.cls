@@ -226,4 +226,30 @@ Method TestNoCdnUrls()
     Do $$$AssertTrue('(..FileContents [ "googleapis"), "ZERO googleapis CDN URLs (AC-6 bullet 9)")
 }
 
+/// <p>Story 3.3 AC-6 — prior-transcript rendering loop present.
+/// Asserts the JS source contains the <code>renderPriorTranscript</code>
+/// helper (loop body) AND a reference to the bootstrap-context
+/// <code>priorTranscript</code> field. Together these prove the JS can
+/// pick up the returning-conversation surface from the bootstrap object
+/// and render each turn into the transcript.</p>
+Method TestPriorTranscriptRenderingPresent()
+{
+    Do $$$AssertStatusOK(..LoadFile(), "LoadFile resolved chat-panel.js at " _ ..FilePath)
+    Do $$$AssertTrue(..FileContents [ "renderPriorTranscript", "renderPriorTranscript helper present (Story 3.3 AC-3)")
+    Do $$$AssertTrue(..FileContents [ "priorTranscript", "JS reads the bootstrap priorTranscript field (Story 3.3 AC-6)")
+}
+
+/// <p>Story 3.3 AC-4 — first-time welcome message rendered. Asserts the
+/// JS source contains the <code>renderWelcomeMessage</code> helper AND
+/// a load-bearing fragment of the welcome-message text (the
+/// "I can read this session's headers" capability-summary opener that
+/// the AC-4 spec text mandates). The fragment is unique enough that a
+/// regression which deletes the welcome message will trip the test.</p>
+Method TestWelcomeMessagePresent()
+{
+    Do $$$AssertStatusOK(..LoadFile(), "LoadFile resolved chat-panel.js at " _ ..FilePath)
+    Do $$$AssertTrue(..FileContents [ "renderWelcomeMessage", "renderWelcomeMessage helper present (Story 3.3 AC-4)")
+    Do $$$AssertTrue(..FileContents [ "I can read this session's headers", "welcome message capability-summary fragment present (Story 3.3 AC-4)")
+}
+
 }

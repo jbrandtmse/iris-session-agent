@@ -119,6 +119,11 @@ Method TestBootstrapContext()
     Do $$$AssertEquals(tCtx.%Get("agentName"), "session-inspection", "agentName parsed back correctly")
     Do $$$AssertEquals(tCtx.%Get("sessionKey"), "1184729", "sessionKey parsed back correctly")
     Do $$$AssertEquals(tCtx.%Get("portalUser"), "marisol.rivera", "portalUser parsed back correctly")
+    ; Story 3.3 AC-6 — bootstrap object MUST carry priorTranscript field.
+    ; Default-args call (4-arg form via RenderToString) yields the empty
+    ; array; the field must be present so chat-panel.js's init can
+    ; differentiate first-time (empty array) from returning (populated).
+    Do $$$AssertTrue(tCtx.%IsDefined("priorTranscript"), "bootstrap context contains priorTranscript field (Story 3.3 AC-6)")
     Quit
 }
 

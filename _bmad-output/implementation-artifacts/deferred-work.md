@@ -424,3 +424,30 @@ This file accumulates findings, follow-ups, and architect-decision items that ar
   - **Why this is a Rule 9 binding deferral, not a fix-now in Story 3.2:** Story 3.2's contract surface (`data-tool-call-id` on cards) is correct given the DTO reality. The bug shape is on the consumer side (the not-yet-written click handler in Story 3.4), not on the producer side (the cards themselves). The synthesis the dev chose is reasonable; the contract just needs the consumer to know about it. Per Rule 9, Story 3.4's spec MUST grep `deferred-work.md` for "Story 3.4" mentions and incorporate this carry-forward into its ACs.
   - **Blocking?** Blocks Story 3.4 entering dev — must be addressed in Story 3.4's scope.
 
+
+
+---
+
+## Deferred from: code review of story-3-3-ensportal-visualtrace-subclass-tab-placement-zenmethod-returning-conversation-surfacing (2026-05-03)
+
+- **System prompt does NOT inject the bound IRIS session_id; LLM hallucinates session_ids when the operator's text doesn't mention them.**
+
+  - **Source:** Story 3.3 code review (cr-3-3 finding F5; lead's prompt critical item #6 — re-run live OpenAI smoke with a more demanding prompt).
+  - **Severity:** MEDIUM (predicted bug — affects every operator question that doesn't explicitly mention the session id; the agent confidently calls inspection tools with wrong ids and returns hallucinated grounding).
+  - **Evidence (verbatim transcript from cr-3-3 demanding-prompt smoke):**
+    - Bound `pSessionKey = "1"`; bound `tCtx.IrisSessionId = "1"` (constructed in `Agent.AgentLoop.RunTurn` line 119).
+    - Operator prompt: *"Walk me through what happened in this session, then check if any messages had errors, and if there were errors show me details. Be thorough."* (no explicit ID mention)
+    - Tools dispatched (envelope `toolCallsRendered`):
+      - `session_timeline` with `args: {"session_id":"a1b2c3d4-e5f6-7890-abcd-ef1234567890"}`
+      - `message_headers` with `args: {"session_id":"a1b2c3d4-e5f6-7890-abcd-ef1234567890","min_severity":"error"}`
+    - Final assistant text references the hallucinated UUID, not session "1".
+  - **Root cause:** `SessionAgent.Config.AgentDefaults.GetSystemPrompt("session-inspection")` (Story 2.4) returns a static system prompt that lists tool names + the read-only invariant but does NOT mention the bound session id. The `Agent.AgentLoop.RunTurn` (Story 2.12) constructs a `CallerContext` with `IrisSessionId = pSessionKey` but never injects it into the prompt the LLM sees. The LLM is forced to invent or guess the id.
+  - **Why this is NOT a Story 3.3 bug:** Story 3.3's job is plumbing the ZenMethod boundary + bootstrap-context for prior conversation. The bound session id IS correctly passed to `RunTurn` (verified in `SendChatMessage` line 424). The grounding gap is owned by `AgentDefaults.GetSystemPrompt` (Story 2.4) and `AgentLoop.RunTurn` (Story 2.12), both pre-existing.
+  - **Recommended fix paths:**
+    1. **Prompt augmentation in `AgentLoop.RunTurn`** — after `tSysPrompt = ...` (line 184), append `tSysPrompt = tSysPrompt _ " The currently-bound IRIS Production Ens session ID for this conversation is " _ pSessionKey _ ". Use this id verbatim when calling inspection tools unless the operator explicitly asks about a different session."` Smallest change; preserves agent-level prompt customization.
+    2. **First-turn user-message context injection** — prepend a system-style first user message that introduces the binding. More flexible (different formats per agent) but couples to the chat history shape.
+    3. **Tool-call default-arg injection** — modify the inspection tools to default `session_id` to `CallerContext.IrisSessionId` when the LLM omits it. Belt-and-suspenders but doesn't help when the LLM emits a wrong id.
+  - **Recommendation:** Path 1 is smallest and matches the read-only-invariant-injection pattern already in the prompt. The fix is a single-line addition in `Agent.AgentLoop.RunTurn`.
+  - **Owner reassigned to Story 3.5** (empty-states + provider-error envelopes — natural home for prompt-engineering pass that touches the inspection-agent system prompt). Per Rule 9, Story 3.5's spec author MUST grep `deferred-work.md` for "Story 3.5" mentions and incorporate this carry-forward into the ACs.
+  - **Why this is a Rule 8 valid defer (Test 1: genuine future-epic scope):** The fix touches Story 2.4's `AgentDefaults` or Story 2.12's `AgentLoop.RunTurn` (or both — depending on whether the binding is added to the static prompt or injected per-turn). Both are out-of-scope for Story 3.3's "wire the ZenMethod boundary + bootstrap context" charter. Story 3.5 is the next logical home; if Story 3.5 ships before this is fixed, the lead must re-defer with a new named successor (Rule 9 binding chain).
+  - **Blocking?** Not blocking Story 3.3 ship — the wire-format integration (AC-7) is verified end-to-end and tools DO dispatch + return real data. The bug surfaces only when the operator omits the session id from the prompt; in MVP usage where the operator IS the session-context originator (they navigated to Visual Trace on session N), they will frequently omit the id assuming the agent knows it. Worth fixing in Story 3.5.

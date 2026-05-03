@@ -89,8 +89,85 @@
         // newline, Esc -> no-op MVP (TODO Story 3.5+: cancel in-flight).
         state.inputEl.addEventListener('keydown', onKeyDown);
 
-        // AC-1 / UX-DR16: auto-focus on tab open.
+        // Story 3.3 AC-6 — apply the placeholder from the bootstrap context
+        // (overrides Story 3.1's static HTML default). First-time vs
+        // returning is decided server-side in EnsPortal.VisualTrace; we
+        // just plumb the value into the input.
+        var placeholder = state.context && state.context.placeholder;
+        if (placeholder) {
+            state.inputEl.setAttribute('placeholder', placeholder);
+        }
+
+        // Story 3.3 AC-3 / AC-4 — render the prior transcript (returning
+        // conversation) OR the welcome message (first-time). The
+        // priorTranscript is an array of {role, content} objects from
+        // Chat.History.TurnsJson, flattened to chat-shape by the server.
+        var priorTranscript = (state.context && state.context.priorTranscript) || [];
+        if (priorTranscript.length > 0) {
+            renderPriorTranscript(priorTranscript);
+        } else {
+            renderWelcomeMessage();
+        }
+
+        // AC-1 / UX-DR16: auto-focus on tab open. Per AC-3 ordering:
+        // prior-transcript render must complete before focus so the input
+        // is the operator's natural next action.
         state.inputEl.focus();
+    }
+
+    /**
+     * Story 3.3 AC-3 — render the prior conversation as a sequence of
+     * sa-message-block elements. Operator turns render plain; agent turns
+     * use the Markdown fallback path (citation chips, code fences). After
+     * the loop, scroll the transcript to the bottom so the most recent
+     * message is visible.
+     *
+     * The priorTranscript shape is the simplified chat-form
+     * [{role: "operator|agent", content: "..."}], NOT the canonical
+     * Anthropic shape persisted in Chat.History.TurnsJson — the server
+     * (EnsPortal.VisualTrace.DrawChatPanel) flattens it before embedding
+     * in the bootstrap context.
+     */
+    function renderPriorTranscript(turns) {
+        for (var i = 0; i < turns.length; i++) {
+            var turn = turns[i];
+            if (!turn || !turn.role) {
+                continue;
+            }
+            var role = turn.role;
+            var content = turn.content || '';
+            var block = document.createElement('div');
+            block.setAttribute('class', 'sa-message-block sa-msg-' + role);
+            if (role === 'agent') {
+                // Use the Markdown fallback path so citation chips +
+                // code fences render correctly in the prior transcript.
+                renderMarkdownFallback(content, block);
+            } else {
+                // Operator turns are plain text per Story 3.1's
+                // submitTurn() echo path.
+                block.textContent = content;
+            }
+            state.transcriptEl.appendChild(block);
+        }
+        // Scroll to most-recent message (AC-3).
+        state.transcriptEl.scrollTop = state.transcriptEl.scrollHeight;
+    }
+
+    /**
+     * Story 3.3 AC-4 — first-time welcome message rendered as a regular
+     * sa-message-block sa-msg-agent (NOT a separate splash component per
+     * UX-DR17). Approximately 3 lines covering capability summary +
+     * read-only assertion + 3 example questions. Pure textContent — no
+     * inner-HTML, citation chips, or markdown rendering needed for the
+     * static welcome.
+     */
+    function renderWelcomeMessage() {
+        var block = document.createElement('div');
+        block.setAttribute('class', 'sa-message-block sa-msg-agent');
+        block.textContent = "I can read this session's headers, bodies, event log, rule log, and BP state. " +
+            "I can't change anything; I only read. " +
+            "Try: what happened? · why did the rule fire? · show me the failing body.";
+        state.transcriptEl.appendChild(block);
     }
 
     function onKeyDown(event) {

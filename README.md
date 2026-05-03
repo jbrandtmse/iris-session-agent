@@ -9,6 +9,16 @@ An open-source InterSystems IRIS module that adds an AI assistant chat experienc
 
 > *"Chatting with your Interoperability Session to really understand what happened — and finding the right session by asking."*
 
+## Operator Prerequisites
+
+*Placeholder — full content lands in Epic 1 Story 1.2 after the Web Gateway "Server Response Timeout" verbatim default is captured from a live IRIS 2024.1+ instance via Task-0 probe.*
+
+The three operator-prerequisite steps will be:
+
+1. Raise Web Gateway "Server Response Timeout" to 300s (LLM-call latencies often sit in the 30–90s band; default kills them mid-stream).
+2. Grant `%SessionAgent_ReadOnly` to the operator user/role.
+3. Supply LLM provider API key via environment variable (preferred for containers) or `Ens.Config.Credentials` (traditional installs).
+
 ## What it does
 
 An Ensemble session leaves a trace across six disconnected data surfaces — `Ens.MessageHeader`, dynamically-typed message bodies, `Ens.SearchTableBase` subclass extents (e.g., `EnsLib.HL7.SearchTable`), `Ens.Util.Log`, `Ens.Rule.Log`, and BP runtime state in `Ens.BP.Context` / `Ens.BP.Thread`. Operators reconstruct the cross-surface picture in their heads on every incident, starting from scratch.
@@ -65,16 +75,6 @@ The minimum that produces the operator's first delight moment — typing *"what 
 ### Vision tier (post-v1, deferred)
 
 MCP serving (delegated to sibling project), vector / semantic body-content search, PHI redaction architecture, cross-namespace operation, streaming responses, LLM-extracted alias generation, cross-user `NamespaceVocabulary` baseline population, stand-alone terminal REPL. See [PRD §"Vision (Future, post-v1)"](_bmad-output/planning-artifacts/prd.md) for full enumeration.
-
-## Operator Prerequisites
-
-*Placeholder — full content lands in Epic 1 Story 1.2 after the Web Gateway "Server Response Timeout" verbatim default is captured from a live IRIS 2024.1+ instance via Task-0 probe.*
-
-The three operator-prerequisite steps will be:
-
-1. Raise Web Gateway "Server Response Timeout" to 300s (LLM-call latencies often sit in the 30–90s band; default kills them mid-stream).
-2. Grant `%SessionAgent_ReadOnly` to the operator user/role.
-3. Supply LLM provider API key via environment variable (preferred for containers) or `Ens.Config.Credentials` (traditional installs).
 
 ## Planning Artifacts (BMAD)
 

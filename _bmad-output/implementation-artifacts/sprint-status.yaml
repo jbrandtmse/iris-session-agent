@@ -1,0 +1,137 @@
+# generated: 2026-05-02
+# last_updated: 2026-05-02 (Story 1.1 ready for review)
+# project: iris-session-agent
+# project_key: NOKEY
+# tracking_system: file-system
+# story_location: {project-root}/_bmad-output/implementation-artifacts
+
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Epic Status Transitions:
+#   - backlog → in-progress: Automatically when first story is created (via create-story)
+#   - in-progress → done: Manually when all stories reach 'done' status
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created in stories folder
+#   - in-progress: Developer actively working on implementation
+#   - review: Ready for code review (via Dev's code-review workflow)
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+#
+# WORKFLOW NOTES:
+# ===============
+# - Epic transitions to 'in-progress' automatically when first story is created
+# - Stories can be worked in parallel if team capacity allows
+# - Developer typically creates next story after previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
+
+generated: 2026-05-02
+last_updated: 2026-05-02
+project: iris-session-agent
+project_key: NOKEY
+tracking_system: file-system
+story_location: "{project-root}/_bmad-output/implementation-artifacts"
+
+development_status:
+  epic-1: in-progress
+  1-1-project-initialization: review
+  1-2-web-gateway-timeout-task-0-probe-readme-operator-prerequisites: backlog
+  1-3-audit-event-pre-registration: backlog
+  1-4-read-only-rbac-role-install: backlog
+  1-5-installer-scaffold-install-method: backlog
+  1-6-operator-quickstart-documentation: backlog
+  1-7-lightweight-ci-scaffolding: backlog
+  epic-1-retrospective: optional
+
+  epic-2: backlog
+  2-1-util-json-helpers: backlog
+  2-2-util-retrywithbackoff: backlog
+  2-3-util-envsecret-credential-resolution: backlog
+  2-4-config-agent-persistence-schema-agentdefaults: backlog
+  2-5-audit-ledger-schema-emit-helpers-recipe-doc: backlog
+  2-6-chat-history-chat-turn-persistence-concurrency-lock: backlog
+  2-7-agent-dtos: backlog
+  2-8-llm-provider-abstract-adapter-utilities: backlog
+  2-9-llm-openaiprovider-concrete: backlog
+  2-10-tool-base-abstract-tool-registry-task-0-probe: backlog
+  2-11-three-example-inspection-tools: backlog
+  2-12-agent-agentloop-orchestration-end-to-end-smoke-test: backlog
+  epic-2-retrospective: optional
+
+  epic-3: backlog
+  3-1-chat-panel-html-draw-helper-minimum-css-tokens: backlog
+  3-2-client-side-chat-panel-js-mvp-render-submit: backlog
+  3-3-ensportal-visualtrace-subclass-tab-placement-zenmethod-returning-conversation-surfacing: backlog
+  3-4-citation-chips-with-parent-selectitem-updatetabs-integration: backlog
+  3-5-empty-states-config-empty-prompt-provider-error-envelopes: backlog
+  3-6-cross-browser-smoke-test-accessibility-inheritance-verification: backlog
+  3-7-prd-mvp-exit-criteria-validation-pilot-operator-walkthrough: backlog
+  epic-3-retrospective: optional
+
+  epic-4: backlog
+  4-1-eventlog-rulelog-tools: backlog
+  4-2-getmessagebody-9-step-body-class-dispatch-ladder: backlog
+  4-3-getmessagedetail: backlog
+  4-4-bp-introspection-trio: backlog
+  4-5-findrelatedsessions-ens-supersessionindex: backlog
+  4-6-findsessionsbybody-ens-searchtablebase-pivot: backlog
+  4-7-explainerror-comprehensive-read-only-suite-verification: backlog
+  epic-4-retrospective: optional
+
+  epic-5: backlog
+  5-1-llm-anthropicprovider-concrete: backlog
+  5-2-llm-geminiprovider-concrete: backlog
+  5-3-llm-openaicompatprovider-concrete: backlog
+  5-4-tool-call-roundtrip-integration-test-infrastructure: backlog
+  epic-5-retrospective: optional
+
+  epic-6: backlog
+  6-1-agentconfig-zen-form-layout: backlog
+  6-2-save-handler-hot-config-change-verification: backlog
+  6-3-replace-placeholder-admin-link-end-to-end-configure-and-ask-validation: backlog
+  epic-6-retrospective: optional
+
+  epic-7: backlog
+  7-1-task-0-probe-audit-fk-cascade-design: backlog
+  7-2-purgeorphanedchathistory-task-installer-scheduling: backlog
+  7-3-1000-session-integration-test: backlog
+  epic-7-retrospective: optional
+
+  epic-8: backlog
+  8-1-vocabulary-schemas-seed-templates: backlog
+  8-2-tool-search-base-bounded-where-invariant-test: backlog
+  8-3-6-simple-indexed-access-tools: backlog
+  8-4-searchbysupersession: backlog
+  8-5-searchbybodyfield-ens-searchtablebase-pivot: backlog
+  8-6-inspectbodycandidates-two-stage-body-content-search: backlog
+  8-7-vocablookup-utility-comprehensive-searchtooltest: backlog
+  epic-8-retrospective: optional
+
+  epic-9: backlog
+  9-1-task-0-probes-onaftersave-non-recursion-synthesizealias-determinism: backlog
+  9-2-uservocabulary-recordsuccess-recordfailure-recursion-safe-onaftersave: backlog
+  9-3-search-vocabularydigest-build: backlog
+  9-4-agentloop-integration-first-user-message-prefix-injection: backlog
+  9-5-recordclickthrough-zenmethod-hyperevent-stub: backlog
+  epic-9-retrospective: optional
+
+  epic-10: backlog
+  10-1-ensportal-messageviewer-subclass-chat-tab-zenmethod-wiring: backlog
+  10-2-search-agent-ui-rendering-sa-search-result-entry-curated-list: backlog
+  10-3-click-through-capture-navigation-to-visual-trace: backlog
+  10-4-sa-from-search-stripe-inspection-side-from-search-handling: backlog
+  10-5-sa-concurrent-tab-banner-non-modal-banner: backlog
+  10-6-purgestalesearchchat-uservocabularydecay-sweep-tasks: backlog
+  10-7-vendored-markdown-bundle-chat-panel-js-growth-tier-render-upgrade: backlog
+  10-8-full-token-resolution-growth-tier-ux-components: backlog
+  10-9-prd-v1-completion-validation-walkthrough: backlog
+  epic-10-retrospective: optional

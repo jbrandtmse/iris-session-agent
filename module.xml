@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="25">
+  <Document name="iris-session-agent.ZPM">
+    <Module>
+      <Name>iris-session-agent</Name>
+      <Version>1.0.0</Version>
+      <Description>Pure-ObjectScript Ensemble session inspection and message search agents</Description>
+      <Packaging>module</Packaging>
+      <SourcesRoot>src</SourcesRoot>
+
+      <!-- Class packages compiled into HSCUSTOMCODE -->
+      <Resource Name="SessionAgent.PKG"/>
+
+      <!-- Static UI assets vendored locally (no CDN dependency per PRD NFR-C5) -->
+      <FileCopy Name="static/" Target="${cspdir}static/iris-session-agent/"/>
+
+      <!-- Dedicated CSP application for static assets (unauthenticated read) -->
+      <CSPApplication Url="/csp/static/iris-session-agent"
+                      Path="${cspdir}static/iris-session-agent"
+                      Resource=""
+                      Recurse="1"
+                      UseCookies="0"
+                      AuthenticationMethods="64"/>
+
+      <!-- Install-time hooks - Uncommented in Story 1.5 once installer ships
+      <Invoke Method="Install" Class="SessionAgent.Installer"/>
+      <Invoke Method="EnsureEvents" Class="SessionAgent.Audit.Emit"/>
+      <Invoke Method="Install" Class="SessionAgent.Security.ReadOnlyRole"/>
+      -->
+
+      <!-- No external ZPM dependencies (per PRD NFR-M9 / NFR-C4 lineage) -->
+    </Module>
+  </Document>
+</Export>

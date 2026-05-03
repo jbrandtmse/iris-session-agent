@@ -1,2 +1,38 @@
+# Local read-only reference checkouts (existing)
 irislib/
 sources/
+
+# IRIS
+*.cls.gz
+*.int.gz
+*.xml.gz
+*.gbl.xml
+*.bak
+build/
+out/
+export/
+IRIS.DAT
+journal/
+WIJ/
+cache.dat
+iris.dat
+# Stray dir created when IPM CSPApplication Path's ${cspdir} variable
+# is not expanded by robocopy on Windows during local zpm install.
+.${CSPDIR}STATIC/
+
+# VSCode (ignore everything except shared config)
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# IDE
+.idea/
+*.iml
+*.swp
+.vs/
+
+# OS
+Thumbs.db
+.DS_Store

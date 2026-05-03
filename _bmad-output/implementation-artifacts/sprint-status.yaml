@@ -51,7 +51,7 @@ development_status:
   1-5-installer-scaffold-install-method: review
   1-6-operator-quickstart-documentation: review
   1-7-lightweight-ci-scaffolding: review
-  epic-1-retrospective: optional
+  epic-1-retrospective: done
 
   epic-2: backlog
   2-1-util-json-helpers: backlog

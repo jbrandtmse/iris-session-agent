@@ -16,6 +16,8 @@ sprint-planning → retro-review → Story X.0 → (per story: create → dev �
 
 …using the **spawn-on-demand agent team** pattern documented in `docs/epic-cycle-teams.md`. **Read that file before you start** — it is the source of truth and contains failure modes you must avoid.
 
+**ALSO read `.claude/rules/epic-cycle-discipline.md` in pre-flight.** That file captures the Epic 1 retrospective's lessons as load-bearing rules: spec length governance, no `[x]` without verification, higher-level MCP first, stale-reference scan at story start, one-liner check before deferring, and self-initiated empirical test pass at epic end. Each rule cites the specific Epic 1 incident requiring user intervention. Without reading both files, the autonomy starts cold and the lessons are inert.
+
 ---
 
 ## Argument Parsing
@@ -34,6 +36,7 @@ State the resolved epic list back to the user in one sentence before starting.
 ## Pre-Flight (run once, before the first epic)
 
 1. **Read `docs/epic-cycle-teams.md`** in full. Internalize the Anti-Patterns section.
+1a. **Read `.claude/rules/epic-cycle-discipline.md`** in full. Internalize all 6 rules. These are not aspirational — they are corrections for specific Epic 1 incidents requiring user intervention. Violating them costs token budget and (worse) shipped-bug risk.
 2. **Verify BMAD artifacts exist**: `_bmad-output/planning-artifacts/epics.md` (and `prd.md`, `architecture.md`). If missing, stop and tell the user — there is nothing to develop.
 3. **Locate sprint-status**: `_bmad-output/implementation-artifacts/sprint-status.yaml` may not exist yet on a fresh project. The first `/bmad-sprint-planning` call will create it.
 4. **Check submodule presence**: run `git config --file .gitmodules --get-regexp path` to discover any submodules. Record the list — you'll need it for the per-story commit step. (On this project, none currently exist; that may change.)

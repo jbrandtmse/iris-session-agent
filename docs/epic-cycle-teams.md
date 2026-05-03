@@ -227,11 +227,24 @@ These patterns were tested and failed due to agent self-scheduling behavior:
 - **Reading only from epics.md** — Sprint-status.yaml may contain additional stories (cleanup stories from retrospectives, hotfixes). Build story list from both sources
 - **Skipping retrospective review before epic start** — Without explicitly reading the previous retro and triaging deferred items, action items and deferred findings silently accumulate. The retrospective review + Story X.0 creation step is mandatory even if the previous epic had no HIGH-severity items
 
-## Lessons Learned (Epic 1 Retrospective)
+## Lead Discipline (load-bearing rules)
 
-1. **Detailed story specs enable autonomous development** — "Previous Story Intelligence" sections eliminate agent guessing
-2. **Never normalize known failures** — fix or formally defer immediately
-3. **Autonomous pipelines need explicit reinforcement** — skills may have mechanisms that aren't triggered without explicit mention in orchestrator prompts
-4. **Mock-based testing is sufficient for foundation epics** — document infrastructure constraints in story dev notes
-5. **Story X.0 cleanup pattern (MANDATORY)** — deferred work from epic N gets a tracked cleanup story at the start of epic N+1. The lead MUST review the previous retrospective and triage ALL action items and deferred findings — include, defer with rationale, or drop. Story X.0 is created even if all items are deferred, to document the triage decision. Elevated from optional to mandatory after Epic 6 retrospective revealed that skipping X.0 caused deferred items to silently accumulate across epics.
-6. **Pipeline must support resume** — check sprint-status for current state and skip completed steps when restarting mid-epic
+The lead's behavior across the cycle is governed by [`.claude/rules/epic-cycle-discipline.md`](../.claude/rules/epic-cycle-discipline.md). **Read that file in pre-flight before starting any cycle.** It is the durable capture of the Epic 1 retrospective lessons:
+
+1. Spec length governance (≤ 250 lines)
+2. No `[x]` without verification — ever
+3. Higher-level MCP before generic `iris_execute_command`
+4. Stale-reference scan at story start
+5. One-liner check before deferring
+6. Self-initiated empirical test pass at epic end
+
+Each rule is grounded in a specific Epic 1 incident requiring user intervention. The rule file documents the trigger, rule, rationale, and how-to-apply for each.
+
+## Lessons Learned (Epic 1 Retrospective — 2026-05-02, real)
+
+1. **Task-0 backend-surface probes earned their keep three times.** Web Gateway timeout label (1.2), `Security.Roles` `%`-prefix rejection (1.4), `%SYS.Task` Name non-uniqueness (1.5). All three would have shipped as bugs without the probe. **Implication:** keep Task-0 probes mandatory for every story that touches a new IRIS-side dependency.
+2. **Discover-and-propagate beats fix-and-forget.** When a cross-cutting finding emerges (RBAC role rename, IPM mapping, HSCUSTOMCODE non-existence), the same commit must update every canonical artifact — README, architecture, prd, epics, distillate, project memory. Story 1.4's RBAC rename and Story 1.6's HSCUSTOMCODE correction set the precedent.
+3. **Honest about partial state preserves operator trust.** `docs/operator-quickstart.md` explicitly says "the chat tab doesn't exist yet — Epic 3 ships it" instead of pretending. SQL verification step uses real Epic-1 state (`Security.Events` + `Security.Roles`), not the not-yet-shipped audit ledger tables.
+4. **Mid-epic process shift: ~3× token efficiency for equal quality.** Stories 1.1–1.4 used the full dev-agent + reviewer-agent pipeline. Stories 1.5–1.7 used collaborative inline implementation by lead with empirical verification. Same outcome, ~1/3 the token spend. The user-prompted shift was load-bearing — without it the second half would have cost ~3× more for no measurable quality benefit.
+5. **Auto-sync workflow change** (`.vscode/settings.json` with `objectscript.conn.active=true`) eliminates the `iris_doc_load` round-trip per file edit. Saves ~5–15 KB tokens per ObjectScript story edit cycle. Codified in `.claude/rules/iris-objectscript-basics.md` §"VSCode Auto-Sync Workflow".
+6. **Story X.0 cleanup pattern (MANDATORY)** — Epic 1 had no previous retrospective so Story 1.0 was skipped per the documented "no retrospective found" path. Epic 2 onward will see Story X.0 fire on every cycle: read previous retro, triage action items + deferred findings, create the cleanup story (even if all items defer/drop, to document the triage decision).

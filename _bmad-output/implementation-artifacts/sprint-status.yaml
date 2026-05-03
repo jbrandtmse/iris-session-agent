@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-05-02
-last_updated: 2026-05-03 (Story 2.11 done)
+last_updated: 2026-05-03 (Epic 2 complete)
 project: iris-session-agent
 # Epic 1 complete (retro 2026-05-02); Epic 2 retrospective triage gate (Story 2.0) 2026-05-03
 project_key: NOKEY
@@ -53,7 +53,7 @@ development_status:
   1-7-lightweight-ci-scaffolding: done
   epic-1-retrospective: done
 
-  epic-2: in-progress
+  epic-2: done
   2-0-epic-1-deferred-cleanup: done
   2-1-util-json-helpers: done
   2-2-util-retrywithbackoff: done
@@ -66,7 +66,7 @@ development_status:
   2-9-llm-openaiprovider-concrete: done
   2-10-tool-base-abstract-tool-registry-task-0-probe: done
   2-11-three-example-inspection-tools: done
-  2-12-agent-agentloop-orchestration-end-to-end-smoke-test: backlog
+  2-12-agent-agentloop-orchestration-end-to-end-smoke-test: done
   epic-2-retrospective: optional
 
   epic-3: backlog

@@ -372,3 +372,36 @@ This file accumulates findings, follow-ups, and architect-decision items that ar
   - **Resolution (single command from `%SYS`):** `zpm "enable -map -globally"` — maps the `%IPM` package and `%IPM.*` routines from `%SYS` into HSCUSTOM, HSSYS, HSSYSLOCALTEMP, IRISCOUCH, USER. After the mapping, `zpm load` from HSCUSTOM succeeded end-to-end across all six IPM lifecycle phases on first install AND on idempotent reinstall.
   - **Architecture confirmation (Perplexity research, training-knowledge basis):** IPM follows install-once-in-`%SYS` plus map-across-namespaces. The bundled HealthShare 0.9.0+snapshot in HSLIB/HSSYS is read-only DeveloperMode and exists only for HealthShare's own internal package management; not relevant to user-namespace mapping.
   - **Operator-observable state propagated:** README §"Operator Prerequisites" §1 now documents the install-IPM-and-enable-globally sequence as a one-time setup step. Story 1.5's commit carries this README change (per `research-first.md` rule 5: operator-observable state must ride the commit). No follow-up work needed; Story 1.7 (CI scaffolding) inherits the documented prerequisite as a normal CI environment-setup step.
+
+---
+
+## Deferred from: code review of story-2.12-agent-agentloop-orchestration-end-to-end-smoke-test (2026-05-03)
+
+- **AgentLoop tool dispatch defends thin against malformed `tool_use` blocks (empty `id`, non-object `input`).**
+
+  - **Source:** Story 2.12 code review (Blind Hunter B7 + Edge Case Hunter E5).
+  - **Severity:** LOW — current production providers (OpenAI, future Anthropic/Gemini) populate `id` and `input` per their respective specs; the model would have to emit a malformed block.
+  - **The two thin-defense points in `AgentLoop.RunTurn`:**
+    1. `c:/git/iris-session-agent/src/SessionAgent/Agent/AgentLoop.cls:251-254` — `tBlockToolUseId` defaults to empty string when `id` is absent. The `tool_result` block then carries `tool_use_id = ""`. The next round-trip sends this empty id back to the model, which both OpenAI and Anthropic specs require to be non-empty — provider responds with HTTP 400, which the AgentLoop surfaces as a structured error envelope. Defensible (no crash) but the operator gets a generic 400 instead of a clearer "model emitted tool_use without id" message.
+    2. `c:/git/iris-session-agent/src/SessionAgent/Agent/AgentLoop.cls:255-258` — `tBlockInput = tBlock.%Get("input")` is then passed to `Tool.Registry.Dispatch(...)` and `tCard.%Set("args", tBlockInput)`. If `input` is a JSON string instead of an object (some weakly-typed model outputs), `Dispatch` receives a string. Tool implementations defend with `$IsObject` checks, so this degrades to the tool's "missing required arg" path — not a crash, but the diagnostic is sub-optimal.
+  - **Recommended fix (when picked up):** add `If '$IsObject(tBlockInput) Set tBlockInput = ##class(%DynamicObject).%New()` after line 258, and synthesize `tBlockToolUseId = "call_" _ tIter _ "_" _ tBidx` when the model omits `id`. Both defenses are 1-2 lines each.
+  - **Owner:** Whoever next touches `AgentLoop.RunTurn` (Epic 3 hyperevent dispatch, or Story 5.x when adding the second provider concrete that may surface this in production telemetry).
+  - **Blocking?** Not blocking. Mock + production coverage is intact; OpenAI's well-formed tool_use blocks satisfy the contract today.
+
+- **`SmokeTest.OnBeforeAllTests` swallows `tHdr.%Save()` failures during the 5-row Ens.MessageHeader fixture seed.**
+
+  - **Source:** Story 2.12 code review (Blind Hunter B17).
+  - **Severity:** LOW — the smoke test runs on the maintainer's local IRIS; a save failure during fixture seed is rare and surfaces downstream as a count assertion failure (`tLlmCount = 0` instead of 2).
+  - **Location:** `c:/git/iris-session-agent/src/SessionAgent/Test/SmokeTest.cls:89-91` — the inner `For` loop checks `If $$$ISERR(tSaveSC) Quit` which exits the loop body but the outer `OnBeforeAllTests` returns `$$$OK` regardless of how many rows actually persisted. The maintainer running the smoke test sees the assertion fail at `5 messages` substring without context.
+  - **Recommended fix:** propagate the save failure to `OnBeforeAllTests`'s return status: `If $$$ISERR(tSaveSC) Quit tSaveSC`. The IRIS unit-test framework will skip the test method with the failure surfaced.
+  - **Owner:** Whoever next touches `SmokeTest.cls` (Story 2.12a real-API smoke test, or any future maintenance pass).
+  - **Blocking?** Not blocking. Defensive sweep on line 73 + idempotent re-run mitigate.
+
+- **`Chat.History.LoadOrCreate` NULLOREF return surfaces a single generic "Concurrent turn in progress" envelope regardless of underlying cause.**
+
+  - **Source:** Story 2.12 code review (Edge Case Hunter E11).
+  - **Severity:** LOW — observed by the operator only when the lock contention path fires. The current envelope is operator-readable; differentiating "lock conflict" from "persistence error" from "validation error" adds diagnostic value when triaging production issues but does not block any AC.
+  - **Location:** `c:/git/iris-session-agent/src/SessionAgent/Agent/AgentLoop.cls:131-136` — `If '$IsObject(tHist)` returns "Concurrent turn in progress; please wait." even when `tLoadStatus` carries a different error (e.g., a persistence-layer issue that would warrant a different operator response).
+  - **Recommended fix:** inspect `tLoadStatus` and surface a richer message when the cause is non-lock: `If $$$ISERR(tLoadStatus) Set tResult.AssistantMarkdown = "Chat history error: " _ $System.Status.GetErrorText(tLoadStatus)` else fall through to the lock-contention message.
+  - **Owner:** Whoever next touches `AgentLoop.RunTurn` (Epic 3 hyperevent dispatch, or Story 5.x).
+  - **Blocking?** Not blocking. Acceptable degradation for v1.

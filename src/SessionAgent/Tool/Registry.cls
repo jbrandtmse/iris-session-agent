@@ -172,10 +172,21 @@ ClassMethod Dispatch(pToolName As %String, pCallerCtx As SessionAgent.Agent.Call
     ; sees the unknown-tool / blocked-tool envelope in the chat panel;
     ; the AgentLoop's own audit covers the turn-level signal.
     If tDispatchAttempted = 1 {
-        Set tChatHistoryId = $Case(pCallerCtx.AgentName,
-            "session-inspection": pCallerCtx.IrisSessionId,
-            "message-search": pCallerCtx.SearchSessionKey,
-            : pCallerCtx.IrisSessionId)
+        ; Prefer the AgentLoop-supplied Chat.History row id (Story 2.12
+        ; — set on pCallerCtx after LoadOrCreate); fall back to the
+        ; per-agent session-key derivation for pre-AgentLoop tests
+        ; (Story 2.10 / 2.11 dispatched the registry without a real
+        ; chat-history row). Either way the audit-row FK is populated
+        ; per NFR-S4 100% completeness.
+        Set tChatHistoryId = ""
+        If $IsObject(pCallerCtx), pCallerCtx.ChatHistoryId '= "" {
+            Set tChatHistoryId = pCallerCtx.ChatHistoryId
+        } Else {
+            Set tChatHistoryId = $Case(pCallerCtx.AgentName,
+                "session-inspection": pCallerCtx.IrisSessionId,
+                "message-search": pCallerCtx.SearchSessionKey,
+                : pCallerCtx.IrisSessionId)
+        }
         Set tArgsJson = ""
         If $IsObject($Get(pJsonArgs)) {
             Set tArgsJson = pJsonArgs.%ToJSON()

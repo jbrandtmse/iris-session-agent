@@ -56,4 +56,20 @@ Property PortalUser As %String;
 /// anti-pattern).</p>
 Property Namespace As %String;
 
+/// <p>Row ID of the parent <CLASS>SessionAgent.Chat.History</CLASS>
+/// instance for the in-flight turn. Set by
+/// <method>SessionAgent.Agent.AgentLoop.RunTurn</method> immediately
+/// after <method>SessionAgent.Chat.History.LoadOrCreate</method>
+/// returns the locked OREF, then read by
+/// <method>SessionAgent.LLM.Provider.Invoke</method> and
+/// <method>SessionAgent.Tool.Registry.Dispatch</method> when emitting
+/// the <CLASS>SessionAgent.Audit.LlmCall</CLASS> /
+/// <CLASS>SessionAgent.Audit.ToolCall</CLASS> rows so the FK
+/// (<code>ChatHistoryId</code>) on each audit row references the
+/// canonical <code>Chat.History</code> row identifier (Story 2.5
+/// schema, FR34). Empty when the AgentLoop has not yet acquired the
+/// chat-history row (e.g., the abstract Provider's credential-missing
+/// fast path before any history exists).</p>
+Property ChatHistoryId As %String;
+
 }

@@ -206,7 +206,7 @@ Method Invoke(pCanonicalHistory As %DynamicArray, pToolDefs As %DynamicArray, pS
             ; ChatHistoryId is unknown at this layer (the AgentLoop owns
             ; the lookup); use the AgentName as a stable correlation key.
             Do ##class(SessionAgent.Audit.Emit).LogLlmCall(
-                pCallerCtx.AgentName,
+                ..ResolveChatHistoryId(pCallerCtx),
                 ..GetProviderName(),
                 pConfigAgent.Model,
                 pCanonicalHistory.%Size(),
@@ -238,7 +238,7 @@ Method Invoke(pCanonicalHistory As %DynamicArray, pToolDefs As %DynamicArray, pS
             Do ..PopulateGenericError(pProviderResponse, $System.Status.GetErrorText(tCallSC))
             Set tLatency = ..ComputeLatencyMs(tStart)
             Do ##class(SessionAgent.Audit.Emit).LogLlmCall(
-                pCallerCtx.AgentName,
+                ..ResolveChatHistoryId(pCallerCtx),
                 ..GetProviderName(),
                 pConfigAgent.Model,
                 pCanonicalHistory.%Size(),
@@ -284,7 +284,7 @@ Method Invoke(pCanonicalHistory As %DynamicArray, pToolDefs As %DynamicArray, pS
         }
 
         Do ##class(SessionAgent.Audit.Emit).LogLlmCall(
-            pCallerCtx.AgentName,
+            ..ResolveChatHistoryId(pCallerCtx),
             ..GetProviderName(),
             pConfigAgent.Model,
             pCanonicalHistory.%Size(),
@@ -305,7 +305,7 @@ Method Invoke(pCanonicalHistory As %DynamicArray, pToolDefs As %DynamicArray, pS
         Do ..PopulateGenericError(pProviderResponse, $System.Status.GetErrorText(tEx))
         Try {
             Do ##class(SessionAgent.Audit.Emit).LogLlmCall(
-                pCallerCtx.AgentName,
+                ..ResolveChatHistoryId(pCallerCtx),
                 ..GetProviderName(),
                 pConfigAgent.Model,
                 pCanonicalHistory.%Size(),
@@ -364,6 +364,27 @@ ClassMethod PopulateGenericError(pResp As SessionAgent.Agent.ProviderResponse, p
         Do pResp.Usage.%Set("cache_read_input_tokens", 0)
     }
     Quit
+}
+
+/// <p>Internal helper — return the audit FK
+/// (<code>SessionAgent.Audit.LlmCall.ChatHistoryId</code>) for the
+/// in-flight turn. Prefers <property>pCallerCtx.ChatHistoryId</property>
+/// (set by the AgentLoop after <method>Chat.History.LoadOrCreate</method>),
+/// and falls back to <property>pCallerCtx.AgentName</property> for the
+/// pre-AgentLoop fast paths (e.g., the Story 2.9 OpenAIProvider tests
+/// which exercise the abstract template directly without a Chat.History
+/// row in scope). Empty / NULLOREF context returns the empty string —
+/// the audit-row FK is NOT NULL-constrained, so we substitute "" rather
+/// than crashing the never-throw template invariant (FR37).</p>
+ClassMethod ResolveChatHistoryId(pCallerCtx As SessionAgent.Agent.CallerContext) As %String [ Internal ]
+{
+    If '$IsObject(pCallerCtx) {
+        Quit ""
+    }
+    If pCallerCtx.ChatHistoryId '= "" {
+        Quit pCallerCtx.ChatHistoryId
+    }
+    Quit pCallerCtx.AgentName
 }
 
 /// <p>Internal helper — compute latency in milliseconds from a

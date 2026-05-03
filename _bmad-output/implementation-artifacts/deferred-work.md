@@ -278,6 +278,39 @@ This file accumulates findings, follow-ups, and architect-decision items that ar
 
 ---
 
+## Deferred from: code review of story-2.10-tool-base-abstract-tool-registry-task-0-probe (2026-05-03)
+
+- **`Tool.Registry` discovery query is direct-subclass-only — transitive subclasses invisible to `ListTools`/`ResolveToolName`.**
+
+  - **Source:** Story 2.10 code review (2026-05-03).
+  - **Severity:** LOW (no impact on Story 2.10 — v1 inspection + search tools all extend `SessionAgent.Tool.Base` directly per architecture pattern).
+  - **The gap:** `Tool/Registry.cls:54` and `:234` use `WHERE %EXACT(Super) = 'SessionAgent.Tool.Base' AND Abstract = 0` — this finds ONLY direct subclasses. If a future epic introduces an intermediate base class (e.g., `SessionAgent.Tool.Inspection.Common Extends SessionAgent.Tool.Base` and then `SessionAgent.Tool.Inspection.SessionSummary Extends SessionAgent.Tool.Inspection.Common`), the leaf class will not appear in `ListTools()` output and `Dispatch("session_summary",...)` will return the unknown-tool envelope. Spec line 41 says "all subclasses of SessionAgent.Tool.Base in the current namespace" — direct-vs-transitive ambiguous.
+  - **Why deferring is acceptable:** v1 architecture (architecture.md §"Pattern Examples — canonical tool implementation skeleton") shows every concrete tool extending `SessionAgent.Tool.Base` directly with no intermediate. Stories 2.11 (three example Inspection tools) and 4.x (full Inspection suite) follow that pattern. No operator-observable break in v1.
+  - **What to add when surfaced:** swap the SQL filter for a recursive ClassDefinition walk (e.g., `%Dictionary.CompiledClass.PrimarySuperList` traversal) OR maintain an explicit `ToolHierarchy` list in the registry. Add a regression test (`TestListToolsIncludesIndirectSubclass`) with a chained stub fixture (`StubReadOnlyChild Extends StubReadOnlyTool`) when the change lands.
+  - **Owner:** Whoever introduces the first intermediate base class (likely an Epic 4 or Epic 8 dev). The story that introduces it MUST extend `Tool.Registry` discovery in the same commit.
+  - **Blocking?** Not blocking. v1 stays direct-subclass for the foreseeable future.
+
+- **`Tool.Registry.Dispatch` does not defensively guard against null `pCallerCtx` in the audit-emit branch.**
+
+  - **Source:** Story 2.10 code review (2026-05-03).
+  - **Severity:** LOW (no impact — every internal caller — `AgentLoop`, the future MCP handler — constructs a `CallerContext` before dispatch; defense-in-depth gap, not a bug).
+  - **The gap:** `Tool/Registry.cls:175–178` reads `pCallerCtx.AgentName` inside the `If tDispatchAttempted = 1` block — which executes AFTER the outer Try/Catch closes. If `pCallerCtx` were `$$$NULLOREF` or `""`, this would throw `<INVALID OREF>` outside any catch and the caller would see an uncaught exception instead of the standard envelope. The defensive `$IsObject($Get(pJsonArgs))` checks at lines 180 and 184 suggest the dev was thinking defensively about `pJsonArgs` but skipped the same posture for `pCallerCtx`.
+  - **Why deferring is acceptable:** Every constructed call site uses `##class(SessionAgent.Agent.CallerContext).%New()` per Story 2.7 contract; tests in `ToolRegistryTest.cls:74–82` (`NewInspectionCtx` helper) confirm the construction shape. There's no path in shipped code that hands `Dispatch` a null context.
+  - **What to add when surfaced:** at the top of `Dispatch`, add `If '$IsObject($Get(pCallerCtx)) { Set pResult = {"isError":(1), "content":[{"type":"text", "text":"missing caller context"}]} Quit $$$OK }` plus a `TestDispatchRejectsNullCallerContext` regression test.
+  - **Owner:** Whichever story first introduces a non-internal caller (e.g., the MCP server export deferred from v1 scope per `project_v1_scope_boundaries.md`).
+  - **Blocking?** Not blocking. Internal callers always construct a valid context.
+
+- **MCP `iris_execute_tests` truncation on `ToolRegistryTest` — addendum to existing Story 2.4 entry.**
+
+  - **Source:** Story 2.10 code review (2026-05-03).
+  - **Severity:** LOW (tooling quirk, not a code defect).
+  - **The observation:** `mcp__iris-dev-mcp__iris_execute_tests` against `SessionAgent.Test.ToolRegistryTest` consistently reports `total: 5–6` while the underlying `^UnitTest.Result` global captures all 7 method results with `status=1`. This is a read-timing window in the MCP server — the response is read before the runner finishes writing the trailing entries. The faster `ToolBaseTest` (sub-2ms per method) does not hit the window.
+  - **Verification path:** dev verified 7/7 by walking `^UnitTest.Result(<lastIdx>, <suite>, "SessionAgent.Test.ToolRegistryTest", *)` directly, confirming all 7 entries with `status=1` and non-zero durations.
+  - **Owner:** MCP server maintainer (out of project scope). This is the second instance of this quirk seen on Story 2.x suites — append to the existing Story 2.4 deferred-work entry as a recurrence note rather than a new entry.
+  - **Blocking?** Not blocking. Operator workaround is the `^UnitTest.Result` direct read documented above.
+
+---
+
 ## Resolved during Story 1.5 verification (2026-05-02) — superseded by README §"Operator Prerequisites" §1
 
 - **`zpm` was installed in `%SYS` but not mapped into HSCUSTOM. Required `zpm "enable -map -globally"`.**

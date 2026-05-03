@@ -13,9 +13,12 @@
 /// <p><b>Input:</b> <code>{session_id: string}</code> (required).</p>
 ///
 /// <p><b>Output (structuredContent):</b>
-/// <code>{message_count, error_count, duration_ms, root_message_class}</code>.
+/// <code>{message_count, error_count, duration_ms, root_message_class, session_exists}</code>.
 /// <code>content[0].text</code> carries a one-line operator-readable
-/// summary suitable for chat-panel rendering.</p>
+/// summary suitable for chat-panel rendering. The boolean
+/// <code>session_exists</code> field (Story 3.0 AC-4) lets the LLM
+/// distinguish a row-count of zero "the session was purged" from
+/// "the session id does not exist at all".</p>
 ///
 /// <p><b>SQL discipline.</b> Uses <code>%SQL.Statement.%Prepare</code> +
 /// parameterized <code>%Execute(?)</code> per project rule (NEVER string
@@ -26,6 +29,16 @@
 /// <code>%EXACT()</code> wrap on the predicate (string-comparison
 /// semantics on integer columns are misleading).</p>
 ///
+/// <p><b>Story 3.0 AC-2.</b> The two timestamp-bearing fields the original
+/// Story 2.11 design omitted — first/last event timestamps for span
+/// computation — are now also surfaced indirectly via
+/// <code>duration_ms</code>. Where this tool returns a timestamp
+/// directly (none in this tool, but cf. <CLASS>SessionAgent.Tool.Inspection.SessionTimeline</CLASS>
+/// and <CLASS>SessionAgent.Tool.Inspection.MessageHeaders</CLASS>),
+/// the value is normalized to the canonical 20-character ISO-8601
+/// UTC Z form (<code>YYYY-MM-DDTHH:MM:SSZ</code>) using
+/// <method>NormalizeIsoZ</method>.</p>
+///
 /// <p><b>References.</b></p>
 /// <ul>
 /// <li><a href="../../../../_bmad-output/planning-artifacts/epics.md">epics.md
@@ -35,13 +48,16 @@
 /// (lines 688–746).</li>
 /// <li><a href="../../../../_bmad-output/planning-artifacts/prd.md">prd.md</a>
 /// FR55–FR58, NFR-S1, NFR-S6.</li>
+/// <li>Story 3.0 §"AC-4 — SessionSummary returns 'session not found'
+/// envelope" — adds the count-of-rows pre-check + boolean
+/// <code>session_exists</code>.</li>
 /// </ul>
 Class SessionAgent.Tool.Inspection.SessionSummary Extends SessionAgent.Tool.Base
 {
 
 Parameter ToolName As %String = "session_summary";
 
-Parameter Description As %String = "Return shape, duration, error count, and root message class for an Ens session.";
+Parameter Description As %String = "Return shape, duration, error count, and root message class for an Ens session. structuredContent.session_exists is false when no Ens.MessageHeader rows exist for the requested id (purged or never existed).";
 
 Parameter MutatesState As %Boolean = 0;
 
@@ -65,7 +81,14 @@ ClassMethod GetInputSchema() As %DynamicObject
 /// are caught by the outer <CLASS>SessionAgent.Tool.Registry</CLASS>
 /// Dispatch only as defense-in-depth).</p>
 ///
-/// <p>Two SQL queries:</p>
+/// <p>Story 3.0 AC-4: count-of-rows pre-check. If
+/// <code>SELECT COUNT(*) FROM Ens.MessageHeader WHERE SessionId = ?</code>
+/// returns 0, the structured envelope sets <code>session_exists=false</code>
+/// and the operator-facing text says "Session &lt;id&gt; has no rows in
+/// Ens.MessageHeader (it may not exist or may have been purged)". The
+/// LLM uses this to distinguish a missing session from a purged one.</p>
+///
+/// <p>Two SQL queries on the existing-session path:</p>
 /// <ol>
 /// <li>Aggregate: <code>COUNT(*)</code>, error sum, MIN/MAX TimeCreated.</li>
 /// <li>Root message class: first row by ID ascending (the request that
@@ -86,6 +109,26 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
         }
         If (tSessionId = "") || ($Get(tSessionId) = $$$NULLOREF) {
             Set pResult = {"isError":(1), "content":[{"type":"text","text":"missing session_id"}]}
+            Quit
+        }
+
+        ; Story 3.0 AC-4 — count-of-rows pre-check. If zero, return the
+        ; "session not found" envelope with session_exists=false so the
+        ; LLM can distinguish "missing" from "empty".
+        Set tCountStmt = ##class(%SQL.Statement).%New()
+        Set tCountSC = tCountStmt.%Prepare("SELECT COUNT(*) AS rc FROM Ens.MessageHeader WHERE SessionId = ?")
+        Quit:$$$ISERR(tCountSC)
+        Set tCountRs = tCountStmt.%Execute(tSessionId)
+        Set tRowCount = 0
+        If tCountRs.%Next() {
+            Set tRowCount = +tCountRs.%Get("rc")
+        }
+        If tRowCount = 0 {
+            Do pResult.structuredContent.%Set("message_count", 0, "number")
+            Do pResult.structuredContent.%Set("error_count", 0, "number")
+            Do pResult.structuredContent.%Set("session_exists", 0, "boolean")
+            Do pResult.structuredContent.%Set("root_message_class", "")
+            Set pResult.content.%Get(0).text = "Session " _ tSessionId _ " has no rows in Ens.MessageHeader (it may not exist or may have been purged)"
             Quit
         }
 
@@ -121,6 +164,7 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
         Do pResult.structuredContent.%Set("error_count", tErrCount, "number")
         Do pResult.structuredContent.%Set("duration_ms", tDurationMs, "number")
         Do pResult.structuredContent.%Set("root_message_class", tRootClass)
+        Do pResult.structuredContent.%Set("session_exists", 1, "boolean")
 
         Set pResult.content.%Get(0).text = "Session " _ tSessionId _ ": " _ tMsgCount _ " messages, " _ tErrCount _ " errors, root class " _ tRootClass _ "."
         Quit

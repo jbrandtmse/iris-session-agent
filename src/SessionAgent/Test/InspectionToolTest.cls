@@ -301,4 +301,148 @@ Method TestRegistryDiscoversAllThreeTools()
     Quit
 }
 
+/// <p>Story 3.0 AC-4 — SessionSummary returns the
+/// <code>"session not found"</code> envelope (not an exception, not a
+/// silent zero-row result) for a session id that has no rows in
+/// <code>Ens.MessageHeader</code>. The structuredContent must include
+/// <code>session_exists=false</code> so the LLM can distinguish "missing"
+/// from "empty".</p>
+Method TestSessionSummaryUnknownSessionReturnsNotFound()
+{
+    Set tCtx = ..BuildCtx()
+    ; Use an integer well outside the fixture range so we know it can't exist.
+    Set tArgs = {"session_id": (888812345)}
+    Set tResult = ""
+    Set tSC = ##class(SessionAgent.Tool.Inspection.SessionSummary).Invoke(tCtx, tArgs, .tResult)
+    Do $$$AssertStatusOK(tSC, "Invoke returns $$$OK on unknown session (envelope, not status)")
+    Do $$$AssertTrue($IsObject(tResult), "pResult populated")
+    Do $$$AssertTrue($IsObject(tResult.structuredContent), "structuredContent populated")
+    Do $$$AssertEquals(+tResult.structuredContent.%Get("session_exists"), 0, "session_exists = false on unknown session")
+    Do $$$AssertEquals(+tResult.structuredContent.%Get("message_count"), 0, "message_count = 0 on unknown session")
+    Do $$$AssertEquals(+tResult.structuredContent.%Get("error_count"), 0, "error_count = 0 on unknown session")
+    Do $$$AssertTrue(tResult.content.%Get(0).text [ "888812345", "operator-text echoes the requested session id")
+    Do $$$AssertTrue(tResult.content.%Get(0).text [ "no rows in Ens.MessageHeader", "operator-text mentions 'no rows in Ens.MessageHeader'")
+    Quit
+}
+
+/// <p>Story 3.0 AC-2 — SessionSummary's happy-path response also
+/// includes <code>session_exists=true</code> alongside the existing
+/// counts. Locks the new contract for the LLM-facing structuredContent
+/// shape.</p>
+Method TestSessionSummarySessionExistsTrueOnFixture()
+{
+    Set tCtx = ..BuildCtx()
+    Set tArgs = {"session_id": (..#FIXTURESESSIONID)}
+    Set tResult = ""
+    Set tSC = ##class(SessionAgent.Tool.Inspection.SessionSummary).Invoke(tCtx, tArgs, .tResult)
+    Do $$$AssertStatusOK(tSC, "Invoke OK")
+    Do $$$AssertEquals(+tResult.structuredContent.%Get("session_exists"), 1, "session_exists = true when rows exist")
+    Quit
+}
+
+/// <p>Story 3.0 AC-2 — every timestamp the inspection tools surface in
+/// <code>structuredContent</code> must conform to canonical 20-char
+/// ISO-8601 UTC Z form (<code>YYYY-MM-DDTHH:MM:SSZ</code>). Verifies
+/// SessionTimeline events and MessageHeaders rows.</p>
+Method TestInspectionToolsTimestampIsoFormat()
+{
+    Set tCtx = ..BuildCtx()
+    Set tArgs = {"session_id": (..#FIXTURESESSIONID)}
+
+    ; SessionTimeline.events[].time
+    Set tTimelineResult = ""
+    Set tSCTl = ##class(SessionAgent.Tool.Inspection.SessionTimeline).Invoke(tCtx, tArgs, .tTimelineResult)
+    Do $$$AssertStatusOK(tSCTl, "SessionTimeline Invoke OK")
+    Set tEvents = tTimelineResult.structuredContent.%Get("events")
+    Do $$$AssertTrue(tEvents.%Size() > 0, "fixture seeded events present")
+    Set tEv = tEvents.%Get(0)
+    Set tTime = tEv.%Get("time")
+    Do $$$AssertEquals($Length(tTime), 20, "SessionTimeline event.time is exactly 20 chars (got: " _ tTime _ ")")
+    Do $$$AssertEquals($Extract(tTime, 11), "T", "SessionTimeline event.time char 11 is 'T' (got: " _ tTime _ ")")
+    Do $$$AssertEquals($Extract(tTime, 20), "Z", "SessionTimeline event.time char 20 is 'Z' (got: " _ tTime _ ")")
+
+    ; MessageHeaders.headers[].time_created
+    Set tHdrResult = ""
+    Set tSCHd = ##class(SessionAgent.Tool.Inspection.MessageHeaders).Invoke(tCtx, tArgs, .tHdrResult)
+    Do $$$AssertStatusOK(tSCHd, "MessageHeaders Invoke OK")
+    Set tHeaders = tHdrResult.structuredContent.%Get("headers")
+    Do $$$AssertTrue(tHeaders.%Size() > 0, "fixture seeded headers present")
+    Set tH = tHeaders.%Get(0)
+    Set tTC = tH.%Get("time_created")
+    Do $$$AssertEquals($Length(tTC), 20, "MessageHeaders header.time_created is exactly 20 chars (got: " _ tTC _ ")")
+    Do $$$AssertEquals($Extract(tTC, 11), "T", "MessageHeaders header.time_created char 11 is 'T'")
+    Do $$$AssertEquals($Extract(tTC, 20), "Z", "MessageHeaders header.time_created char 20 is 'Z'")
+    Quit
+}
+
+/// <p>Story 3.0 AC-3 — MessageHeaders.min_severity is case-insensitive.
+/// "ERROR", "Error", "error" all reduce to the IsError=1 row subset.
+/// "WARNING" and "INFO" are accepted (no-op) without error.</p>
+Method TestMessageHeadersMinSeverityCaseInsensitive()
+{
+    Set tCtx = ..BuildCtx()
+
+    ; Uppercase "ERROR" — should match the 2 IsError=1 rows.
+    Set tResult = ""
+    Set tSC = ##class(SessionAgent.Tool.Inspection.MessageHeaders).Invoke(tCtx, {"session_id":(..#FIXTURESESSIONID), "min_severity":"ERROR"}, .tResult)
+    Do $$$AssertStatusOK(tSC, "min_severity=ERROR (uppercase) returns $$$OK")
+    Do $$$AssertEquals(+tResult.structuredContent.%Get("header_count"), 2, "min_severity=ERROR (uppercase) reduces to 2 IsError rows")
+
+    ; Mixed case "Error" — same result.
+    Set tResult2 = ""
+    Set tSC2 = ##class(SessionAgent.Tool.Inspection.MessageHeaders).Invoke(tCtx, {"session_id":(..#FIXTURESESSIONID), "min_severity":"Error"}, .tResult2)
+    Do $$$AssertStatusOK(tSC2, "min_severity=Error (mixed case) returns $$$OK")
+    Do $$$AssertEquals(+tResult2.structuredContent.%Get("header_count"), 2, "min_severity=Error (mixed case) reduces to 2 IsError rows")
+
+    ; "WARNING" (uppercase, currently no-op) — accepted, returns all 5 rows.
+    Set tResult3 = ""
+    Set tSC3 = ##class(SessionAgent.Tool.Inspection.MessageHeaders).Invoke(tCtx, {"session_id":(..#FIXTURESESSIONID), "min_severity":"WARNING"}, .tResult3)
+    Do $$$AssertStatusOK(tSC3, "min_severity=WARNING (uppercase) returns $$$OK")
+    Do $$$AssertEquals(+tResult3.structuredContent.%Get("header_count"), 5, "min_severity=WARNING is currently no-op — returns all 5 fixture rows")
+    Quit
+}
+
+/// <p>Story 3.0 AC-3 — MessageHeaders.min_severity rejects unknown
+/// values with a structured error envelope (not a silent no-op).</p>
+Method TestMessageHeadersMinSeverityUnknownValueReturnsError()
+{
+    Set tCtx = ..BuildCtx()
+    Set tArgs = {"session_id":(..#FIXTURESESSIONID), "min_severity":"critical"}
+    Set tResult = ""
+    Set tSC = ##class(SessionAgent.Tool.Inspection.MessageHeaders).Invoke(tCtx, tArgs, .tResult)
+    Do $$$AssertStatusOK(tSC, "Invoke returns $$$OK on validation failure (envelope-based)")
+    Do $$$AssertEquals(+tResult.%Get("isError"), 1, "isError=1 on unknown min_severity value")
+    Do $$$AssertTrue(tResult.content.%Get(0).text [ "info", "error text mentions accepted value 'info'")
+    Do $$$AssertTrue(tResult.content.%Get(0).text [ "warning", "error text mentions accepted value 'warning'")
+    Do $$$AssertTrue(tResult.content.%Get(0).text [ "error", "error text mentions accepted value 'error'")
+    Do $$$AssertTrue(tResult.content.%Get(0).text [ "critical", "error text echoes the rejected input 'critical'")
+    Quit
+}
+
+/// <p>Story 3.0 AC-2 — SessionTimeline accepts ISO-8601 UTC Z input
+/// for <code>from_time</code> / <code>to_time</code> bounds, and
+/// returns a structured error envelope on a non-conforming input
+/// (e.g., a naive ODBC string).</p>
+Method TestSessionTimelineFromTimeIsoParsed()
+{
+    Set tCtx = ..BuildCtx()
+
+    ; Valid ISO-8601 UTC Z bound that's well in the past — fixture rows
+    ; are seeded around now, so this should return all 5 events.
+    Set tResult = ""
+    Set tSC = ##class(SessionAgent.Tool.Inspection.SessionTimeline).Invoke(tCtx, {"session_id":(..#FIXTURESESSIONID), "from_time":"2020-01-01T00:00:00Z"}, .tResult)
+    Do $$$AssertStatusOK(tSC, "ISO-8601 from_time returns $$$OK")
+    Do $$$AssertEquals(tResult.%IsDefined("isError"), 0, "no isError envelope key for valid ISO-8601 from_time")
+    Do $$$AssertEquals(+tResult.structuredContent.%Get("event_count"), 5, "ISO-8601 from_time bound matches fixture rows (5 events)")
+
+    ; Invalid (naive ODBC) — must surface structured error.
+    Set tResult2 = ""
+    Set tSC2 = ##class(SessionAgent.Tool.Inspection.SessionTimeline).Invoke(tCtx, {"session_id":(..#FIXTURESESSIONID), "from_time":"2020-01-01 00:00:00"}, .tResult2)
+    Do $$$AssertStatusOK(tSC2, "Invoke returns $$$OK on validation failure (envelope-based)")
+    Do $$$AssertEquals(+tResult2.%Get("isError"), 1, "isError=1 on naive ODBC from_time")
+    Do $$$AssertTrue(tResult2.content.%Get(0).text [ "ISO-8601", "error mentions ISO-8601")
+    Do $$$AssertTrue(tResult2.content.%Get(0).text [ "from_time", "error mentions which arg was bad ('from_time')")
+    Quit
+}
+
 }

@@ -257,6 +257,34 @@ ClassMethod RunTurn(pAgentName As %String, pSessionKey As %String, pPortalUser A
                             Set tBlockInput = tBlock.%Get("input")
                         }
 
+                        ; Story 3.0 AC-7 — defense against malformed tool_use
+                        ; blocks from the provider. Skip the dispatch if the
+                        ; provider gave us an empty/missing id OR an input
+                        ; that is not a %DynamicObject. Append a tool_result
+                        ; block carrying isError:1 so the next turn surfaces
+                        ; the malformed-block message rather than crashing.
+                        ; Don't trust upstream to follow the canonical shape;
+                        ; observed empirically that some providers occasionally
+                        ; emit tool_use with input as a JSON string rather than
+                        ; a parsed object, or omit the id on retried streams.
+                        If (tBlockToolUseId = "") || ('$IsObject(tBlockInput)) {
+                            Set tBadBlock = ##class(%DynamicObject).%New()
+                            Do tBadBlock.%Set("type", "tool_result")
+                            Do tBadBlock.%Set("tool_use_id", $Select(tBlockToolUseId="":"unknown",1:tBlockToolUseId))
+                            Do tBadBlock.%Set("is_error", 1, "boolean")
+                            Set tBadEnvelope = ##class(%DynamicObject).%New()
+                            Do tBadEnvelope.%Set("isError", 1, "boolean")
+                            Set tBadContent = ##class(%DynamicArray).%New()
+                            Set tBadText = ##class(%DynamicObject).%New()
+                            Do tBadText.%Set("type", "text")
+                            Do tBadText.%Set("text", "Malformed tool_use block from provider — missing id or non-object input. Skipping dispatch.")
+                            Do tBadContent.%Push(tBadText)
+                            Do tBadEnvelope.%Set("content", tBadContent)
+                            Do tBadBlock.%Set("content", tBadEnvelope.%ToJSON())
+                            Do tToolResultBlocks.%Push(tBadBlock)
+                            Continue
+                        }
+
                         ; Dispatch via the trust-boundary registry.
                         Set tToolResult = ##class(%DynamicObject).%New()
                         Do ##class(SessionAgent.Tool.Registry).Dispatch(tBlockToolName, tCtx, tBlockInput, .tToolResult)

@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-05-02
-last_updated: 2026-05-03 (Epic 2 retrospective done; 5 new discipline rules added)
+last_updated: 2026-05-03 (Story 3.0 review)
 project: iris-session-agent
 # Epic 1 complete (retro 2026-05-02); Epic 2 retrospective triage gate (Story 2.0) 2026-05-03
 project_key: NOKEY
@@ -69,7 +69,8 @@ development_status:
   2-12-agent-agentloop-orchestration-end-to-end-smoke-test: done
   epic-2-retrospective: done
 
-  epic-3: backlog
+  epic-3: in-progress
+  3-0-epic-2-deferred-cleanup: review
   3-1-chat-panel-html-draw-helper-minimum-css-tokens: backlog
   3-2-client-side-chat-panel-js-mvp-render-submit: backlog
   3-3-ensportal-visualtrace-subclass-tab-placement-zenmethod-returning-conversation-surfacing: backlog

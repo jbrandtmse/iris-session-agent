@@ -316,6 +316,24 @@ a ZPM hook?" Any yes blocks the PR.
    - In `DocumentEngine.SaveDeleted()`, system database hooks (_users, _replicator) that need document body must execute BEFORE projection updates (Winners.Upsert, MangoIndex.Delete) that clear or overwrite body data
    - The Winners projection sets body to "" for deleted docs — any hook running after that cannot read the original document content
 
+## Process-Private Globals (`^||`) and OREF Storage
+   - **CRITICAL**: Process-private globals (`^||...`) do **NOT** preserve `%RegisteredObject` / `%Persistent` OREFs across access. `Set ^||X = oref` then `Write $IsObject(^||X)` returns `0` — the OREF round-trips as the literal string `"oref@<class>"` because globals are scalar storage and OREF assignment to a global node implicitly stringifies the reference.
+   - For test or back-channel state that needs to survive a `^||` round-trip, store the **class name** plus a `%DynamicObject.%ToJSON()` config blob and **re-instantiate** the object on read. Pattern:
+     ```objectscript
+     ; write
+     Set ^||MyState("class") = "MyApp.SomeProvider"
+     Set ^||MyState("config") = tConfigObj.%ToJSON()
+
+     ; read
+     Set tClass = $Get(^||MyState("class"))
+     Set tCfg = ##class(%DynamicObject).%FromJSON($Get(^||MyState("config")))
+     Set tInst = $ClassMethod(tClass, "%New")
+     Do tInst.%InstallOverrideConfig(tCfg.%ToJSON())   ; or whatever rehydration the class exposes
+     ```
+   - For in-process singleton-style override holders (e.g., a test mock that an instantiating site reads back), use a `%RegisteredObject` singleton class with a class-level OREF property — OREF identity is preserved within the process via the dictionary, not via globals. See `SessionAgent.Agent.ProviderOverride` for the canonical pattern.
+   - **Process-private global subscript naming**: subscripts (the parenthesized keys after `^||GlobalName`) must follow ObjectScript identifier rules — letters, digits, `%`, NO hyphens. The `-` character is the concatenation operator in ObjectScript and a subscript like `^||SessionAgentTest2-11Ids` parses as `^||SessionAgentTest2 - 11Ids` (subtraction expression), causing `<SYNTAX>` errors at compile/parse time. Use camelCase (`SessionAgentTest211Ids`) or snake_case (`session_agent_test_211_ids`) for multi-word subscripts; never embed hyphens.
+   - **Originating findings**: Story 2.9 first surfaced the OREF non-preservation behavior empirically (commit `f84fd07` — `^||TestProviderHolder` round-tripped as a string instead of an OREF). Story 2.11 first surfaced the subscript naming requirement (`^||SessionAgentTest2-11Ids` failed at compile and was renamed to `^||SessionAgentTest211Ids` per `src/SessionAgent/Test/InspectionToolTest.cls`). Both rules codified here in Story 3.0 to prevent re-discovery.
+
 ## HTTP Integration Test Requirements
    - Every new handler method needs an HTTP integration test that verifies: (1) correct HTTP status code, (2) Content-Type header is application/json, (3) response body structure matches CouchDB spec
    - Format/encoding tests should include round-trip verification (encode then decode and compare)

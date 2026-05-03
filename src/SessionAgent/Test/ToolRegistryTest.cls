@@ -288,4 +288,37 @@ Method TripleExists(pToolName As %String) As %Boolean
     Quit tExists
 }
 
+/// <p>Story 3.0 AC-6 — Dispatch must populate the standard MCP error
+/// envelope when called with a NULLOREF or wrong-type
+/// <var>pCallerCtx</var>, NEVER throw, and STILL emit an audit row
+/// (Rule 8 Fix #5 — always-audit semantics hold even on guard paths).</p>
+Method TestDispatchRejectsNullCallerCtx()
+{
+    ; Case A — NULLOREF pCallerCtx.
+    Set tArgs = {}
+    Set tResult = ""
+    Set tBefore = ..CountToolCallRows("test_readonly_tool")
+    Set tSC = ##class(SessionAgent.Tool.Registry).Dispatch("test_readonly_tool", $$$NULLOREF, tArgs, .tResult)
+    Do $$$AssertStatusOK(tSC, "Dispatch returns $$$OK on NULLOREF pCallerCtx (envelope-based)")
+    Do $$$AssertEquals(+tResult.%Get("isError"), 1, "isError=1 on NULLOREF pCallerCtx")
+    Do $$$AssertTrue(tResult.content.%Get(0).text [ "CallerContext", "error text mentions 'CallerContext'")
+    Do $$$AssertTrue(tResult.content.%Get(0).text [ "Internal", "error text marks the failure as 'Internal'")
+
+    ; Always-audit invariant — one ToolCall row written even on the guard path.
+    Set tAfter = ..CountToolCallRows("test_readonly_tool")
+    Do $$$AssertEquals(tAfter - tBefore, 1, "Always-audit: NULLOREF pCallerCtx still writes exactly one audit row")
+
+    ; Case B — wrong-type pCallerCtx (a plain %DynamicObject).
+    Set tBogusCtx = ##class(%DynamicObject).%New()
+    Do tBogusCtx.%Set("AgentName", "session-inspection")
+    Set tBefore2 = ..CountToolCallRows("test_readonly_tool")
+    Set tResult2 = ""
+    Set tSC2 = ##class(SessionAgent.Tool.Registry).Dispatch("test_readonly_tool", tBogusCtx, tArgs, .tResult2)
+    Do $$$AssertStatusOK(tSC2, "Dispatch returns $$$OK on wrong-type pCallerCtx")
+    Do $$$AssertEquals(+tResult2.%Get("isError"), 1, "isError=1 on wrong-type pCallerCtx")
+    Set tAfter2 = ..CountToolCallRows("test_readonly_tool")
+    Do $$$AssertEquals(tAfter2 - tBefore2, 1, "Always-audit: wrong-type pCallerCtx still writes exactly one audit row")
+    Quit
+}
+
 }

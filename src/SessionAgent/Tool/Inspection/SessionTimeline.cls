@@ -82,13 +82,27 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
             Quit
         }
 
+        ; Story 3.0 AC-2 — parse ISO-8601 UTC Z input bounds into ODBC
+        ; TIMESTAMP form for SQL bind. Empty values pass through; the
+        ; sentinel "INVALID" surfaces as a structured error envelope.
+        Set tFromOdbc = ##class(SessionAgent.Tool.Base).IsoZToOdbc(tFromTime)
+        If tFromOdbc = "INVALID" {
+            Set pResult = {"isError":(1), "content":[{"type":"text","text":"from_time must be ISO-8601 UTC, e.g. 2026-05-03T19:30:00Z"}]}
+            Quit
+        }
+        Set tToOdbc = ##class(SessionAgent.Tool.Base).IsoZToOdbc(tToTime)
+        If tToOdbc = "INVALID" {
+            Set pResult = {"isError":(1), "content":[{"type":"text","text":"to_time must be ISO-8601 UTC, e.g. 2026-05-03T19:30:00Z"}]}
+            Quit
+        }
+
         ; Build SQL with optional time bounds. ?-bound parameters appended
         ; in order matching the predicate composition.
         Set tSql = "SELECT %EXACT(SourceConfigName) AS src, %EXACT(TargetConfigName) AS tgt, TimeCreated AS event_time, Status AS status, %EXACT(MessageBodyClassName) AS body_class FROM Ens.MessageHeader WHERE SessionId = ?"
-        If tFromTime '= "" {
+        If tFromOdbc '= "" {
             Set tSql = tSql _ " AND TimeCreated >= ?"
         }
-        If tToTime '= "" {
+        If tToOdbc '= "" {
             Set tSql = tSql _ " AND TimeCreated <= ?"
         }
         Set tSql = tSql _ " ORDER BY TimeCreated ASC, ID ASC"
@@ -98,14 +112,14 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
         Quit:$$$ISERR(tSC)
 
         ; Dispatch the right %Execute arity based on which bounds we appended.
-        If (tFromTime = "") && (tToTime = "") {
+        If (tFromOdbc = "") && (tToOdbc = "") {
             Set tRs = tStmt.%Execute(tSessionId)
-        } ElseIf (tFromTime '= "") && (tToTime = "") {
-            Set tRs = tStmt.%Execute(tSessionId, tFromTime)
-        } ElseIf (tFromTime = "") && (tToTime '= "") {
-            Set tRs = tStmt.%Execute(tSessionId, tToTime)
+        } ElseIf (tFromOdbc '= "") && (tToOdbc = "") {
+            Set tRs = tStmt.%Execute(tSessionId, tFromOdbc)
+        } ElseIf (tFromOdbc = "") && (tToOdbc '= "") {
+            Set tRs = tStmt.%Execute(tSessionId, tToOdbc)
         } Else {
-            Set tRs = tStmt.%Execute(tSessionId, tFromTime, tToTime)
+            Set tRs = tStmt.%Execute(tSessionId, tFromOdbc, tToOdbc)
         }
 
         Set tEvents = []
@@ -114,15 +128,16 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
         Set tCount = 0
         While tRs.%Next() {
             Set tEvent = {}
-            Set tT = tRs.%Get("event_time")
+            ; Story 3.0 AC-2 — normalize TimeCreated to canonical ISO-8601 UTC Z.
+            Set tT = ##class(SessionAgent.Tool.Base).NormalizeIsoZ(tRs.%Get("event_time"))
             Do tEvent.%Set("src", tRs.%Get("src"))
             Do tEvent.%Set("tgt", tRs.%Get("tgt"))
             Do tEvent.%Set("time", tT)
             Do tEvent.%Set("status", +tRs.%Get("status"), "number")
             Do tEvent.%Set("body_class", tRs.%Get("body_class"))
             Do tEvents.%Push(tEvent)
-            If tCount = 0 Set tFirstTime = tT
-            Set tLastTime = tT
+            If tCount = 0 Set tFirstTime = tRs.%Get("event_time")
+            Set tLastTime = tRs.%Get("event_time")
             Set tCount = tCount + 1
         }
 

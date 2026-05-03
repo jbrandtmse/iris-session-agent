@@ -133,4 +133,54 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
     Quit $$$OK
 }
 
+/// <p>Story 3.0 AC-2 helper — normalize an Ens ODBC TIMESTAMP string
+/// (e.g. <code>"2026-05-03 19:30:45"</code> or
+/// <code>"2026-05-03 19:30:45.123"</code>) to the canonical 20-character
+/// ISO-8601 UTC Z form (<code>"2026-05-03T19:30:45Z"</code>) the audit
+/// ledger and chat-panel renderer both expect. Truncates any
+/// fractional-second tail before appending <code>Z</code>.</p>
+///
+/// <p><b>Why no <code>$ZDateTimeH</code> roundtrip:</b>
+/// <CLASS>Ens.DataType.UTC</CLASS> stores values in UTC ODBC form
+/// already (per <code>irislib/Ens/DataType/UTC.cls</code>). Going through
+/// <code>$ZDateTimeH(value, 3, 1)</code> + <code>$ZDateTime(h, 3, 1)</code>
+/// re-applies the same UTC interpretation and is more expensive than
+/// string surgery, so the helper sticks to <code>$Translate</code> +
+/// <code>$Extract</code>.</p>
+///
+/// <p>Empty input returns the empty string (degrades gracefully — a
+/// row with no <code>TimeCreated</code> is malformed but should not
+/// crash the tool).</p>
+ClassMethod NormalizeIsoZ(pOdbcTimestamp As %String) As %String [ CodeMode = expression ]
+{
+$Select(pOdbcTimestamp="":"",1:$Translate($Extract(pOdbcTimestamp,1,19)," ","T")_"Z")
+}
+
+/// <p>Story 3.0 AC-2 helper — convert an ISO-8601 UTC Z input string
+/// (<code>"2026-05-03T19:30:45Z"</code>) to the ODBC TIMESTAMP form
+/// (<code>"2026-05-03 19:30:45"</code>) that
+/// <code>%SQL.Statement.%Execute</code> binds against an
+/// <CLASS>Ens.DataType.UTC</CLASS> column. Returns the empty string
+/// for empty input. Returns the special sentinel <code>"INVALID"</code>
+/// when the input does not parse as the canonical 20-char ISO-8601 UTC
+/// Z form — callers detect this and surface a structured error envelope
+/// per AC-2 ("from_time must be ISO-8601 UTC, e.g. 2026-05-03T19:30:00Z").</p>
+///
+/// <p><b>Validation rules.</b> Length exactly 20, char 11 must be
+/// <code>'T'</code>, char 20 must be <code>'Z'</code>. Anything else
+/// (no Z suffix, no T separator, sub-second precision, missing Z, etc.)
+/// returns <code>"INVALID"</code>. The strictness matches the canonical
+/// shape <CLASS>SessionAgent.Audit.LlmCall</CLASS> /
+/// <CLASS>SessionAgent.Audit.ToolCall</CLASS> store and the form
+/// <method>NormalizeIsoZ</method> emits.</p>
+ClassMethod IsoZToOdbc(pIsoZ As %String) As %String
+{
+    If pIsoZ = "" Quit ""
+    If $Length(pIsoZ) '= 20 Quit "INVALID"
+    If $Extract(pIsoZ, 11) '= "T" Quit "INVALID"
+    If $Extract(pIsoZ, 20) '= "Z" Quit "INVALID"
+    ; Strip the Z, replace T with space.
+    Quit $Translate($Extract(pIsoZ, 1, 19), "T", " ")
+}
+
 }

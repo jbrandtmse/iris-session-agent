@@ -347,4 +347,47 @@ Method TestConcurrencyLockSerializesTwoCallers()
     Quit
 }
 
+/// <p>Story 3.0 AC-5 — <method>LoadOrCreate</method> must reject empty
+/// triple-key components (<var>pAgentName</var>, <var>pSessionKey</var>,
+/// <var>pPortalUser</var>). The pre-Story-3.0 behavior was to silently
+/// create rows with empty keys, which the unique <code>ConvKeyIdx</code>
+/// then collided with on the next legitimate call. The new contract:
+/// returns <code>$$$NULLOREF</code> with a structured
+/// <code>$$$ERROR($$$GeneralError, ...)</code> in <var>pStatus</var>.</p>
+Method TestLoadOrCreateRejectsEmptyArgs()
+{
+    ; Empty AgentName.
+    Set tStatus = $$$OK
+    Set tHist = ##class(SessionAgent.Chat.History).LoadOrCreate("", "S", "alice", "", .tStatus)
+    Do $$$AssertEquals($IsObject(tHist), 0, "empty pAgentName returns $$$NULLOREF")
+    Do $$$AssertStatusNotOK(tStatus, "empty pAgentName populates pStatus with error")
+    Do $$$AssertTrue($System.Status.GetErrorText(tStatus) [ "non-empty", "status text mentions 'non-empty'")
+
+    ; Empty SessionKey.
+    Set tStatus2 = $$$OK
+    Set tHist2 = ##class(SessionAgent.Chat.History).LoadOrCreate("session-inspection", "", "alice", "", .tStatus2)
+    Do $$$AssertEquals($IsObject(tHist2), 0, "empty pSessionKey returns $$$NULLOREF")
+    Do $$$AssertStatusNotOK(tStatus2, "empty pSessionKey populates pStatus with error")
+
+    ; Empty PortalUser.
+    Set tStatus3 = $$$OK
+    Set tHist3 = ##class(SessionAgent.Chat.History).LoadOrCreate("session-inspection", "S", "", "", .tStatus3)
+    Do $$$AssertEquals($IsObject(tHist3), 0, "empty pPortalUser returns $$$NULLOREF")
+    Do $$$AssertStatusNotOK(tStatus3, "empty pPortalUser populates pStatus with error")
+
+    ; All empty — same shape (defense-in-depth, the first check fires).
+    Set tStatus4 = $$$OK
+    Set tHist4 = ##class(SessionAgent.Chat.History).LoadOrCreate("", "", "", "", .tStatus4)
+    Do $$$AssertEquals($IsObject(tHist4), 0, "all-empty returns $$$NULLOREF")
+    Do $$$AssertStatusNotOK(tStatus4, "all-empty populates pStatus with error")
+
+    ; Sanity — verify no row was created on any of the four guard paths.
+    Set tStmt = ##class(%SQL.Statement).%New()
+    Do tStmt.%Prepare("SELECT COUNT(*) AS Cnt FROM SessionAgent_Chat.History")
+    Set tRS = tStmt.%Execute()
+    Do tRS.%Next()
+    Do $$$AssertEquals(tRS.Cnt, 0, "no garbage rows persisted by the four rejected calls")
+    Quit
+}
+
 }

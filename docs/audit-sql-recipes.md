@@ -28,6 +28,27 @@ case of values (so `OpenAI` and `openai` are treated as different) and to
 ensure case-sensitive WHERE-clause matching. If you remove `%EXACT()`, you
 may see incorrect grouping or matching due to case folding.
 
+### Note on `Timestamp` filtering — lexical, not temporal
+
+`SessionAgent_Audit.LlmCall.Timestamp` and
+`SessionAgent_Audit.ToolCall.Timestamp` are stored as `%String` (not
+`%TimeStamp` or `%PosixTime`), so SQL predicates like
+`WHERE Timestamp >= ?` perform **lexical (string) comparison**, not
+temporal arithmetic. The recipes below work correctly **only when the
+parameter is in the same fixed-width 20-character ISO-8601 form the
+rows use** (`YYYY-MM-DDTHH:MM:SSZ`, e.g. `2026-05-03T19:30:45Z`). A
+non-padded form like `2026-5-3T00:00:00Z` (single-digit month/day) sorts
+incorrectly under string comparison and will silently exclude or include
+the wrong rows. Always construct the parameter via:
+
+```objectscript
+Set tIso = $Translate($ZDateTime($ZTimeStamp, 3, 1), " ", "T") _ "Z"
+```
+
+`$ZTimeStamp` is UTC and `$ZDateTime(_, 3, 1)` produces the canonical
+fixed-width ODBC form, which when re-stamped with `T` and `Z` is
+byte-identical to the row format.
+
 ---
 
 ## Recipe 1 — How many tokens did we spend yesterday?

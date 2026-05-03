@@ -162,6 +162,15 @@ ClassMethod LoadOrCreate(pAgentName As %String, pSessionKey As %String, pPortalU
 {
     Set tHist = $$$NULLOREF
     Set pStatus = $$$OK
+    ; Story 3.0 AC-5 — non-empty validation. Empty triple-key components
+    ; produce silent garbage rows that the unique ConvKeyIdx then collides
+    ; with on the next legitimate call. Reject up front; existing callers
+    ; (test fixtures, AgentLoop) all pass real values so backward-compat
+    ; preserved.
+    If (pAgentName = "") || (pSessionKey = "") || (pPortalUser = "") {
+        Set pStatus = $$$ERROR($$$GeneralError, "LoadOrCreate: pAgentName / pSessionKey / pPortalUser must all be non-empty")
+        Quit $$$NULLOREF
+    }
     Try {
         ; Lookup-or-create: ConvKeyIdxExists sets tId by ref when the
         ; tuple already has a row.

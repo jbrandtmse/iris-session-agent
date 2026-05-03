@@ -117,6 +117,24 @@ ClassMethod Dispatch(pToolName As %String, pCallerCtx As SessionAgent.Agent.Call
     Set tIsError = 0
     Set tErrorText = ""
     Set tDispatchAttempted = 0
+    ; Story 3.0 AC-6 — pCallerCtx validation. A NULLOREF or wrong-type
+    ; pCallerCtx is an internal programming error (the only legitimate
+    ; caller is AgentLoop.RunTurn which constructs a fresh
+    ; SessionAgent.Agent.CallerContext at the trust boundary). Surface
+    ; via the standard envelope rather than crashing the dispatch — the
+    ; downstream audit emit + envelope-based contract still hold per
+    ; Rule 8 Fix #5 ("always-audit semantics still apply").
+    If '$IsObject($Get(pCallerCtx)) || ('pCallerCtx.%IsA("SessionAgent.Agent.CallerContext")) {
+        Set pResult = {"isError":(1), "content":[{"type":"text", "text":"Internal: dispatch invoked without CallerContext"}]}
+        Set tIsError = 1
+        Set tErrorText = "Dispatch invoked with NULLOREF or wrong-type pCallerCtx"
+        Set tLatencyMs = 0
+        ; Always-audit semantics — write the audit row even on this guard
+        ; path (NFR-S4 100% completeness). ChatHistoryId is empty because
+        ; we have no caller context to derive it from.
+        Do ##class(SessionAgent.Audit.Emit).LogToolCall("", pToolName, "", pResult.%ToJSON(), tLatencyMs, tIsError, tErrorText, "", "", "")
+        Quit $$$OK
+    }
     Try {
         ; Step 1 — Lookup. Resolve pToolName to a concrete class.
         Set tClassName = ..ResolveToolName(pToolName)

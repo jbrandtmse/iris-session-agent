@@ -73,8 +73,19 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
             Quit
         }
 
+        ; Story 3.0 AC-3 — case-insensitive min_severity filter + structured
+        ; error on unknown values. Trim whitespace, lowercase, then validate
+        ; against the accepted set. The previous Story 2.11 implementation
+        ; matched only the exact string "error" silently — operators passing
+        ; "ERROR" / "Error" / "warning " got silent no-ops with no signal.
+        Set tMinSevNormalized = $ZConvert($ZStrip(tMinSev, "<>W"), "L")
+        If (tMinSevNormalized '= "") && (tMinSevNormalized '= "info") && (tMinSevNormalized '= "warning") && (tMinSevNormalized '= "error") {
+            Set pResult = {"isError":(1), "content":[{"type":"text","text":("min_severity must be one of: info, warning, error (got: " _ tMinSev _ ")")}]}
+            Quit
+        }
+
         Set tSql = "SELECT ID AS id, %EXACT(SourceConfigName) AS source_config_name, %EXACT(TargetConfigName) AS target_config_name, %EXACT(MessageBodyClassName) AS body_class, Status AS status, TimeCreated AS time_created, IsError AS is_error FROM Ens.MessageHeader WHERE SessionId = ?"
-        If tMinSev = "error" {
+        If tMinSevNormalized = "error" {
             Set tSql = tSql _ " AND IsError = 1"
         }
         Set tSql = tSql _ " ORDER BY ID ASC"
@@ -93,7 +104,8 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
             Do tHdr.%Set("target_config_name", tRs.%Get("target_config_name"))
             Do tHdr.%Set("body_class", tRs.%Get("body_class"))
             Do tHdr.%Set("status", +tRs.%Get("status"), "number")
-            Do tHdr.%Set("time_created", tRs.%Get("time_created"))
+            ; Story 3.0 AC-2 — normalize TimeCreated to canonical ISO-8601 UTC Z.
+            Do tHdr.%Set("time_created", ##class(SessionAgent.Tool.Base).NormalizeIsoZ(tRs.%Get("time_created")))
             Do tHdr.%Set("is_error", +tRs.%Get("is_error"), "boolean")
             Do tHeaders.%Push(tHdr)
             Set tCount = tCount + 1

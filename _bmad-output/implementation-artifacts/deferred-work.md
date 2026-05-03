@@ -187,6 +187,27 @@ This file accumulates findings, follow-ups, and architect-decision items that ar
 
 ---
 
+## Deferred from: code review of story-2.5-audit-ledger-schema-emit-helpers-recipe-doc (2026-05-03)
+
+- **`OnAfterOneTest` and similar helpers in `AuditTest.cls` set `tOrigNS = $NAMESPACE` inside the Try block.** If the read of `$NAMESPACE` ever threw (it cannot — it's a literal special-variable read), the Catch block's `Set $NAMESPACE = tOrigNS` would `<UNDEFINED>` error. Defensive practice (already used in `Audit.Emit.RegisterIfMissing` and `EnsureEvents`) is to set `tOrigNS` BEFORE the Try block. Cosmetic; functionally fine because `Set tOrigNS = $NAMESPACE` cannot throw.
+  - **Severity:** LOW.
+  - **Locations:** `src/SessionAgent/Test/AuditTest.cls:69-78` (`OnAfterOneTest`), 243-251 (`TestRegisterIfMissingIsIdempotent`), 265-287 (`TestEpic1AuditEmitTripleRegistrationIntact`).
+  - **What to do if it bites:** never — but if a future story adds a similar pattern, hoist the `Set tOrigNS` out of the Try block to match the production-code pattern in `Audit.Emit`.
+
+- **No indices on `Timestamp` for either audit table (`SessionAgent.Audit.LlmCall` / `Audit.ToolCall`).** Recipes 1, 3, and 4 all filter `WHERE Timestamp >= ?`. Without an index on `Timestamp`, every recipe full-scans the extent. For the hobby-scale audit volume Story 2.5 ships against, this is fine. Once production volume grows (or once the recipes start running on every operator dashboard refresh), an index will become necessary.
+  - **Severity:** LOW (out of Story 2.5 spec scope).
+  - **Locations:** `src/SessionAgent/Audit/LlmCall.cls`, `src/SessionAgent/Audit/ToolCall.cls`.
+  - **What to do if it bites:** add `Index TimestampIdx On Timestamp;` to both classes; recompile; the Storage section regenerates with the index map. Verify recipe 1's full-scan latency before/after on a populated table to confirm impact.
+
+- **Recipe doc lacks an explicit operator note that `Timestamp` comparisons are lexical (string), not temporal.** Because `Timestamp` is `%String` (not `%TimeStamp` or `%Library.PosixTime`), `WHERE Timestamp >= ?` is a string comparison. The query works correctly only when the parameter is in the same fixed-width ISO-8601 form the rows use (`YYYY-MM-DDTHH:MM:SSZ`, 20 chars). A non-padded format like `2026-5-3T00:00:00Z` (no leading zeros) sorts incorrectly relative to `2026-05-03T00:00:00Z`. The corrected ObjectScript snippets in Recipes 1 and 2 produce the right shape, so an operator who copies the snippets is safe; the gap is for operators who hand-construct timestamps.
+  - **Severity:** LOW (operator polish).
+  - **Locations:** `docs/audit-sql-recipes.md`.
+  - **What to do if it bites:** add a short note under the §"Note on case-sensitivity" section explaining the string-comparison contract and the exact ISO format the rows use.
+
+- **Source:** Story 2.5 code review (2026-05-03). Two MED findings were auto-fixed in the same review pass: (1) `LogToolCall` now calls `RegisterIfMissing` BEFORE the row save so a registration failure does not leave a persisted row behind that a retry would duplicate; (2) `docs/audit-sql-recipes.md` Recipe 1 and Recipe 2 ObjectScript snippets corrected to produce well-formed ISO-8601 UTC parameters (the originals constructed malformed strings).
+
+---
+
 ## Resolved during Story 1.5 verification (2026-05-02) — superseded by README §"Operator Prerequisites" §1
 
 - **`zpm` was installed in `%SYS` but not mapped into HSCUSTOM. Required `zpm "enable -map -globally"`.**

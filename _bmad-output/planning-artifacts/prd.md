@@ -63,7 +63,7 @@ This PRD is the planning artifact between the [Product Brief](product-brief-iris
 7. [Developer-Tool-Specific Requirements](#developer-tool-specific-requirements) — language matrix, install, plugin contracts, code examples
 8. [Project Scoping & Phased Development](#project-scoping--phased-development) — MVP cut rationale, resource posture, risk mitigation
 9. [Functional Requirements](#functional-requirements) — 59 FRs across 8 capability areas (binding capability contract)
-10. [Non-Functional Requirements](#non-functional-requirements) — 30 NFRs across 7 categories + 4 deliberate exclusions
+10. [Non-Functional Requirements](#non-functional-requirements) — 33 NFRs across 7 categories + 4 deliberate exclusions
 
 ## Executive Summary
 
@@ -159,12 +159,17 @@ The product passes its technical bar when the platform invariants hold under ope
 
 ### MVP — Minimum Viable Product
 
-**The pre-alpha demo-able artifact (≈ end of Epic 3 in the consolidated 10-epic v1 sequence — see [`epics.md`](epics.md)):**
+**MVP delivery spans two checkpoints in the consolidated 10-epic v1 sequence — see [`epics.md`](epics.md):**
+
+- **Epic 3 — first demo-able artifact:** ships the operator's first delight moment with the **3 example inspection tools** (`session_summary`, `session_timeline`, `message_headers`) wired through the full agent loop + UI. Story 3.7 is the PRD MVP first-delight gate.
+- **Epic 4 — MVP complete:** ships the **remaining 10 inspection tools**, completing the 13-tool catalog. Story 4.7 is the comprehensive read-only suite gate where the PRD's "all 13 tools dispatched" exit criterion (below) becomes satisfiable.
+
+**MVP scope (the binding feature set across Epics 1-4):**
 
 - **Single agent**: Session Inspection Agent only.
 - **Single provider**: OpenAI only.
 - **Embedded as a chat tab** in `SessionAgent.EnsPortal.VisualTrace` (subclass of `EnsPortal.VisualTrace`).
-- **13 inspection tools**: `session_summary`, `session_timeline`, `message_headers`, `event_log`, `rule_log`, `find_related_sessions`, `find_sessions_by_body`, `get_message_body`, `get_message_detail`, `get_business_process_source`, `get_business_process_instance`, `list_business_process_methods`, `explain_error`.
+- **13 inspection tools**: `session_summary`, `session_timeline`, `message_headers`, `event_log`, `rule_log`, `find_related_sessions`, `find_sessions_by_body`, `get_message_body`, `get_message_detail`, `get_business_process_source`, `get_business_process_instance`, `list_business_process_methods`, `explain_error` (3 ship in Epic 3, the remaining 10 in Epic 4).
 - **Three-layer read-only enforcement** (code discipline + dispatch policy gate + RBAC role `%SessionAgent_ReadOnly`).
 - **Audit logging** at LLM round-trip and tool dispatch granularity.
 - **Per-agent Zen config page** (`SessionAgent.UI.AgentConfig`) — single-agent variant.
@@ -172,7 +177,7 @@ The product passes its technical bar when the platform invariants hold under ope
 - **IPM-installable**: `zpm install iris-session-agent` against IRIS 2024.1+.
 - **README operator prerequisites**: Web Gateway timeout 60s → 300s, RBAC role grant, OpenAI API key in env-var or `Ens.Config.Credentials`.
 
-**Why MVP scope ends here**: the operator's first delight moment ("type *what happened?* into a Visual Trace tab and watch a coherent answer come back") is reachable without the second agent or the three additional providers. Pre-alpha distribution from this baseline is the lowest-friction validation surface.
+**Why MVP scope ends at Epic 4**: the operator's first delight moment ("type *what happened?* into a Visual Trace tab and watch a coherent answer come back") is reachable at Epic 3 with the 3 example tools — pre-alpha distribution can begin there. The full 13-tool catalog at Epic 4 closes out MVP and gates Growth-tier work. Both checkpoints precede the second agent and the three additional providers.
 
 ### Growth Features (Post-MVP, completing v1)
 
@@ -420,13 +425,13 @@ This product follows the brief's directive: **plan the full v1 scope in PRD / ar
 | **Inspection only, fewer tools** | Each of the 13 inspection tools maps to one of the six data surfaces or to a multi-surface correlation; cutting tools cuts the cross-surface promise. Tool count is the value proposition, not optional scope. |
 | **No audit logging / no read-only in MVP** | Read-only enforcement is a *trust foundation*, not a feature — operators won't deploy to production without it. Cutting either re-introduces the scope at zero leverage during pilot. |
 
-**MVP exit criteria** — the gate from MVP to Growth-tier work:
+**MVP exit criteria** — the gate from MVP (end of Epic 4) to Growth-tier work (Epic 5+):
 
-1. The pre-alpha demo-able OpenAI-powered Inspection Agent reaches an operator's hands (Success Criteria → "Pre-alpha demo-able milestone").
-2. ≥1 operator self-reports a real diagnosis happening through the agent (validates the *fit* claim).
-3. The audit log shows the agent dispatched all 13 tools at least once across real sessions (validates the cross-surface claim).
+1. The pre-alpha demo-able OpenAI-powered Inspection Agent reaches an operator's hands at end of Epic 3 (Success Criteria → "Pre-alpha demo-able milestone"). Validated by Story 3.7.
+2. ≥1 operator self-reports a real diagnosis happening through the agent (validates the *fit* claim). Validated by Story 3.7 + ongoing pilot use.
+3. The audit log shows the agent dispatched all 13 tools at least once across real sessions (validates the cross-surface claim). **Satisfiable only at end of Epic 4** (Stories 4.1–4.7 ship the remaining 10 tools beyond Epic 2's 3 example tools); Story 4.7's comprehensive read-only suite is the structural gate.
 
-Once these gate, Growth-tier work proceeds: Search Agent, three additional providers, vocabulary learning, body-content search, vendored Markdown bundle, concurrent-tab safety.
+Once all three gate, Growth-tier work proceeds: Search Agent, three additional providers, vocabulary learning, body-content search, vendored Markdown bundle, concurrent-tab safety.
 
 ### Resource Requirements
 
@@ -436,7 +441,7 @@ Once these gate, Growth-tier work proceeds: Search Agent, three additional provi
 
 - **Scope cuts are the response to over-budget, not deadline pushes.** If the project consumes more time than the author can sustainably give, the response is to defer Growth-tier items (search agent, additional providers, vocabulary learning, vendored Markdown) — *not* to compromise on MVP quality, audit completeness, or the read-only invariant.
 - **Community PRs are an accelerant, not a baseline assumption.** The plan does not depend on outside contributors arriving. If they do (Tomás-style 5th provider, novel tool contributions), they help. If they don't, the maintainer ships without them.
-- **No date commitments anywhere.** Milestone gates (Epic 3 = MVP demo-able; Epic 7 = Inspection complete including chat-history lifecycle; Epic 10 = full v1 including Search Agent) drive release cadence; calendar time is whatever it takes. Epic numbers per [`epics.md`](epics.md) consolidated 10-epic v1 sequence.
+- **No date commitments anywhere.** Milestone gates (Epic 3 = MVP first-delight demo-able with 3 example tools; Epic 4 = MVP complete with full 13-tool catalog and MVP exit criteria #3 satisfiable; Epic 7 = Inspection complete including chat-history lifecycle; Epic 10 = full v1 including Search Agent) drive release cadence; calendar time is whatever it takes. Epic numbers per [`epics.md`](epics.md) consolidated 10-epic v1 sequence.
 
 ### Phased Roadmap
 

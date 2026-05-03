@@ -399,7 +399,7 @@ Story order within this epic preserves the architect's sub-step rationale: **Ant
 
 ### Epic 8: Search Agent — Foundation
 
-**Operator outcome:** Operator opens Message Viewer's "Ask the agent" tab, types *"find me failed admits from the last hour"* (or any natural-language query), gets a curated short-list of sessions matching the request — bounded by indexed prefilter + 24h `TimeCreated` window (max 720h). All 8 indexed-access tools work + body-content search via two-stage indexed-prefilter ≤50 candidates + `vocab_lookup` utility. Vocabulary persistence schemas exist; ~10 seed templates seeded by installer (HL7 idioms). Bounded-WHERE invariant test in CI fails any tool that violates.
+**Backend outcome (programmatic + via `vocab_lookup`):** All 8 indexed-access search tools + `InspectBodyCandidates` two-stage body-content search (≤50 candidates) + `VocabLookup` utility tool callable via `Tool.Registry.Dispatch`. Bounded-WHERE invariant enforced (every search SQL leads with ≥1 indexed column + 24h `TimeCreated` default, max 720h). Vocabulary persistence schemas exist; ~10 HL7-idiom seed templates seeded by installer. **Maintainer / pilot outcome:** maintainer validates Search Agent backend correctness via `%UnitTest` + `vocab_lookup` exploration before exposing to operators. The full operator outcome (Devin Journey 2 — opens Message Viewer's "Ask the agent" tab) is reached at end of **Epic 10** when the `EnsPortal.MessageViewer` subclass + chat panel UI ship — same "(maintainer checkpoint)" framing as Epic 2.
 
 Note: At end of Epic 8, the Search Agent is callable programmatically and via `vocab_lookup`; the **Message Viewer chat panel UI** lands in Epic 10. This split lets vocabulary learning (Epic 9) sit between foundation and UI without UI-side refactoring.
 
@@ -410,7 +410,7 @@ Note: At end of Epic 8, the Search Agent is callable programmatically and via `v
 
 ### Epic 9: Search Agent — Vocabulary Learning
 
-**Operator outcome:** Operator's per-user vocabulary aliases get learned silently from click-through (with confidence smoothing `Success / (Success + Failure + 1)`) and explicitly via *"save 'failed admits' as a query"*; vocabulary digest (top 20 user rows with confidence ≥ 0.3, capped ~1,200 tokens) is injected into the *first user message prefix* of each conversation, preserving Anthropic prompt-cache hit rate by not modifying the cached `system + tools` prefix. By the third *"admits"* query, the agent skips the seed-vocabulary detour entirely.
+**Backend outcome:** Vocabulary capture (silent click-through + explicit-save) is callable via `UserVocabulary.RecordSuccess`/`RecordFailure` ClassMethods (with confidence smoothing `Success / (Success + Failure + 1)` via recursion-safe `%OnAfterSave`) and via Epic 8 Story 8.7's `vocab_lookup mode='save'`. Vocabulary digest assembly (top 20 user rows with confidence ≥ 0.3, capped ~1,200 tokens) is wired into `AgentLoop` as a first-user-message prefix — preserves Anthropic prompt-cache hit rate. **Maintainer / pilot outcome:** maintainer validates vocabulary learning end-to-end via `%UnitTest` + explicit `vocab_lookup mode='save'` calls. The full operator outcome (click-through silently captures vocabulary while operator clicks search results in the Message Viewer chat panel — by the third *"admits"* query, the agent skips seed vocabulary entirely) is reached at end of **Epic 10** when Story 10.3's click-through wiring calls Epic 9 Story 9.5's `RecordClickThrough` ZenMethod hyperevent stub.
 
 **FRs covered:** FR21, FR22, FR24
 **ARs covered:** AR12 (UserVocabulary recursion-safe `%OnAfterSave`), AR13-Epic9 (`%OnAfterSave` non-recursion + `SynthesizeAlias` determinism Task-0 probes)
@@ -459,6 +459,44 @@ The architect's [Architecture §"Decision Impact Analysis → Implementation Seq
 | **Vision tier — deferred** | architecture Epic 18 | `NamespaceVocabulary` cross-user baseline population — schema ships in Epic 8, population logic is post-v1 per PRD §Vision. |
 
 **Cross-reference convention.** Story files produced in Step 3 will cite both indices in dev notes — e.g., *"implements architecture Epic 8 (AnthropicProvider) per architecture.md §'Decision Impact Analysis → Implementation Sequence'"* — so dev agents picking up a story can find the architecture context regardless of which numbering they encounter first. The bidirectional mapping table also lives in architecture.md §"Implementation Sequence" so the reverse direction is just as discoverable.
+
+## Cross-Cutting Story Patterns
+
+Three patterns recur across the epic breakdown and warrant a single explanation here so first-time readers (human or AI dev agent) can recognize them on first encounter:
+
+### 1. Defensive-stub-now, enrich-later
+
+A story ships a working stub that depends on (or anticipates) a class/schema that lands in a later story; the later story enriches the stub without changing its public contract. This lets earlier epics ship without forward-dependency violations while later epics deliver the full feature.
+
+Three instances in v1:
+- **Story 1.5 → Story 2.4**: `Installer.Install` (Epic 1) defensively skips `Config.Agent` row seeding if the class doesn't exist; Story 2.4 (Epic 2) ships the schema and the seeding flips on at the next install.
+- **Story 1.5 → Stories 7.2 / 10.6**: `Installer.Install` defensively skips Task Manager registration for sweep classes (`PurgeOrphanedChatHistory`, `PurgeStaleSearchChat`, `UserVocabularyDecay`) if the task class doesn't exist; Stories 7.2 (Epic 7) and 10.6 (Epic 10) ship the task implementations and registration flips on.
+- **Story 8.7 → Story 9.2**: `vocab_lookup mode='save'` (Epic 8) implements `RecordSuccess` inline as a basic open-or-create + increment + save; Story 9.2 (Epic 9) promotes it to a class-level `ClassMethod` on `UserVocabulary` and adds the recursion-safe `%OnAfterSave` Confidence-recomputation trigger. Story 8.7's call delegates to the new ClassMethod once it lands; no behavioral change beyond consolidation.
+
+In every case the stub story's AC explicitly notes the deferred enrichment, and the enrichment story's AC explicitly notes which earlier story it consolidates. No silent dependency.
+
+### 2. "Maintainer / pilot checkpoint" framing for backend-before-UI epics
+
+Three epics (2, 8, 9) ship backend-only deliverables that don't reach a real operator until a later UI epic ships. Their "Operator outcome" headers explicitly use **maintainer-checkpoint or backend-outcome** framing rather than implying an operator-facing experience that doesn't yet exist:
+
+- **Epic 2** (Inspection Agent backend) → operator outcome lands in Epic 3.
+- **Epic 8** (Search Agent backend + tool catalog) → operator outcome lands in Epic 10.
+- **Epic 9** (Search Agent vocabulary learning) → operator outcome (silent click-through capture) lands in Epic 10.
+
+The framing acknowledges that the maintainer (Joshua) is the user for these epics — verifying backend correctness via `%UnitTest` + programmatic dispatch before exposing pilot operators to a half-baked surface. This is justified for v1's single-maintainer hobby-project posture; combining each backend epic with its UI epic would produce unmanageably large epics (Epic 2 alone has 12 stories).
+
+### 3. Carry-forward Task-0 probes anchored at first cross-codebase consumer
+
+Per `research-first.md` rule 4, six probes verify uncertain runtime primitives on the operator's IRIS 2024.1+ instance before code that depends on them ships. Each probe is anchored at the **first story across the codebase that needs the primitive**, and downstream consumers reuse the captured shape rather than re-probing. The carry-forward set:
+
+- **Web Gateway "Server Response Timeout" verbatim default** → Story 1.2 (README operator-prerequisite authoring needs the exact value to embed).
+- **`%Dictionary.MethodDefinition.%OpenId(...)` returns non-null on 2024.1** → Story 2.10 (`Tool.Registry` reflection needs to enumerate registered tools).
+- **`EnsLib.HL7.SearchTable` row shape `(DocId, PropName, PropValue)` on operator's instance** → Story 4.6 (`FindSessionsByBody` is the first cross-codebase SearchTable consumer); Story 8.5 (`SearchByBodyField`) reuses the captured shape.
+- **`&sql(SELECT 1 INTO :exists FROM Ens.MessageHeader WHERE %EXACT(SessionId)='...')` SQLCODE=0/100 semantics on 2024.1** → Story 7.1 (`PurgeOrphanedChatHistory` orphan-detection probe).
+- **`%OnAfterSave` issuing direct SQL UPDATE on the same row does NOT re-fire on 2024.1** → Story 9.1 (`UserVocabulary.Confidence` recomputation needs the non-recursion guarantee).
+- **`SynthesizeAlias` deterministic stringification across ~10 reordering scenarios** → Story 9.1 (vocabulary alias capture needs deterministic keys).
+
+Each probe story records the probe output verbatim in its Tasks/Subtasks block before proceeding to AC; if a probe fails, the story escalates for a defer/redesign decision before any production code is written.
 
 ---
 
@@ -1898,9 +1936,9 @@ So that the sweep is structurally validated against realistic operator-grade dat
 
 ## Epic 8: Search Agent — Foundation
 
-**Operator outcome:** Operator opens Message Viewer's "Ask the agent" tab (Epic 10's UI subclass — Epic 8 ships the backend), types *"find me failed admits from the last hour"* (or any natural-language query), gets a curated short-list of sessions matching the request — bounded by indexed prefilter + 24h `TimeCreated` window (max 720h). All 8 indexed-access tools work + body-content search via two-stage indexed-prefilter ≤50 candidates + `vocab_lookup` utility. Vocabulary persistence schemas exist; ~10 seed templates seeded by installer (HL7 idioms). Bounded-WHERE invariant test in CI fails any tool that violates.
+**Backend outcome (programmatic + via `vocab_lookup`):** All 8 indexed-access search tools (`SearchByTime`, `SearchByStatus`, `SearchBySource`, `SearchByTarget`, `SearchByMessageClass`, `SearchBySession`, `SearchBySuperSession`, `SearchByBodyField`) + `InspectBodyCandidates` two-stage body-content search (≤50 candidates, reuses Epic 4's body-class dispatch ladder) + `VocabLookup` utility tool are callable via `Tool.Registry.Dispatch`. Bounded-WHERE invariant test in CI fails any tool that violates (every search SQL leads with ≥1 indexed column + 24h `TimeCreated` default window, max 720h). Vocabulary persistence schemas (`UserVocabulary`, `SeedVocabulary`, `NamespaceVocabulary`) exist; ~10 HL7-idiom seed templates seeded by installer.
 
-Note: At end of Epic 8, the Search Agent is callable programmatically and via `vocab_lookup`; the **Message Viewer chat panel UI** lands in Epic 10. This split lets vocabulary learning (Epic 9) sit between foundation and UI without UI-side refactoring.
+**Maintainer / pilot outcome:** Maintainer can validate Search Agent backend correctness via `%UnitTest` (`Test/SearchToolTest`) + `vocab_lookup` exploration before exposing to operators. The full operator outcome (Devin Journey 2 — opens Message Viewer's "Ask the agent" tab, types *"find me failed admits from the last hour"*, gets a curated session list) is reached at end of **Epic 10** when the `EnsPortal.MessageViewer` subclass + chat panel UI ship. This Epic 8 / Epic 10 split lets vocabulary learning (Epic 9) sit between foundation and UI without UI-side refactoring — same transparent "(maintainer checkpoint)" framing pattern Epic 2 uses for the Inspection Agent backend before Epic 3's UI ships.
 
 **Stories (in order — each completable based only on previous stories within this epic):**
 
@@ -2123,7 +2161,9 @@ So that operators can manage their personal vocabulary via the agent itself with
 
 ## Epic 9: Search Agent — Vocabulary Learning
 
-**Operator outcome:** Operator's per-user vocabulary aliases get learned silently from click-through (with confidence smoothing `Success / (Success + Failure + 1)`) and explicitly via *"save 'failed admits' as a query"*; vocabulary digest (top 20 user rows with confidence ≥ 0.3, capped ~1,200 tokens) is injected into the *first user message prefix* of each conversation, preserving Anthropic prompt-cache hit rate by not modifying the cached `system + tools` prefix. By the third *"admits"* query, the agent skips the seed-vocabulary detour entirely.
+**Backend outcome:** Vocabulary capture mechanism (silent click-through + explicit-save) is callable via Epic 9 Story 9.2's `UserVocabulary.RecordSuccess` / `RecordFailure` ClassMethods (with confidence smoothing `Success / (Success + Failure + 1)` via recursion-safe `%OnAfterSave` direct-SQL UPDATE) and via Epic 8 Story 8.7's `vocab_lookup mode='save'`. Vocabulary digest assembly (top 20 user rows with confidence ≥ 0.3, capped ~1,200 tokens, with seed-vocabulary fallback for first-time users) is wired into `AgentLoop` as a first-user-message prefix — preserves Anthropic prompt-cache hit rate by not modifying the cached `system + tools` prefix (validated by NFR-P6 test).
+
+**Maintainer / pilot outcome:** Maintainer can validate vocabulary learning end-to-end via `%UnitTest` (`Test/SearchVocabularyTest`) + explicit `vocab_lookup mode='save'` calls. The full operator outcome (click-through silently captures vocabulary while operator clicks search results in the Message Viewer chat panel — by the third *"admits"* query the agent skips seed vocabulary entirely) is reached at end of **Epic 10** when Story 10.3's click-through wiring calls Epic 9 Story 9.5's `RecordClickThrough` ZenMethod hyperevent stub. Epic 9 ships the stub + the full backend; Epic 10's UI calls into it. Same "(maintainer checkpoint)" framing pattern as Epic 2 and Epic 8.
 
 **Stories (in order — each completable based only on previous stories within this epic):**
 
@@ -2626,9 +2666,15 @@ So that we explicitly satisfy [PRD §"Product Scope" v1 completion](prd.md): bot
 **And** the operator's overall time-to-resolution matches or beats their pre-product baseline (NFR-P5; informally validated by self-report)
 **And** the maintainer captures a 1-paragraph operator quote for the v1.0.0 release notes
 
+**Given** the v1 release tag is being prepared
+**When** the maintainer runs the full FR59 cross-matrix gate
+**Then** the maintainer re-runs `Test.ToolCallRoundtripIntegrationTest` (Story 5.4) against the **complete v1 tool catalog** — 13 inspection tools (from Stories 2.11 + 4.1–4.7) + 10 search tools (from Stories 8.3–8.7) = 23 tools × 4 providers = 92 combinations — and asserts `successful_combinations == 92`
+**And** any combination that fails surfaces with `provider=<name>, tool=<name>, reason=<...>` and blocks the v1.0.0 release tag until resolved
+**And** the test output is recorded in the release notes for FR59 traceability
+
 **Given** the v1 completion walkthrough succeeds
 **When** the maintainer documents v1 release readiness
 **Then** the maintainer creates the `v1.0.0` release tag (or updates the milestone tracker to mark v1 complete)
 **And** the README + `docs/operator-quickstart.md` are updated with any feedback worth incorporating
 **And** the Open Exchange listing is created/updated per architecture OD10
-**And** the **Epic 10 acceptance gate is met + v1 SCOPE COMPLETE**: both agents working end-to-end, hand-off validated, vocabulary learning operational, sweep tasks scheduled, vendored Markdown bundle deployed, full UX coherence achieved
+**And** the **Epic 10 acceptance gate is met + v1 SCOPE COMPLETE**: both agents working end-to-end, hand-off validated, vocabulary learning operational, sweep tasks scheduled, vendored Markdown bundle deployed, full UX coherence achieved, FR59 cross-matrix gate passed against the full 23-tool catalog

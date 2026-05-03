@@ -61,7 +61,7 @@ _This document builds collaboratively through step-by-step discovery. Sections a
 | Installation & Operator Surface | FR48–FR54 | Single ZPM module, single Resource, no transitive deps; install creates RBAC role and bookmark URLs; vendored Markdown bundle at `/csp/static/iris-session-agent/`; README operator-prerequisites is a structural deliverable |
 | Developer Extensibility | FR55–FR59 | Pure dispatch contract `(toolName, jsonArgs) → jsonResult`; tool-call-roundtrip integration test gates each provider |
 
-**Non-Functional Requirements** — 30 NFRs across 7 categories that will drive architectural decisions:
+**Non-Functional Requirements** — 33 NFRs across 7 categories that will drive architectural decisions:
 
 - **Performance** (NFR-P1–P6): 90s per-call LLM cap, search-query latency under 90s on 1M-row extents, ≤50-candidate body-inspection cap, concurrent-tab serialization, 5-min → 1-min commitment-grade time savings, prompt-cache hit-rate preservation.
 - **Security** (NFR-S1–S6): three-layer read-only invariant, credential confinement (no API keys in config rows), credential resolution hygiene (no key material in audit rows), 100% audit completeness, public-OSS posture, tool dispatch purity (no `%session`/`%request`/Zen state coupling).
@@ -183,7 +183,7 @@ There is no `iris init` CLI. The first implementation story creates by hand at t
 
 ### Decision Posture
 
-The architecture for `iris-session-agent` is largely **pre-decided by upstream artifacts** — the PRD's 59 FRs + 30 NFRs, the two pure-ObjectScript research docs, the UX specification, and the project's saved memory facts together leave very little open at architecture-stage. This step's job is to (a) catalogue the locked decisions across the five canonical framework categories so they're inspectable in one place, and (b) surface the genuinely-open calibration decisions for explicit confirmation.
+The architecture for `iris-session-agent` is largely **pre-decided by upstream artifacts** — the PRD's 59 FRs + 33 NFRs, the two pure-ObjectScript research docs, the UX specification, and the project's saved memory facts together leave very little open at architecture-stage. This step's job is to (a) catalogue the locked decisions across the five canonical framework categories so they're inspectable in one place, and (b) surface the genuinely-open calibration decisions for explicit confirmation.
 
 ### Decision Priority Analysis
 
@@ -285,8 +285,9 @@ The architecture for `iris-session-agent` is largely **pre-decided by upstream a
 | State management | Vanilla JS + DOM; chat panel state in DOM, persistent state in `Chat.History` row (server) | UX, research |
 | Routing | None (no SPA); search→inspection hand-off via URL params `?SESSIONID=...&FROM_SEARCH=...` | UX Journey 2, research |
 | Citation deep-link | Parent's existing `selectItem` / `updateTabs` API (we subclass `EnsPortal.VisualTrace` directly); off-page items partial-sync in MVP | UX §"Component 4 — sa-citation-chip" |
-| Markdown rendering | Vendored `marked` ≥ 18.0.2 + `Prism.js` curated languages (ObjectScript, JS, JSON, SQL, HL7, XML) + `DOMPurify`; ~45 KB gzipped, served from `/csp/static/iris-session-agent/` | FR54, NFR-C5 |
-| Bundle optimization | Pre-minified vendored files; no build-time bundle step; one CSS file (`sessionagent-chat.css`) | UX |
+| Markdown rendering (Growth tier — Epic 10 Story 10.7) | Vendored `marked` ≥ 18.0.2 + `Prism.js` curated languages (ObjectScript, JS, JSON, SQL, HL7, XML) + `DOMPurify`; ~45 KB gzipped, served from `/csp/static/iris-session-agent/` | FR54, NFR-C5 |
+| **MVP Markdown render fallback (Epic 3 Story 3.2)** | **Plain-text-with-structure render path**: `chat-panel.js` renders agent message text by (1) HTML-escaping the raw text via `String.prototype.replace` substitutions for `&` `<` `>` `"` `'`, (2) substituting `\n` → `<br>` for line breaks, (3) detecting fenced code blocks (` ```lang\n…\n``` `) and wrapping their (escaped) contents in `<pre><code>` (no syntax highlighting in MVP — Prism.js lands in Story 10.7), (4) leaving inline backticks as literal escaped text. No external library at MVP — the render function is ~25 lines in `chat-panel.js`. **Growth-tier swap (Story 10.7) is transparent on the operator side**: same input contract (raw assistant Markdown), same output container (HTML injected into a transcript `<div>`), only the inner pipeline changes from "escape + `<br>` + fenced-code-detect" to "marked → Prism → DOMPurify". No XSS surface in MVP because all content is HTML-escaped before substitution; `<pre><code>` wraps escaped content. | FR54 (parenthetical), UX-DR14, PRD §"Vendored client-side Markdown rendering" |
+| Bundle optimization | Pre-minified vendored files (Growth tier); no build-time bundle step; one CSS file (`sessionagent-chat.css`) — Growth tier serves it from `/csp/static/iris-session-agent/`, MVP inlines the equivalent ~30-line styles via `ChatPanelDrawHelper.OnDrawContent` emitting a `<style>` block alongside the `<div>` skeleton (so MVP has no static-file dependency for styling). At Story 10.7 the inline `<style>` block is replaced by a `<link rel="stylesheet" href="/csp/static/iris-session-agent/sessionagent-chat.css"/>` reference. | UX, UX-DR14 |
 | Browser support | Evergreen Chrome / Firefox / Safari / Edge (latest two versions); desktop-only; English-only | NFR-C6, NFR-A1 |
 | Accessibility | Inherited from Mgmt Portal Zen; native HTML semantics + ARIA discipline (`aria-live`, `role="alert"`, `aria-disabled`); no independent WCAG conformance claimed | NFR-A1, UX §"Accessibility" |
 
@@ -862,7 +863,7 @@ iris-session-agent/
     │   ├── Util/                          # cross-cutting helpers
     │   │   ├── EnvSecret.cls              # env-var → Ens.Config.Credentials → AES-encrypted custom store
     │   │   ├── Json.cls                   # %DynamicObject helpers (null-emit, deep-merge, redact)
-    │   │   ├── Markdown.cls               # server-side hooks if needed (mostly client-side)
+    │   │   ├── Markdown.cls               # not needed in v1 — MVP render is client-side in chat-panel.js (escape + <br> + <pre><code>); Growth tier (Story 10.7) is also client-side via vendored marked + Prism + DOMPurify. Class file omitted unless a future story needs server-side rendering.
     │   │   └── RetryWithBackoff.cls       # full-jitter exponential backoff; honor Retry-After
     │   ├── Task/                          # sweep tasks (installed by Installer)
     │   │   ├── PurgeOrphanedChatHistory.cls   # daily 02:00 UTC; Topic-10 Option B inspection sweep
@@ -1162,7 +1163,7 @@ All architecturally-binding constraints reinforce each other; no contradictions 
 | Installation & Operator Surface (FR48–FR54) | 7/7 | ✅ |
 | Developer Extensibility (FR55–FR59) | 5/5 | ✅ |
 
-**Non-Functional Requirements coverage (all 30 NFRs):**
+**Non-Functional Requirements coverage (all 33 NFRs):**
 
 | NFR category | Count | Status |
 |---|---|---|
@@ -1201,7 +1202,7 @@ All architecturally-binding constraints reinforce each other; no contradictions 
 
 ### Gap Analysis Results
 
-**Critical gaps:** None. All 59 FRs and 30 NFRs are architecturally supported.
+**Critical gaps:** None. All 59 FRs and 33 NFRs are architecturally supported.
 
 **Important gaps (non-blocking, story-scoped):**
 
@@ -1255,7 +1256,7 @@ No critical issues found. All seven important gaps are story-scoped (Task-0 prob
 - [x] Complete directory structure defined (Step 6 file tree — ~50 ObjectScript classes + 12 vendored client-side files + config files)
 - [x] Component boundaries established (Step 6 §"Sub-package boundaries" table)
 - [x] Integration points mapped (Step 6 §"Integration Points")
-- [x] Requirements to structure mapping complete (Step 6 §"Requirements to Structure Mapping" — all 59 FRs + 30 NFRs traced)
+- [x] Requirements to structure mapping complete (Step 6 §"Requirements to Structure Mapping" — all 59 FRs + 33 NFRs traced)
 
 ### Architecture Readiness Assessment
 
@@ -1267,7 +1268,7 @@ All 16 checklist items are `[x]`. No critical gaps remain. All seven important g
 
 Most architectural decisions were locked by upstream artifacts (PRD, research docs, UX spec, saved memory) before architecture-stage; this document consolidates them and adds 10 calibration decisions + 3 pattern-stage decisions. Confidence is supported by:
 
-- Comprehensive PRD with 59 FRs + 30 NFRs already traced to acceptance criteria.
+- Comprehensive PRD with 59 FRs + 33 NFRs already traced to acceptance criteria.
 - Two pure-ObjectScript research docs (~22,000 words combined) that ran six structured steps each, with cited sources and explicit confidence levels per finding.
 - Local `irislib/` source verification of `Ens.MessageHeader` indexes, `Ens.SuperSessionIndex` shape, `Ens.Config.Credentials`, `%Net.HttpRequest`, encryption primitives.
 - UX spec with 14 completed steps including component-level detail and accessibility commitments.

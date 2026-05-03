@@ -146,7 +146,7 @@ The product passes its technical bar when the platform invariants hold under ope
 | Time savings on common diagnoses | Commitment: 5 min → 1 min; aspirational: 20-30 min → 30s | Operator self-report + side-by-side timing during pilots |
 | Junior-diagnosis enablement | ≥80% senior-agreement on a curated test set *(illustrative-pending-pilot)* | Senior reviewer scoring agent-produced summaries |
 | Pilot adoption | ≥1 named customer site running in production on-call | Direct operator confirmation |
-| Pre-alpha demo-able milestone | OpenAI-powered Inspection Agent reaches an operator's hands at end of Epic 6 | Milestone gate (no fixed date) |
+| Pre-alpha demo-able milestone | OpenAI-powered Inspection Agent reaches an operator's hands at end of Epic 3 | Milestone gate (no fixed date) |
 | Read-only enforcement | 0 non-SELECT statements observed in audit-log review | `SessionAgent.Audit.ToolCall` periodic audit |
 | Audit-log completeness | 100% of LLM round-trips and tool dispatches captured | Cross-check vs. agent-loop instrumentation |
 | Provider portability | Adding a 5th provider = one new subclass + registry entry, no shared-infra edits | Code-review verification when 5th provider is added |
@@ -159,7 +159,7 @@ The product passes its technical bar when the platform invariants hold under ope
 
 ### MVP — Minimum Viable Product
 
-**The pre-alpha demo-able artifact (≈ end of Epic 6 in the inspection-agent epic sequence):**
+**The pre-alpha demo-able artifact (≈ end of Epic 3 in the consolidated 10-epic v1 sequence — see [`epics.md`](epics.md)):**
 
 - **Single agent**: Session Inspection Agent only.
 - **Single provider**: OpenAI only.
@@ -436,7 +436,7 @@ Once these gate, Growth-tier work proceeds: Search Agent, three additional provi
 
 - **Scope cuts are the response to over-budget, not deadline pushes.** If the project consumes more time than the author can sustainably give, the response is to defer Growth-tier items (search agent, additional providers, vocabulary learning, vendored Markdown) — *not* to compromise on MVP quality, audit completeness, or the read-only invariant.
 - **Community PRs are an accelerant, not a baseline assumption.** The plan does not depend on outside contributors arriving. If they do (Tomás-style 5th provider, novel tool contributions), they help. If they don't, the maintainer ships without them.
-- **No date commitments anywhere.** Milestone gates (Epic 6 = MVP demo-able; Epic 11 = Inspection complete; Epic 17 = full v1) drive release cadence; calendar time is whatever it takes.
+- **No date commitments anywhere.** Milestone gates (Epic 3 = MVP demo-able; Epic 7 = Inspection complete including chat-history lifecycle; Epic 10 = full v1 including Search Agent) drive release cadence; calendar time is whatever it takes. Epic numbers per [`epics.md`](epics.md) consolidated 10-epic v1 sequence.
 
 ### Phased Roadmap
 

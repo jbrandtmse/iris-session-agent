@@ -794,7 +794,7 @@ Why Direction A over Direction B:
 
 **Sequencing:**
 
-- **MVP (Epic 6 demo-able):** ship Direction A's *minimum* — attribution prefix only, no background tint differentiation, no `--sa-*` tokens beyond what's strictly needed. Tool-call cards rendered as plain bordered divs. **Citation chips ship as real navigable links** that hook into the parent Visual Trace's existing `selectItem` / `updateTabs` API (research finding: feasible from day 1 because we're a subclass of `EnsPortal.VisualTrace`). The chat panel is visually plain but the trust loop is complete.
+- **MVP (Epic 3 demo-able — see [`epics.md`](epics.md)):** ship Direction A's *minimum* — attribution prefix only, no background tint differentiation, no `--sa-*` tokens beyond what's strictly needed. Tool-call cards rendered as plain bordered divs. **Citation chips ship as real navigable links** that hook into the parent Visual Trace's existing `selectItem` / `updateTabs` API (research finding: feasible from day 1 because we're a subclass of `EnsPortal.VisualTrace`). The chat panel is visually plain but the trust loop is complete.
 - **Growth (completing v1):** add the small `--sa-*` token set for subtle visual cohesion (background tints, citation-chip styling, status colors). Vendored Markdown bundle (`marked` + `Prism.js`) lands here. The chat panel reaches its final visual register.
 - **Post-pilot iteration:** if pilot operators report visual issues (e.g., "too easy to confuse chat content with parent panels"), targeted reinforcement — possibly drawing from Direction B's stronger differentiation patterns — happens in v1.5 or later.
 
@@ -1265,7 +1265,7 @@ This works because our chat panel runs inside our subclass of `EnsPortal.VisualT
 
 ### Implementation Roadmap
 
-**Phase 1 — MVP (Epic 6, pre-alpha demo-able): minimum viable chat UX**
+**Phase 1 — MVP (Epic 3, pre-alpha demo-able — see [`epics.md`](epics.md)): minimum viable chat UX**
 
 - `sa-chat-panel` (basic container, no concurrent-tab support)
 - `sa-message-block` (operator + agent variants only)

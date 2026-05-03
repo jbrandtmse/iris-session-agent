@@ -31,6 +31,13 @@ persistentMemoryFacts:
 project_name: 'iris-session-agent'
 user_name: 'Joshua Brandt'
 date: '2026-05-02'
+revisions:
+  - date: '2026-05-02'
+    by: 'bmad-create-epics-and-stories Step 2 (epic design)'
+    summary: 'Aligned epic numbering with epics.md 10-epic consolidated structure. Replaced §"Decision Impact Analysis → Implementation Sequence" 18-step enumeration with 10-epic v1 sequence; updated Implementation Handoff Epic-range references; updated 6 carry-forward Task-0 probes; updated 7 Gap Analysis Epic references; added §"Epic-Sequence Evolution" section preserving the architect''s original 18-step thinking as story-order rationale + bidirectional mapping table; updated §"Enforcement Guidelines" rule 13 (Epic 12+ → Epic 8+).'
+  - date: '2026-05-02'
+    by: 'bmad-create-epics-and-stories Step 4 (final validation)'
+    summary: 'Re-anchored EnsLib.HL7.SearchTable Task-0 probe from Epic 8 to Epic 4 Story 4.6 (FindSessionsByBody is the first cross-codebase SearchTable consumer; Epic 8 Story 8.5 SearchByBodyField reuses the captured shape). Updated §"Implementation Handoff → Carry-forward Task-0 probes" entries 3-6 with story numbers + re-anchoring note; updated Gap Analysis G5 reference.'
 ---
 
 # Architecture Decision Document — iris-session-agent
@@ -303,26 +310,20 @@ The architecture for `iris-session-agent` is largely **pre-decided by upstream a
 
 ### Decision Impact Analysis
 
-**Implementation sequence** (per Inspection Agent research Epic 1–11 + Search Agent research Epic 12–18):
+**Implementation sequence** — 10 consolidated epics for v1, organized by user-value-first (per [`epics.md`](epics.md)). Each epic delivers a meaningful operator outcome and stands alone; story order *within* each epic preserves the architect's original 18-step sub-sequence rationale (e.g., Epic 5 ships Anthropic first to validate the canonical-wire inversion early). The bidirectional mapping to the architect's original 18-step thinking lives in §"Epic-Sequence Evolution" below.
 
-1. **Epic 1** — IPM packaging + `Installer` skeleton + RBAC role + Audit-event registration. Unblocks every later story.
-2. **Epic 2** — LLM Provider abstraction + `OpenAIProvider` + `RetryWithBackoff` + `EnvSecret`.
-3. **Epic 3** — `Tool.Base` + `Tool.Registry` + 3 example Inspection tools.
-4. **Epic 4** — `Agent.AgentLoop` + `Chat.History` + concurrency locking.
-5. **Epic 5** — Shared chat-panel draw helper + client-side JS wrapper + ZenMethod hyperevent.
-6. **Epic 6** — `SessionAgent.EnsPortal.VisualTrace` subclass — **MVP demo-able milestone (PRD)**.
-7. **Epic 7** — Remaining 10 Inspection tools + read-only test suite.
-8. **Epic 8** — `AnthropicProvider` (concrete #2) + cross-provider integration tests.
-9. **Epic 9** — `SessionAgent.UI.AgentConfig` Zen page + per-agent secret routing.
-10. **Epic 10** — `GeminiProvider` (#3) + `OpenAICompatProvider` (#4).
-11. **Epic 11** — `PurgeOrphanedChatHistory` + lifecycle coupling.
-12. **Epic 12** — `Search.UserVocabulary` + `SeedVocabulary` + Installer additions.
-13. **Epic 13** — 8-tool search catalog + `VocabLookup` utility.
-14. **Epic 14** — Click-through capture + `RecordSuccess` method.
-15. **Epic 15** — `VocabularyDigest.Build` + first-user-message prefix injection.
-16. **Epic 16** — `SessionAgent.EnsPortal.MessageViewer` subclass + chat tab.
-17. **Epic 17** — `PurgeStaleSearchChat` TTL sweep + retention config.
-18. **Epic 18 (v1.5)** — `NamespaceVocabulary` cross-user baseline.
+1. **Epic 1** — Project Foundation & Installable Package: IPM packaging + `Installer` skeleton + RBAC role + Audit-event registration + README operator-prereqs + `docs/operator-quickstart.md`. Unblocks every later story; operator can install and verify the foundation.
+2. **Epic 2** — Inspection Agent Backend Plumbing: LLM Provider abstraction + `OpenAIProvider` + `RetryWithBackoff` + `EnvSecret` + `Tool.Base` + `Tool.Registry` + 3 example Inspection tools + `Agent.AgentLoop` + `Chat.History` + concurrency locking + audit interceptor + `docs/audit-sql-recipes.md`. Maintainer-validatable backend; `%UnitTest` smoke test exercises end-to-end against OpenAI.
+3. **Epic 3** — Inspection Agent UI MVP Demo-able Milestone: shared chat-panel draw helper + client-side JS wrapper + ZenMethod hyperevent + `SessionAgent.EnsPortal.VisualTrace` subclass + citation-chip integration via parent's `selectItem`/`updateTabs` API. **MVP demo-able milestone (PRD §Product Scope MVP exit criterion).**
+4. **Epic 4** — Inspection Agent Full Tool Catalogue: remaining 10 Inspection tools (event_log, rule_log, get_message_body's full 9-step body-class dispatch ladder, BP source/instance/methods, find_related_sessions, find_sessions_by_body, explain_error) + comprehensive read-only test suite.
+5. **Epic 5** — Multi-Provider Support: `AnthropicProvider` (#2 — validates inversion via direct canonical-shape implementation, enables prompt-caching of `system + tools` prefix) → `GeminiProvider` (#3 — camelCase wire + `error.details[].retryDelay` parsing) → `OpenAICompatProvider` (#4 — Ollama / vLLM / any compatible endpoint) + `Test/ToolCallRoundtripIntegrationTest.cls` (provider × tool gate, FR59).
+6. **Epic 6** — Per-Agent Configuration UI: `SessionAgent.UI.AgentConfig` Zen page + per-agent secret routing + hot config change validated.
+7. **Epic 7** — Inspection Chat-History Lifecycle: `PurgeOrphanedChatHistory` daily 02:00 UTC sweep + Topic-10 Option B coupling to `Ens.MessageHeader.Purge()` + 1,000-session integration test.
+8. **Epic 8** — Search Agent Foundation: `Search.UserVocabulary` + `SeedVocabulary` (~10 HL7 templates) + `NamespaceVocabulary` schema-only + Installer seed + 8-tool search catalog + `InspectBodyCandidates` two-stage body-content search + `VocabLookup` utility + `BoundedWhereInvariantTest`.
+9. **Epic 9** — Search Agent Vocabulary Learning: click-through capture + `RecordSuccess` method + `VocabularyDigest.Build` + first-user-message prefix injection (preserves Anthropic prompt-cache hit rate per NFR-P6) + `SynthesizeAlias` determinism test + `%OnAfterSave` recursion-safe direct-SQL UPDATE pattern.
+10. **Epic 10** — Search Agent UI Embed, Hand-off & TTL Sweep: `SessionAgent.EnsPortal.MessageViewer` subclass + chat tab + click-through hand-off → Inspection's "from search" stripe + concurrent-tab banner + `PurgeStaleSearchChat` TTL sweep (default 30d, configurable) + `UserVocabularyDecay` weekly Sunday sweep + vendored Markdown bundle (`marked` + `Prism.js` + `DOMPurify`) at `/csp/static/iris-session-agent/`. **Completes v1 scope.**
+
+**Vision tier (post-v1, deferred):** `NamespaceVocabulary` cross-user baseline population (schema ships in Epic 8) + the rest of [PRD §"Vision (Future, post-v1)"](prd.md). Not in any v1 epic.
 
 **Cross-component dependencies:**
 
@@ -674,7 +675,7 @@ If a single tool's `Invoke()` fails, the failed tool returns its `{isError:true,
 10. **Never `[Language = python]`** in any shipped class under `src/SessionAgent/`. Build-time/test fixtures may use Python; the runtime artifact may not.
 11. **Never edit Storage sections** of `%Persistent` classes. Compiler maintains them.
 12. **Read `irislib/<class>.cls` source** before using any IRIS system class for the first time in a story.
-13. **Run Task-0 probes** for every Epic 12+ story whose AC references a backend surface.
+13. **Run Task-0 probes** for every Epic 8+ story (Search Agent surface forward) whose AC references a backend surface — and for every story carrying one of the six pre-flight probes enumerated in §"Implementation Handoff → Carry-forward Task-0 probes" regardless of epic number.
 
 **Pattern enforcement mechanism:**
 
@@ -1206,13 +1207,13 @@ All architecturally-binding constraints reinforce each other; no contradictions 
 
 | ID | Gap | Disposition |
 |---|---|---|
-| **G1** | Inspection tool details (body-class dispatch, BP introspection, error decoder, 14-column trace projection) live in the 2026-04-24 partially-superseded research docs | Accept. Story dev notes for Epic 7 cite the specific sections; `cleanup-edit-proposal-2026-05-02.md` preserves the Ens.* schema content with explicit "preserved by reference" callouts. |
-| **G2** | Reuse mechanism for body-dispatch ladder between `Tool.Inspection.GetMessageBody` and `Tool.Search.InspectBodyCandidates` (direct cross-package call vs. extracted `SessionAgent.Body.DispatchLadder`) | Defer to Epic 13 — choice best made when writing `InspectBodyCandidates`. Both options compatible with this architecture. |
+| **G1** | Inspection tool details (body-class dispatch, BP introspection, error decoder, 14-column trace projection) live in the 2026-04-24 partially-superseded research docs | Accept. Story dev notes for Epic 4 cite the specific sections; `cleanup-edit-proposal-2026-05-02.md` preserves the Ens.* schema content with explicit "preserved by reference" callouts. |
+| **G2** | Reuse mechanism for body-dispatch ladder between `Tool.Inspection.GetMessageBody` and `Tool.Search.InspectBodyCandidates` (direct cross-package call vs. extracted `SessionAgent.Body.DispatchLadder`) | Defer to Epic 8 — choice best made when writing `InspectBodyCandidates`. Both options compatible with this architecture. |
 | **G3** | Web Gateway 60s default Task-0 probe (capture verbatim from operator's gateway) | Accept — story scope (Epic 1, operator README authoring). |
-| **G4** | `%Dictionary.MethodDefinition` reflection probe on 2024.1 | Accept — story scope (Epic 3, before tool registry generation). |
-| **G5** | `EnsLib.HL7.SearchTable` row shape probe | Accept — story scope (Epic 13, before `SearchByBodyField`). |
-| **G6** | `SynthesizeAlias` determinism unit test (~10 reordering scenarios) | Accept — story scope (Epic 14, before vocab capture). |
-| **G7** | `%OnAfterSave` non-recursion verification on 2024.1 | Accept — story scope (Epic 12, before vocab persistence). |
+| **G4** | `%Dictionary.MethodDefinition` reflection probe on 2024.1 | Accept — story scope (Epic 2, before tool registry generation). |
+| **G5** | `EnsLib.HL7.SearchTable` row shape probe | Accept — story scope (Epic 4 Story 4.6 `FindSessionsByBody`, re-anchored from Epic 8 since Inspection is first cross-codebase SearchTable consumer; Epic 8 Story 8.5 `SearchByBodyField` reuses the captured shape). |
+| **G6** | `SynthesizeAlias` determinism unit test (~10 reordering scenarios) | Accept — story scope (Epic 9, before vocab capture). |
+| **G7** | `%OnAfterSave` non-recursion verification on 2024.1 | Accept — story scope (Epic 9, before vocab persistence). |
 
 All gaps are story-scoped Task-0 probes or reference-doc lookups, not architecture-blocking.
 
@@ -1314,24 +1315,82 @@ The five remaining medium-confidence items (all flagged in research) become Task
 - `src/SessionAgent/` (empty root package)
 - `src/static/` (empty target for vendored bundle)
 
-**Then proceed through the 18-Epic sequence** (Step 4 §"Decision Impact Analysis → Implementation Sequence"):
+**Then proceed through the 10-Epic v1 sequence** (per [`epics.md`](epics.md) §"Epic List" + §"Decision Impact Analysis → Implementation Sequence" above):
 
-- Epics 1–6 deliver the **MVP demo-able milestone** (single-agent OpenAI-powered Inspection Agent) — PRD §Product Scope MVP exit criteria.
-- Epics 7–11 complete the Inspection Agent (remaining 10 tools, additional providers, config UI, lifecycle coupling).
-- Epics 12–17 add the Search Agent (vocabulary persistence, 8-tool catalog, click-through capture, digest assembly, portal subclass, TTL sweep) — completing v1.
-- Epic 18 (v1.5) adds cross-user `NamespaceVocabulary` baseline.
+- **Epics 1–3 deliver the MVP demo-able milestone** (single-agent OpenAI-powered Inspection Agent) — PRD §Product Scope MVP exit criteria. Epic 1 (foundation) → Epic 2 (backend plumbing) → Epic 3 (UI demo-able).
+- **Epics 4–7 complete the Inspection Agent** (remaining 10 tools, multi-provider support, per-agent config UI, chat-history lifecycle coupling).
+- **Epics 8–10 add the Search Agent** (vocabulary persistence + 8-tool catalog, vocabulary learning + digest assembly, portal subclass + hand-off + TTL sweep + vendored Markdown bundle) — completing v1.
+- **Vision tier (post-v1, deferred)**: cross-user `NamespaceVocabulary` baseline population (schema ships in Epic 8) and the rest of [PRD §"Vision (Future, post-v1)"](prd.md).
 
-**Carry-forward Task-0 probes** (run on a live 2024.1 instance before the corresponding Epic story is dispatched, per `research-first.md` rule 4):
+**Carry-forward Task-0 probes** (run on a live 2024.1 instance before the corresponding epic story is dispatched, per `research-first.md` rule 4):
 
-1. **Epic 1**: Web Gateway "Server Response Timeout" verbatim default value capture.
-2. **Epic 3**: `##class(%Dictionary.MethodDefinition).%OpenId("Ens.BusinessProcess||OnRequest")` returns non-null on 2024.1.
-3. **Epic 11**: `&sql(SELECT 1 INTO :exists FROM Ens.MessageHeader WHERE %EXACT(SessionId)='...')` SQLCODE=0/100 semantics on 2024.1.
-4. **Epic 12**: `%OnAfterSave` issuing direct SQL UPDATE on the same row does NOT re-fire on 2024.1.
-5. **Epic 13**: `EnsLib.HL7.SearchTable` row shape `(DocId, PropName, PropValue)` on operator's instance.
-6. **Epic 14**: `SynthesizeAlias` deterministic stringification unit test against ~10 reordering scenarios.
+1. **Epic 1** (Story 1.2): Web Gateway "Server Response Timeout" verbatim default value capture.
+2. **Epic 2** (Story 2.10): `##class(%Dictionary.MethodDefinition).%OpenId("Ens.BusinessProcess||OnRequest")` returns non-null on 2024.1.
+3. **Epic 4** (Story 4.6): `EnsLib.HL7.SearchTable` row shape `(DocId, PropName, PropValue)` on operator's instance — re-anchored from Epic 8 to Epic 4 since `FindSessionsByBody` is the first cross-codebase consumer of the SearchTable shape; Epic 8 Story 8.5 (`SearchByBodyField`) reuses the captured shape.
+4. **Epic 7** (Story 7.1): `&sql(SELECT 1 INTO :exists FROM Ens.MessageHeader WHERE %EXACT(SessionId)='...')` SQLCODE=0/100 semantics on 2024.1.
+5. **Epic 9** (Story 9.1): `%OnAfterSave` issuing direct SQL UPDATE on the same row does NOT re-fire on 2024.1.
+6. **Epic 9** (Story 9.1): `SynthesizeAlias` deterministic stringification unit test against ~10 reordering scenarios.
 
 Each Task-0 probe and its expected output are captured in the corresponding story's Tasks/Subtasks block at story-creation time.
 
+## Epic-Sequence Evolution
+
+This section records the evolution of the implementation epic sequence between architecture-stage and epic-design-stage, so future readers wondering "why these 10 epics, and what about the architect's original 18-step thinking?" find the answer in-doc rather than in git history.
+
+### What changed (2026-05-02)
+
+The architecture document originally proposed an **18-step implementation sequence** in §"Decision Impact Analysis → Implementation Sequence" (now updated above to the consolidated 10-epic v1 sequence). Downstream of architecture-stage, the [`bmad-create-epics-and-stories`](../../.claude/skills/bmad-create-epics-and-stories/) workflow ran and consolidated the original 18 steps into **10 user-value-first epics** for v1. The result is captured in [`epics.md`](epics.md).
+
+### Why consolidate
+
+BMad's epic-design principle is *organize epics around user value, not technical layers* and *consolidate epics that all modify the same core files*. Several of the architect's original 18 epics did not deliver standalone operator value individually:
+
+- Original Epic 2 (LLM Provider abstraction alone) — operator-invisible.
+- Original Epic 3 (Tool.Base + Tool.Registry alone, with no agent loop) — operator-invisible.
+- Original Epic 4 (AgentLoop alone, with no UI) — operator-invisible.
+- Original Epics 5 + 6 (chat panel + VisualTrace subclass) — meaningless apart; together they're the MVP demo.
+- Original Epics 8 + 10 (Anthropic + Gemini + OpenAICompat providers) — all touch the same `LLM/*` package; per BMad's file-overlap rule, consolidate.
+- Original Epics 12 + 13 (vocabulary persistence + 8-tool search catalog) — vocabulary schema must exist before search tools can use it; ship together.
+- Original Epics 14 + 15 (click-through capture + vocabulary digest assembly) — single coherent vocabulary-learning capability.
+- Original Epics 16 + 17 (Message Viewer subclass + TTL sweep) — search agent UI doesn't ship without lifecycle integrity.
+
+Consolidating these gave 10 epics where each epic has a clean operator-facing acceptance criterion. Story sequence *within* each consolidated epic preserves the architect's original sub-step ordering — for example, Epic 5 stories ship Anthropic first (validates the canonical-wire inversion early), then Gemini (camelCase + retryDelay), then OpenAICompat. The architect's reasoning is preserved at story-order level rather than epic-number level.
+
+### Bidirectional mapping (architect's original → consolidated)
+
+| Architect's original epic | epics.md consolidated epic | Notes |
+|---|---|---|
+| Epic 1 — IPM packaging + Installer + RBAC + Audit-event registration | **Epic 1** — Project Foundation & Installable Package | 1:1 mapping. |
+| Epic 2 — LLM Provider abstraction + OpenAIProvider + RetryWithBackoff + EnvSecret | **Epic 2** — Inspection Agent Backend Plumbing | Combined with original Epics 3 + 4. |
+| Epic 3 — Tool.Base + Tool.Registry + 3 example tools | **Epic 2** — Inspection Agent Backend Plumbing | Combined with original Epics 2 + 4. |
+| Epic 4 — Agent.AgentLoop + Chat.History + concurrency | **Epic 2** — Inspection Agent Backend Plumbing | Combined with original Epics 2 + 3. |
+| Epic 5 — Shared chat-panel draw helper + JS + ZenMethod | **Epic 3** — Inspection Agent UI MVP Demo-able | Combined with original Epic 6. |
+| Epic 6 — VisualTrace subclass — *MVP demo-able milestone* | **Epic 3** — Inspection Agent UI MVP Demo-able | Combined with original Epic 5. **MVP exit criterion preserved at end of consolidated Epic 3.** |
+| Epic 7 — Remaining 10 Inspection tools + read-only test suite | **Epic 4** — Inspection Agent Full Tool Catalogue | 1:1 mapping. |
+| Epic 8 — AnthropicProvider + cross-provider integration tests | **Epic 5** — Multi-Provider Support | Combined with original Epic 10. Story order: Anthropic first (validates inversion). |
+| Epic 9 — `SessionAgent.UI.AgentConfig` Zen page + per-agent secret routing | **Epic 6** — Per-Agent Configuration UI | 1:1 mapping. |
+| Epic 10 — GeminiProvider + OpenAICompatProvider | **Epic 5** — Multi-Provider Support | Combined with original Epic 8. |
+| Epic 11 — `PurgeOrphanedChatHistory` + lifecycle coupling | **Epic 7** — Inspection Chat-History Lifecycle | 1:1 mapping. |
+| Epic 12 — `Search.UserVocabulary` + `SeedVocabulary` + Installer additions | **Epic 8** — Search Agent Foundation | Combined with original Epic 13 (vocabulary schemas + search catalog ship together). |
+| Epic 13 — 8-tool search catalog + `VocabLookup` utility | **Epic 8** — Search Agent Foundation | Combined with original Epic 12. |
+| Epic 14 — Click-through capture + `RecordSuccess` method | **Epic 9** — Search Agent Vocabulary Learning | Combined with original Epic 15. |
+| Epic 15 — `VocabularyDigest.Build` + first-user-message prefix injection | **Epic 9** — Search Agent Vocabulary Learning | Combined with original Epic 14. |
+| Epic 16 — `SessionAgent.EnsPortal.MessageViewer` subclass + chat tab | **Epic 10** — Search Agent UI Embed, Hand-off & TTL Sweep | Combined with original Epic 17. |
+| Epic 17 — `PurgeStaleSearchChat` TTL sweep + retention config | **Epic 10** — Search Agent UI Embed, Hand-off & TTL Sweep | Combined with original Epic 16. **Completes v1 scope at end of consolidated Epic 10.** |
+| Epic 18 (v1.5) — `NamespaceVocabulary` cross-user baseline | **Vision tier (post-v1, deferred)** | Schema ships in consolidated Epic 8; population logic is post-v1 per [PRD §Vision](prd.md). |
+
+### Cross-reference convention going forward
+
+- **`epics.md`** is the authoritative numbering for v1 implementation.
+- **This document (architecture.md)** uses the consolidated 10-epic numbering. The architect's original 18-step thinking is preserved as story order *within* each consolidated epic and as the mapping table above.
+- **PRD.md and ux-design-specification.md** are aligned to the consolidated 10-epic numbering.
+- **brief / distillate / research docs** retain references to the architect's original 18-step numbering as planning history; readers cross-reference via the mapping table above.
+- **Story files** (produced by [`bmad-create-story`](../../.claude/skills/bmad-create-story/) skill) cite both the consolidated epic number AND the architecture section by name in dev notes — e.g., "implements Epic 5 / architecture original Epic 8 (AnthropicProvider) per architecture.md §'Decision Impact Analysis → Implementation Sequence'" — so dev agents picking up a story can find context regardless of which numbering they encounter first.
+
+### Recoverability
+
+The original 18-step enumeration in this document's §"Decision Impact Analysis → Implementation Sequence" was edited in-place during the 2026-05-02 epic-design alignment. Prior versions are recoverable from git history (`git log --oneline _bmad-output/planning-artifacts/architecture.md`) if the original 18-step prose is needed verbatim.
+
 ## Status
 
-Architecture workflow complete. Document is ready to drive implementation; all 8 workflow steps recorded in frontmatter `stepsCompleted`.
+Architecture workflow complete. Document is ready to drive implementation; all 8 workflow steps recorded in frontmatter `stepsCompleted`. **Revision 2026-05-02:** epic numbering aligned with `epics.md` 10-epic consolidated structure (recorded in frontmatter `revisions`).

@@ -177,11 +177,11 @@ This file accumulates findings, follow-ups, and architect-decision items that ar
 
 - **Package-level `iris_execute_tests SessionAgent.Test` undercounts (returned 25 vs aggregate 35) — class-level runs confirm 35/35 pass.**
 
-  - **Source:** Story 2.3 code review (verification step).
-  - **Severity:** INFO (no functional impact — every test passes when invoked at class level; the dev's claim of 35/35 is correct and verifiable).
-  - **The observation:** Running `mcp__iris-dev-mcp__iris_execute_tests SessionAgent.Test` at `package` level returned `total:25, passed:25`, missing all 9 RetryWithBackoff tests and 1 each of Json and ReadOnlyRole. Running each class individually at `class` level returned the expected counts: AuditEmit=3, EnvSecret=8, Json=9, ReadOnlyRole=6, RetryWithBackoff=9, total 35. All 35 pass.
-  - **Probable cause:** test-runner discovery quirk in the package-level path (possibly stale class metadata after recent compile, or queue ordering). Not a real test failure.
-  - **What to do if it bites:** if a future story claims an `N/N` count that doesn't match the package-level run, fall back to class-level invocations to confirm. Add a brief note to the story-3 retro if this recurs.
+  - **Source:** Story 2.3 code review (verification step). Recurrence confirmed in Story 2.4 code review (2026-05-03): now reports 35/35 vs aggregate 45/45 (RetryWithBackoff still missing + ReadOnlyRole::RoleInstallIdempotent still missing; ConfigAgentTest's 10/10 IS picked up at package level).
+  - **Severity:** INFO (no functional impact — every test passes when invoked at class level; the dev's claim of 45/45 is correct and verifiable).
+  - **The observation:** Running `mcp__iris-dev-mcp__iris_execute_tests SessionAgent.Test` at `package` level returned `total:25, passed:25` in Story 2.3 era, missing all 9 RetryWithBackoff tests and 1 each of Json and ReadOnlyRole. In Story 2.4 era, it reports `total:35, passed:35` after ConfigAgentTest's 10 tests joined the package — but RetryWithBackoff (9) and ReadOnlyRole::RoleInstallIdempotent (1) are STILL absent. Running each class individually at `class` level returned the expected counts: AuditEmit=3, EnvSecret=8, Json=9, ReadOnlyRole=6, RetryWithBackoff=9, ConfigAgentTest=10, total 45. All 45 pass.
+  - **Probable cause:** test-runner discovery quirk in the package-level path. The miss-list is consistent across both stories (RetryWithBackoff entire class + ReadOnlyRole::RoleInstallIdempotent), suggesting a deterministic discovery filter rather than a stale-metadata or queue-ordering issue. The Story 2.4 evidence (10 new tests successfully discovered at package level) rules out "all-new-tests miss"; the bug appears tied to specific class/method patterns.
+  - **What to do if it bites:** if a future story claims an `N/N` count that doesn't match the package-level run, fall back to class-level invocations to confirm. Re-evaluate the deferral if a third story is bitten — the consistent miss-list may eventually justify investigation into the iris-dev-mcp test-runner code path.
   - **Owner:** None — environmental; class-level runs are the authoritative source until package-level discovery stabilizes.
   - **Blocking?** Not blocking.
 

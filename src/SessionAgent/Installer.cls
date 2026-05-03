@@ -245,27 +245,41 @@ ClassMethod ScheduleTaskIfClassExists(pTaskName As %String, pTaskClass As %Strin
 /// <p>Defensive seed helper. Inserts two default
 /// <code>SessionAgent.Config.Agent</code> rows
 /// (<code>session-inspection</code> + <code>message-search</code>) if and
-/// only if the <code>Config.Agent</code> class exists in the dictionary
-/// (i.e., Story 2.4 has shipped).</p>
+/// only if the <code>Config.Agent</code> class exists in the dictionary.
+/// Story 2.4 ships the seeding logic; this method is now live, not a
+/// placeholder.</p>
 ///
-/// <p><b>Defensive behavior:</b> if <code>SessionAgent.Config.Agent</code>
-/// does NOT yet exist, the helper writes
-/// <i>"SessionAgent.Config.Agent not yet implemented; default configs
-/// deferred"</i> to the install log and returns <code>$$$OK</code> without
-/// raising an error. This lets <code>zpm load</code> succeed on a fresh
-/// pre-Epic-2 checkout.</p>
+/// <p><b>Defensive behavior:</b> the
+/// <code>%Dictionary.ClassDefinition.%ExistsId</code> guard remains as a
+/// safety net so a pre-Epic-2 checkout (or a future epic that temporarily
+/// removes the class) does not break <code>zpm load</code>. When the
+/// class is absent, the helper logs and returns <code>$$$OK</code>.</p>
 ///
-/// <p><b>Idempotency:</b> when the class IS present, the helper checks
-/// <code>%ExistsId(agentName)</code> before each insert and skips rows that
-/// already exist.</p>
+/// <p><b>Idempotency (NFR-R5):</b> for each agent name, the helper calls
+/// the dictionary-generated
+/// <code>AgentNameIdxExists(name)</code> predicate before
+/// <method>%Save</method>. If the row already exists (re-install case),
+/// the helper logs <i>"row already present; skipping"</i> and continues.
+/// Combined with the unique <code>AgentNameIdx</code> on
+/// <CLASS>SessionAgent.Config.Agent</CLASS>, this guarantees no duplicate
+/// rows on any number of re-installs.</p>
 ///
-/// <p><b>Default values</b> (per AC-4 + research-doc reference shape):
-/// Provider=<code>openai</code>, Model=<code>gpt-4o</code>,
+/// <p><b>Seed shape</b> comes from
+/// <method>SessionAgent.Config.AgentDefaults.GetSeedConfig</method>
+/// (Story 2.4): Provider=<code>openai</code>, Model=<code>gpt-4o</code>,
 /// MaxTokens=<code>4096</code>, Temperature=<code>0.0</code>,
 /// ReadOnly=<code>1</code>, EnvVarName=<code>OPENAI_API_KEY</code>,
 /// Enabled=<code>0</code> (operator must explicitly opt in via Story 6
 /// UI).</p>
-ClassMethod SeedDefaultAgentConfigs() As %Status [ Private ]
+///
+/// <p><b>Project rules honored:</b> <code>tSC</code> initialized BEFORE
+/// the Try block; argumentless <code>Quit</code> inside the Try (project
+/// rule §"QUIT Statement Restrictions in Try/Catch Blocks"); every
+/// <method>%Save</method> return checked with <code>$$$ISERR</code>
+/// (project rule §"Write Status Checking"); failure logs the agent name
+/// and the error text, then propagates the failing status to the caller
+/// so the overall install can fail loudly.</p>
+ClassMethod SeedDefaultAgentConfigs() As %Status
 {
     Set tSC = $$$OK
     Try {
@@ -274,15 +288,62 @@ ClassMethod SeedDefaultAgentConfigs() As %Status [ Private ]
             Quit
         }
 
-        ; Class is present — seed two default rows. The forward-compatible
-        ; shape uses %ExistsId(agentName) for idempotency. Since the class
-        ; doesn't ship until Story 2.4, this branch is reached only when
-        ; that story lands; the body below is the v1 reference shape.
-        ; (Story 2.4 may refine the property set as schema evolves.)
-        Do ..LogProgress("SessionAgent.Config.Agent present — seeding default rows is deferred to Story 2.4 schema implementation")
+        Do ..LogProgress("Config.Agent present — seeding default rows")
+
+        ; Seed each agent name with idempotent existence check. Two seeds
+        ; in v1: session-inspection + message-search. The list is hand-rolled
+        ; (no $ListBuild iteration) so the failure-status path can identify
+        ; exactly which agent's %Save failed without parsing the list.
+        Set tSC = ..SeedOneAgent("session-inspection")
+        If $$$ISERR(tSC) Quit
+        Set tSC = ..SeedOneAgent("message-search")
+        If $$$ISERR(tSC) Quit
     }
     Catch ex {
         Do ..LogProgress("Exception in SeedDefaultAgentConfigs: " _ ex.DisplayString())
+        Set tSC = ex.AsStatus()
+    }
+    Quit tSC
+}
+
+/// <p>Inner per-agent seed helper. Idempotent: if the row already exists
+/// (verified via the dictionary-generated
+/// <code>AgentNameIdxExists</code> predicate), logs and returns
+/// <code>$$$OK</code> without modifying anything.</p>
+///
+/// <p>On the seeding path, retrieves the OD4 default-shape instance from
+/// <method>SessionAgent.Config.AgentDefaults.GetSeedConfig</method>,
+/// calls <method>%Save</method>, and checks the returned status. On
+/// failure logs <var>pAgentName</var> + the IRIS error text and returns
+/// the failing status; on success logs <i>"seeded {pAgentName}"</i> and
+/// returns <code>$$$OK</code>.</p>
+ClassMethod SeedOneAgent(pAgentName As %String) As %Status [ Private ]
+{
+    Set tSC = $$$OK
+    Try {
+        If ##class(SessionAgent.Config.Agent).AgentNameIdxExists(pAgentName) {
+            Do ..LogProgress(pAgentName _ ": row already present; skipping")
+            Quit
+        }
+
+        Set tAgent = ##class(SessionAgent.Config.AgentDefaults).GetSeedConfig(pAgentName)
+        If '$IsObject(tAgent) {
+            Do ..LogProgress(pAgentName _ ": GetSeedConfig returned $$$NULLOREF; skipping")
+            Quit
+        }
+
+        Set tSaveSC = tAgent.%Save()
+        If $$$ISERR(tSaveSC) {
+            Do ..LogProgress("Failed to seed " _ pAgentName _ ": " _ $System.Status.GetErrorText(tSaveSC))
+            Set tSC = tSaveSC
+            Quit
+        }
+
+        Do ..LogProgress("seeded " _ pAgentName)
+    }
+    Catch ex {
+        Do ..LogProgress("Exception seeding " _ pAgentName _ ": " _ ex.DisplayString())
+        Set tSC = ex.AsStatus()
     }
     Quit tSC
 }

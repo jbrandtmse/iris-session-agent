@@ -246,6 +246,21 @@ This file accumulates findings, follow-ups, and architect-decision items that ar
 
 ---
 
+## Deferred from: code review of story-2.8-llm-provider-abstract-adapter-utilities (2026-05-03)
+
+- **No test exercises the OpenAI tool_result fan-out path in `MessageAdapter.CanonicalToOpenAi`.**
+  - **Severity:** LOW (silent-regression risk only; the path compiles and is exercised whenever a real OpenAI provider receives a `tool` role canonical message at runtime — but no unit test locks the behavior).
+  - **Location:** `src/SessionAgent/LLM/Util/MessageAdapter.cls:195-224` (the `If tRole = "tool"` branch that emits one OpenAI message per `tool_result` block) plus `src/SessionAgent/Test/MessageAdapterTest.cls` (no covering `Test*` method).
+  - **The gap:** `TestCanonicalToGeminiRoleMapping` exercises a single `tool_result` block but tests Gemini's `functionResponse` part, not OpenAI's per-block fan-out. `TestRoundTripOpenAi` exercises assistant-side `tool_use`, not the tool-side `tool_result`. The OpenAI tool-message emission has its own non-trivial logic (per-block iteration, `tool_use_id` → `tool_call_id` rename, content stringification of array form via `%ToJSON`) that is currently uncovered.
+  - **What to add:** one new `Test*` method that feeds a canonical `tool` role message with TWO `tool_result` blocks (one with string content, one with array-of-text-blocks content) and asserts the OpenAI output is TWO `{role:"tool", tool_call_id, content:...}` messages with the expected stringified content shapes.
+  - **Why deferred (not fixed in review):** AC-4 enumerates seven specific `Test*` methods for `MessageAdapterTest`; the fan-out test is not among them. Adding it now would expand AC-4 scope mid-review. Natural carrier: Story 2.9 (`OpenAIProvider`) which will be the first real consumer of this path — its dev cycle should add the missing coverage as part of integration testing the OpenAI wire shape end-to-end.
+  - **Owner:** Story 2.9 dev (when implementing `OpenAIProvider`'s `CallMessages`).
+  - **Blocking?** Not blocking. The path is logically correct on inspection; this is a defense-in-depth coverage gap, not a bug.
+
+- **Source:** Story 2.8 code review (2026-05-03). Two findings were auto-fixed in the same review pass: (a) `MessageAdapter.CanonicalToOpenAi` line 239 used the literal two-character string `"\n"` (backslash + n) when concatenating multiple text blocks for OpenAI's single `content` field — ObjectScript double-quoted strings do not interpret backslash escapes, so the user-visible content was getting `foo\nbar` instead of `foo` + newline + `bar`; replaced with `$Char(10)` plus a clarifying inline comment. (b) `Provider.ComputeLatencyMs` doc-comment said "integer-truncated" but `$Normalize(tDelta * 1000, 0)` rounds half-up; corrected the doc-comment to "integer-rounded (via `$Normalize`)". Both fixes verified: 5 classes recompile clean; 7/7 MessageAdapterTest + 3/3 ToolDefAdapterTest pass; 79/79 full per-class regression sweep intact (zero regressions across the 9 prior test classes — AgentDtoTest 7 + AuditEmit 3 + Audit 8 + ChatHistory 9 + ConfigAgent 10 + EnvSecret 8 + Json 9 + ReadOnlyRole 6 + RetryWithBackoff 9 + MessageAdapter 7 + ToolDefAdapter 3 = 79).
+
+---
+
 ## Resolved during Story 1.5 verification (2026-05-02) — superseded by README §"Operator Prerequisites" §1
 
 - **`zpm` was installed in `%SYS` but not mapped into HSCUSTOM. Required `zpm "enable -map -globally"`.**

@@ -230,6 +230,22 @@ This file accumulates findings, follow-ups, and architect-decision items that ar
 
 ---
 
+## Deferred from: code review of story-2.7-agent-dtos (2026-05-03)
+
+- **`TurnResult.ToJson()` shares OREF aliases with caller's `UsageRollup` / `ToolCallsRendered` rather than deep-copying.** When `ToJson()` is called and a caller subsequently mutates `..UsageRollup` or `..ToolCallsRendered`, the previously-returned JSON string is immutable so the wire payload is fine — but the `%DynamicObject` returned from `ToJson()` is no longer in scope so the alias cannot leak there. The risk is purely if a future caller stores the temporary `tObj` reference (currently not exposed; method returns the JSON string only). Documenting for future-proofing if the method shape ever evolves to return the `%DynamicObject` directly.
+  - **Severity:** LOW (no current operator-observable break; defensive design note for future evolution).
+  - **Location:** `src/SessionAgent/Agent/TurnResult.cls:69, :77`.
+  - **What to do if it bites:** if `ToJson()` is ever refactored to return the `%DynamicObject` (or to expose `tObj` to a caller), substitute deep-copy via `##class(%DynamicObject).%FromJSON(..UsageRollup.%ToJSON())` for the alias assignments. Natural carrier: any future story that extends `TurnResult` with a `ToDynamicObject()` method (none currently planned).
+
+- **`%ResultSet` cleanup hygiene — `tRS.%Close()` not called in test helpers across the project.** `AgentDtoTest.cls`'s `ListUserMethods` was patched in this review to call `%Close()` (defensive). However, this is a project-wide hygiene gap — many other test classes use `%ResultSet` without explicit close. Cursor handles release on OREF GC, so impact is bounded.
+  - **Severity:** LOW (resource hygiene; no operator-observable break).
+  - **Location:** project-wide pattern; spot-check `src/SessionAgent/Test/*.cls` for `%ResultSet.%New` calls without paired `%Close()`.
+  - **What to do if it bites:** add a project-wide grep + lint pass that flags `##class(%ResultSet).%New(...)` without a matching `%Close()` in the same method scope. Natural carrier: a future Epic-N retrospective action item if test-suite resource pressure becomes observable in CI.
+
+- **Source:** Story 2.7 code review (2026-05-03). Two MED findings were auto-fixed in the same review pass: (a) `ListUserMethods` now validates `pClassName` exists before iterating (silent fake-green prevention for `TestNoBusinessLogic`) AND closes the `%ResultSet`; (b) `TestTurnResultToJsonHandlesEmptyArrays` was strengthened to assert the `usageRollup:{}` invariant, and a new `TestTurnResultToJsonHandlesUnsetDynamicProps` test was added to exercise the `ToJson()` Else branches with truly-unset properties (previously dead-tested code). Compile clean; 7/7 AgentDtoTest now passing (was 6/6); 69/69 full per-class regression intact (correcting both the original spec estimate of 68 and the dev's empirical 67 — actual baseline was 62, not 61, due to ConfigAgentTest having 10 test methods not 9).
+
+---
+
 ## Resolved during Story 1.5 verification (2026-05-02) — superseded by README §"Operator Prerequisites" §1
 
 - **`zpm` was installed in `%SYS` but not mapped into HSCUSTOM. Required `zpm "enable -map -globally"`.**

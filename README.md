@@ -11,13 +11,69 @@ An open-source InterSystems IRIS module that adds an AI assistant chat experienc
 
 ## Operator Prerequisites
 
-*Placeholder — full content lands in Epic 1 Story 1.2 after the Web Gateway "Server Response Timeout" verbatim default is captured from a live IRIS 2024.1+ instance via Task-0 probe.*
+Before installing this module, complete the following on your IRIS instance. Most operators finish all seven steps in under 30 minutes. Each step is independent — you can do them in any order, but the install will fail or behave unexpectedly until they are all in place.
 
-The three operator-prerequisite steps will be:
+### 1. Supported IRIS versions
 
-1. Raise Web Gateway "Server Response Timeout" to 300s (LLM-call latencies often sit in the 30–90s band; default kills them mid-stream).
-2. Grant `%SessionAgent_ReadOnly` to the operator user/role.
-3. Supply LLM provider API key via environment variable (preferred for containers) or `Ens.Config.Credentials` (traditional installs).
+IRIS / IRIS for Health **2024.1 or later**. The agent runtime is pure ObjectScript; no embedded Python is required on the IRIS host.
+
+### 2. Web Gateway timeout
+
+The Web Gateway's default **"Server Response Timeout"** on a fresh IRIS 2024.1+ install is **`60` seconds** (verified on IRIS for Windows 2025.1 — see [Story 1.2 Task-0 probe](_bmad-output/implementation-artifacts/1-2-web-gateway-timeout-task-0-probe-readme-operator-prerequisites.md#task-0-output) for the live capture). LLM-call latencies often sit in the 30–90s band, and an agent turn typically chains 2–3 tool calls plus one LLM round-trip — the 60s default kills these mid-stream. **Raise it to `300` seconds before installing.**
+
+Navigate to the Web Gateway management page (typically `http://<host>/csp/bin/Systems/Module.cxw`) and follow this path:
+
+```
+Web Gateway management page
+  → Login (CSPSystem account)
+  → Configuration  (left-nav section)
+  → Default Parameters
+  → "Connections to InterSystems IRIS" group
+  → Server Response Timeout:  60   →  change to  →  300
+  → Save Configuration
+```
+
+The 300s value gives a 90s per-call cap × 3-tool-call agent turn comfortable headroom — see [PRD NFR-P1](_bmad-output/planning-artifacts/prd.md) and the [architecture timeout-cascade rationale at architecture.md line 1131](_bmad-output/planning-artifacts/architecture.md) (Web Gateway 300s prereq ↔ 90s per-call cap ↔ max-iter 10).
+
+### 3. RBAC
+
+The module installer creates the **`%SessionAgent_ReadOnly`** role automatically with `SELECT`-only grants on `Ens.*` tables (this role install ships in [Epic 1 Story 1.4](_bmad-output/planning-artifacts/epics.md)). After install completes, assign this role to the IRIS user that the portal user maps to (typically the same user — verify via Security Management).
+
+### 4. Package mapping
+
+Map `SessionAgent.*` from `HSCUSTOMCODE` to your interoperability namespaces (or `%ALL`):
+
+```
+Management Portal
+  → System Administration → Configuration → Namespaces
+  → <target NS> → Package Mappings → Add: SessionAgent.*  ←  HSCUSTOMCODE
+```
+
+### 5. API key for the LLM provider
+
+Pick **one** of the two delivery mechanisms:
+
+- **Environment variable (preferred for container deployments):** Set `OPENAI_API_KEY` (or `ANTHROPIC_API_KEY` / `GOOGLE_API_KEY`) as a process environment variable visible to the IRIS process. Container deployments typically inject these via Docker / Kubernetes secrets.
+- **`Ens.Config.Credentials` row (traditional on-prem installs):** Create a credentials row with `SystemName='openai-prod'` (or any name you prefer), `Username='apikey'`, `Password='<your-key>'`. Then point `SessionAgent.Config.Agent.CredentialName` at that name.
+
+API keys are **never** stored inside `SessionAgent.Config.Agent` itself.
+
+### 6. Bookmark URLs
+
+After install, both Management Portal entry points are bookmarkable. **Use the URL pattern that matches your IRIS deployment style** — HealthShare-based deployments include the `/healthshare/` segment; plain IRIS deployments do not:
+
+- **HealthShare deployments:**
+  - `/csp/healthshare/<NS>/SessionAgent.EnsPortal.MessageViewer.zen` *(Search Agent entry — natural-language session search)*
+  - `/csp/healthshare/<NS>/SessionAgent.EnsPortal.VisualTrace.zen` *(Inspection Agent — chat about a specific session)*
+- **Plain IRIS deployments:**
+  - `/csp/<NS>/SessionAgent.EnsPortal.MessageViewer.zen`
+  - `/csp/<NS>/SessionAgent.EnsPortal.VisualTrace.zen`
+
+The Search Agent path is for the operator's "find the session I care about" entry; the Visual Trace path opens the Inspection Agent on a specific session that the operator already has selected.
+
+### 7. Daily purge task
+
+The installer schedules `SessionAgent.Task.PurgeOrphanedChatHistory` to run daily at 02:00 UTC (this task ships in [Epic 7 Story 7.2](_bmad-output/planning-artifacts/epics.md)). Verify it's enabled in **Task Manager** after install. The task removes chat-history rows whose linked `Ens.MessageHeader` session has been purged, so no orphaned conversations accumulate.
 
 ## What it does
 

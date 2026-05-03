@@ -1,0 +1,9 @@
+{
+  "objectscript.conn": {
+    "active": true,
+    "server": "local",
+    "ns": "HSCUSTOM"
+  },
+  "objectscript.syncLocalChanges": "all",
+  "objectscript.overwriteServerChanges": true
+}

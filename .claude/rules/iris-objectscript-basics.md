@@ -1,5 +1,24 @@
 # ObjectScript Basics
-**Technology Scope: ObjectScript / InterSystems IRIS only.** These rules apply when working on `src/IRISCouch/` ObjectScript classes. They do NOT apply to Angular/TypeScript frontend work (Epic 10+, `src/ui/`).
+**Technology Scope: ObjectScript / InterSystems IRIS only.** These rules apply when working on `src/SessionAgent/` ObjectScript classes. They do NOT apply to Angular/TypeScript frontend work.
+
+## VSCode Auto-Sync Workflow (this project)
+
+`.vscode/settings.json` sets `objectscript.conn.active: true` and `objectscript.syncLocalChanges: "all"` against the `local` server (`localhost:52773`, namespace `HSCUSTOM`). The InterSystems ObjectScript extension auto-syncs every saved `.cls` / `.mac` / `.inc` file from this workspace to the IRIS server on save.
+
+**Implication for dev agents and tool use:**
+
+- **DO NOT call `mcp__iris-dev-mcp__iris_doc_load`** for files inside `src/SessionAgent/`. Edit/Write to the local file is enough — auto-sync pushes it.
+- **DO call `mcp__iris-dev-mcp__iris_doc_compile`** after a meaningful edit to verify clean compile and surface error text. Auto-sync pushes the source but does not return compile errors to the agent.
+- **DO call `mcp__iris-dev-mcp__iris_execute_classmethod`** for one-shot sanity calls (preferred over `iris_execute_command` for typed input/output and shorter responses).
+- **Prefer high-level dedicated MCPs** over `iris_execute_command` / generic command execution where one exists:
+  - `mcp__iris-admin-mcp__iris_role_*`, `iris_user_*`, `iris_resource_*` for RBAC operations
+  - `mcp__iris-ops-mcp__iris_task_*` for Task Manager entries
+  - `mcp__iris-ops-mcp__iris_audit_events` for audit log queries
+  - `mcp__iris-dev-mcp__iris_sql_execute` for SQL probes
+  - `mcp__iris-dev-mcp__iris_macro_info` for macro lookups
+  - `mcp__iris-dev-mcp__iris_doc_search` / `iris_doc_get` for class introspection
+  - Use `iris_execute_command` only for genuine one-off ObjectScript snippets that no dedicated MCP covers.
+- **Bulk export rule (from user's global CLAUDE.md) still applies** — when running a bulk `iris_doc_export`, toggle `objectscript.conn.active: false` first to prevent the extension from fighting the export, then restore.
 
 ## Basics  
    - "namespace" = IRIS namespace  

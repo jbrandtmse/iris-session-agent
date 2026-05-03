@@ -35,25 +35,26 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-05-02
-last_updated: 2026-05-02
+last_updated: 2026-05-03 (Story 2.0 done)
 project: iris-session-agent
-# Story 1.5 in-progress — Installer scaffold + Install method
+# Epic 1 complete (retro 2026-05-02); Epic 2 retrospective triage gate (Story 2.0) 2026-05-03
 project_key: NOKEY
 tracking_system: file-system
 story_location: "{project-root}/_bmad-output/implementation-artifacts"
 
 development_status:
-  epic-1: in-progress
-  1-1-project-initialization: review
-  1-2-web-gateway-timeout-task-0-probe-readme-operator-prerequisites: review
-  1-3-audit-event-pre-registration: review
-  1-4-read-only-rbac-role-install: review
-  1-5-installer-scaffold-install-method: review
-  1-6-operator-quickstart-documentation: review
-  1-7-lightweight-ci-scaffolding: review
+  epic-1: done
+  1-1-project-initialization: done
+  1-2-web-gateway-timeout-task-0-probe-readme-operator-prerequisites: done
+  1-3-audit-event-pre-registration: done
+  1-4-read-only-rbac-role-install: done
+  1-5-installer-scaffold-install-method: done
+  1-6-operator-quickstart-documentation: done
+  1-7-lightweight-ci-scaffolding: done
   epic-1-retrospective: done
 
-  epic-2: backlog
+  epic-2: in-progress
+  2-0-epic-1-deferred-cleanup: done
   2-1-util-json-helpers: backlog
   2-2-util-retrywithbackoff: backlog
   2-3-util-envsecret-credential-resolution: backlog

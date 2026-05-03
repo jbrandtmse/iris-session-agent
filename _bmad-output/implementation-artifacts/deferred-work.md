@@ -19,6 +19,7 @@ This file accumulates findings, follow-ups, and architect-decision items that ar
   - **Recommendation:** Option 1 — the IPM source is the authoritative truth about where `<FileCopy Name="static/">` resolves; the diagram is the doc bug; AC-1's verbatim shape stays intact. Option 2 deviates from the canonical IPM-on-2024.1 module.xml shape that the research source spent effort to verify.
   - **Owner:** Architect (Winston) — to resolve in a one-line architecture.md edit + a follow-up story (or as a tag-along scope item in Story 10.7's spec).
   - **Blocking?** Not blocking Story 1.2 through 10.6. Blocks Story 10.7 if not resolved before that story enters dev.
+  - **Triage 2026-05-03 (Story 2.0): deferred — natural carrier is Story 10.7 (vendored Markdown bundle); LOW severity; both `static/` and `src/static/` exist with `.gitkeep`, no operator-observable break until Story 10.7 enters dev.**
 
 ---
 
@@ -34,6 +35,7 @@ This file accumulates findings, follow-ups, and architect-decision items that ar
   - **Recommendation for the next story-template revision (PM/SM, applies to Stories 2.10, 7.1, 9.1 and any other future Task-0 stories):** When AC enumerates "the install-blocking" steps and Task 1 expands them within a wider canonical structure, AC should say *"the **blocking** steps appear in this **relative** order — non-blocking sections may be interspersed per the canonical structure cited in Task 1"*, OR Task 1 should say *"adapt the canonical structure to put blocking steps in the AC-mandated order; deviate from the research doc's section numbering as needed."* Either phrasing eliminates the trap.
   - **Owner:** PM (John) or SM, on the next story-template revision pass — single one-paragraph clarification in the BMAD `bmad-create-story` workflow's AC-vs-Task guidance.
   - **Blocking?** Not blocking. Cosmetic/process improvement item.
+  - **Triage 2026-05-03 (Story 2.0): deferred — natural carrier is the next BMAD `bmad-create-story` template revision (PM-owned process item); resolved cosmetically inside Story 1.2 itself; no follow-up code change required.**
 
 ---
 
@@ -48,6 +50,7 @@ This file accumulates findings, follow-ups, and architect-decision items that ar
   - **What needs to happen in Story 2.10:** add a `RegisterIfMissing(source, type, name)` helper to `SessionAgent.Audit.Emit` (or to the tool registry itself), and call it from the registry's `Dispatch` boundary on first emit per tool. Alternative: extend `EnsureEvents()` with the then-known tool name universe at the time Story 2.10 ships, AND add the lazy helper for any tools added later.
   - **Owner:** Dev (when implementing Story 2.10 — `2-10-tool-base-abstract-tool-registry-task-0-probe`).
   - **Blocking?** Not blocking Stories 1.4–1.7 or any of Epic 2 prior to Story 2.10. Becomes blocking on Story 2.10 entering dev — that story MUST address ToolCall registration as part of its own scope.
+  - **Triage 2026-05-03 (Story 2.0): owner reassigned to Story 2.10 — must be addressed in that story's scope. Forward-looking note added to `epics.md` Story 2.10 section so the create-story workflow picks it up when 2.10's spec is drafted. See [`2-0-epic-1-deferred-cleanup.md`](2-0-epic-1-deferred-cleanup.md) and [`epic-1-retro-2026-05-02.md`](epic-1-retro-2026-05-02.md) (2026-05-02).**
 
 - **Inline-comment clarity around the argumentless `Quit` inside the While loop in `Emit.cls` line 72.**
 
@@ -57,6 +60,7 @@ This file accumulates findings, follow-ups, and architect-decision items that ar
   - **Recommendation:** No change required. If a future story touches `Emit.cls` for unrelated reasons, optionally tighten the inline comment then. Not worth a dedicated edit.
   - **Owner:** None (no action required).
   - **Blocking?** Not blocking anything.
+  - **Triage 2026-05-03 (Story 2.0): dropped — cosmetic only; existing inline comment "argumentless quit out of While; try/catch closes below" is accurate. Future stories that touch `Emit.cls` for unrelated reasons may optionally tighten the wording.**
 
 ---
 
@@ -85,6 +89,22 @@ This file accumulates findings, follow-ups, and architect-decision items that ar
   - **Live-IRIS confirmation (2026-05-02 code review):** `Security.Roles.Exists("SessionAgent_ReadOnly")` returns 1; `Security.Roles.Exists("%SessionAgent_ReadOnly")` returns 0. The live role is correct.
   - **Owner:** None — historical preservation is the resolution. Future stories that re-cite `%SessionAgent_ReadOnly` should be flagged in code review as a stale reference.
   - **Blocking?** Not blocking. Story 1.5 (the natural carrier for installer-orchestrator wiring) inherits the corrected name from the updated planning artifacts.
+  - **Triage 2026-05-03 (Story 2.0): dropped — historical preservation IS the resolution. Authoring history is the audit trail for *why* the rename happened in Story 1.4 Task 0; retroactive rewrites would erase the trace. Pattern matches existing `project_package_naming.md` precedent for AI-Hub research docs.**
+
+---
+
+## Deferred from: Story 1.7 lightweight CI scaffolding (2026-05-02)
+
+- **`%UnitTest` execution step in `.github/workflows/ci.yml` awaits a Python-less IRIS 2024.1 community Docker image.**
+
+  - **Source:** Story 1.7 implementation; TODO comment at `.github/workflows/ci.yml` lines 9–12.
+  - **Severity:** LOW (no operator-observable break; dev-host `iris_execute_tests` remains the integration-test surface meanwhile).
+  - **The deferral:** Story 1.7 shipped 4 PR-time gates (structural checks + NFR-C2 + NFR-C5) but did NOT add a `%UnitTest` execution step. The blocker is environmental: IRIS Community 2024.1 images currently bundle embedded Python by default, which violates the project's NFR-M9 Python-Optional Compilation invariant for end-to-end CI verification of the pure-OS-runtime promise. Until a publicly available Python-less IRIS 2024.1 community Docker image exists, CI cannot run the unit-test battery without contaminating the runtime environment.
+  - **Workaround in place:** dev-host `mcp__iris-dev-mcp__iris_execute_tests` against the `SessionAgent.Test` package is the authoritative integration-test surface. Every story's Definition of Done requires the test pass empirically before commit.
+  - **What needs to happen for resolution:** (a) InterSystems publishes a Python-less Community 2024.1+ image, OR (b) a community-built image emerges that satisfies NFR-M9, OR (c) CI matrix uses a paid/licensed IRIS image variant where Python can be excluded at install time. Once available, add a `%UnitTest` job to `ci.yml` that runs `Do ##class(%UnitTest.Manager).RunTest("SessionAgent.Test")` and asserts 9/9 (or current count) passing.
+  - **Owner:** None — environmental blocker; revisit when image landscape changes.
+  - **Blocking?** Not blocking any story. CI gates remain useful for structural + NFR invariants; unit-test regressions are caught at dev-host commit time.
+  - **Triage 2026-05-03 (Story 2.0): deferred indefinitely until image exists — genuine future-work blocker; Story 1.7's TODO comment in `.github/workflows/ci.yml` names the gating condition. Dev-host `iris_execute_tests` remains the integration-test surface meanwhile.**
 
 ---
 

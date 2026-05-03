@@ -1021,6 +1021,10 @@ So that tool implementations follow a uniform pure-dispatch contract and the rea
 **And** `Registry.ListTools` returns all subclasses present in the test namespace
 **And** every dispatch (success or failure) writes exactly one `Audit.ToolCall` row (NFR-S4 100% completeness)
 
+**Architecture Notes (Story 2.0 triage carry-forward):**
+
+ToolCall audit-event registration is owned by this story per Story 2.0 triage (cites Epic 1 retro 2026-05-02). Add `RegisterIfMissing(source, type, name)` helper to `SessionAgent.Audit.Emit` and call it from `SessionAgent.Tool.Registry.Dispatch` on first emit per tool name. Alternative: extend `EnsureEvents()` with the then-known tool-name universe + retain the lazy helper for late-added tools.
+
 ### Story 2.11: Three Example Inspection Tools
 
 As a developer building the AgentLoop smoke test (Story 2.12),

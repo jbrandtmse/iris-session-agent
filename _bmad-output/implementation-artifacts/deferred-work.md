@@ -405,3 +405,22 @@ This file accumulates findings, follow-ups, and architect-decision items that ar
   - **Recommended fix:** inspect `tLoadStatus` and surface a richer message when the cause is non-lock: `If $$$ISERR(tLoadStatus) Set tResult.AssistantMarkdown = "Chat history error: " _ $System.Status.GetErrorText(tLoadStatus)` else fall through to the lock-contention message.
   - **Owner:** Whoever next touches `AgentLoop.RunTurn` (Epic 3 hyperevent dispatch, or Story 5.x).
   - **Blocking?** Not blocking. Acceptable degradation for v1.
+
+---
+
+## Deferred from: code review of story-3-2-client-side-chat-panel-js-mvp-render-submit (2026-05-03)
+
+- **`data-tool-call-id="tc-N"` synthesis vs. citation-chip `data-cite-id` lookup contract — Story 3.4 must bridge the gap.**
+
+  - **Source:** Story 3.2 code review (lead's prompt item 2 — contract-handoff to Story 3.4).
+  - **Severity:** MEDIUM (predicted bug — Story 3.4's `sa-cite-tool` chip click handler will not be able to look up the matching tool-call card by id without a bridging strategy).
+  - **The gap:** Story 3.2's `renderToolCard` synthesizes `data-tool-call-id="tc-{dispatchIndex}"` (e.g., `tc-0`, `tc-1`) because the `Agent.TurnResult` DTO does NOT ship a real per-tool-call id (verified against `src/SessionAgent/Agent/AgentLoop.cls:302-316` — DTO shape is `{name, args, result, status}` only). Story 3.4 will wire the `sa-citation-chip.sa-cite-tool` `onclick` handler to "open the matching tool-call card" — but the `data-cite-id` on the chip comes from the LLM's Markdown emission (e.g., `[tool:list_sessions]` -> `data-cite-id="list_sessions"`). The chip's id ("list_sessions") does NOT match the card's synthetic id ("tc-3"), so a naive `document.querySelector('[data-tool-call-id="' + chipCiteId + '"]')` lookup will return null.
+  - **Three resolution paths Story 3.4 can pick:**
+    1. **System-prompt convention.** Update the agent system prompt to instruct the LLM to emit citations of the form `[tool:tc-N]` where N is the dispatch index. The LLM has visibility into dispatch order via tool_use blocks, but this is brittle (LLM may invent ids that don't match).
+    2. **Tool-name lookup.** Story 3.4's onclick handler does `document.querySelectorAll('.sa-tool-call-card')` and walks them, matching by the tool name shown in `<code class="sa-tool-name">`. Robust against any LLM citation form, but O(n) per click and breaks if the same tool is called multiple times in one turn.
+    3. **Index-of-call lookup.** Update `renderToolCard` to also tag each card with `data-tool-name="{card.name}"` AND `data-tool-call-occurrence="{nth-time-this-tool-appears}"`. Story 3.4's chip handler asks the LLM to emit `[tool:list_sessions#1]` for the first call, `#2` for the second, etc. Most expressive but needs LLM cooperation.
+  - **Recommendation:** Path 2 is the cleanest for v1 (no LLM-prompt changes; works regardless of citation form; Story 3.4 owns the handler entirely so the change is local). Story 3.4's spec author should pick a path explicitly and document it in the spec — this entry is the binding handoff.
+  - **Owner reassigned to Story 3.4** (`sa-cite-tool` chip handler authoring).
+  - **Why this is a Rule 9 binding deferral, not a fix-now in Story 3.2:** Story 3.2's contract surface (`data-tool-call-id` on cards) is correct given the DTO reality. The bug shape is on the consumer side (the not-yet-written click handler in Story 3.4), not on the producer side (the cards themselves). The synthesis the dev chose is reasonable; the contract just needs the consumer to know about it. Per Rule 9, Story 3.4's spec MUST grep `deferred-work.md` for "Story 3.4" mentions and incorporate this carry-forward into its ACs.
+  - **Blocking?** Blocks Story 3.4 entering dev — must be addressed in Story 3.4's scope.
+

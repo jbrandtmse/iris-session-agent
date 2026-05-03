@@ -108,6 +108,30 @@ This file accumulates findings, follow-ups, and architect-decision items that ar
 
 ---
 
+## Deferred from: code review of story-2.1-util-json-helpers (2026-05-03)
+
+- **No defensive nil/empty-input guard on `Redact`, `DeepMerge`, `EmitNull`.**
+
+  - **Source:** Story 2.1 code review (Blind Hunter B-2, Edge Case Hunter E-4).
+  - **Severity:** LOW (Try/Catch already converts the resulting `<INVALID OREF>` or `<METHOD DOES NOT EXIST>` into a `%Status` error; AC-1 does not specify nil-input handling; foundational utility callers are internal `SessionAgent.*` code only — no untrusted input surface).
+  - **The observation:** If a caller passes `pObj = $$$NULLOREF` or `pObj = ""` (empty string, common with uninitialized `%DynamicObject` variables) to `Redact`, `DeepMerge`, or `EmitNull`, the inner `pObj.%ToJSON()` / `pObj.%Set(...)` call throws an IRIS error. The Try/Catch block correctly converts the throw into a `%Status` error, so the caller's `$$$ISERR(tSC)` check still works — but the error message ("`<METHOD DOES NOT EXIST>` ... `%ToJSON`") is cryptic compared to a deliberate `If pObj = "" Quit $System.Status.Error($$$GeneralError, "Json.Redact: pObj is empty/null")`.
+  - **Why deferring is acceptable:** (a) AC-1 does not require explicit nil guards; (b) the foundational utility is called only from internal `SessionAgent.*` code paths (audit emit, LLM provider request prep), all of which construct their `%DynamicObject` arguments before passing — nil-input is a programming bug at the call site, not user-data invalid input; (c) the Try/Catch already prevents process abort and surfaces the error via `%Status`; (d) the "real" hardening comes when the call sites land (Story 2.5 audit emit, Stories 2.8/2.9 LLM providers) — the call site can choose between defensive guards (skip redaction when `pObj` is null) or strict assertion (treat null as caller bug). Adding guards now would prematurely commit to one of those policies.
+  - **What to do if it bites:** When Story 2.5 / 2.8 / 2.9 lands, add nil-input handling either at the call site (preferred — gives the caller policy control) or in `SessionAgent.Util.Json` (if every caller wants the same policy). At that point, also add a `TestRedactNilInputReturnsError` and equivalent for `DeepMerge` / `EmitNull`.
+  - **Owner:** Whoever first hits a `<METHOD DOES NOT EXIST>` from a `SessionAgent.Util.Json` call (most likely Story 2.5 audit emit dev when an audit event fires before its payload object is initialized).
+  - **Blocking?** Not blocking. Story 2.1 ships as-is; downstream stories inherit the Try/Catch-converts-to-`%Status` behavior and can layer their own nil policy.
+
+- **No depth-limit on recursion in `Redact` / `DeepMerge`.**
+
+  - **Source:** Story 2.1 code review (Blind Hunter B-4).
+  - **Severity:** LOW (no untrusted-input surface; redaction operates on internally-constructed audit-log payloads, not parsed external JSON).
+  - **The observation:** `RedactWalkObject` / `RedactWalkArray` / `MergeWalkObject` recurse without a depth bound. A deeply-nested JSON (e.g., 10K levels) would stack-overflow the IRIS process. Real-world risk is near-zero for the audit-log redaction call site (LLM request bodies are flat or 2-3 levels deep) and for `DeepMerge` (per-agent config files are typically 1-2 levels).
+  - **Why deferring is acceptable:** (a) every current and planned caller constructs the input internally — no untrusted external JSON ever reaches `Util.Json`; (b) IRIS's default process stack can handle several thousand recursion levels before hitting `<MAXSTRING>` or `<FRAMESTACK>`, far above any realistic payload depth; (c) adding a depth-counter parameter to the helper signatures would clutter the foundational API for a hypothetical attack surface that doesn't exist; (d) if a future story does process untrusted JSON via `Util.Json` (none planned through Epic 12), that story should add the depth check at its boundary, not in the foundational utility.
+  - **What to do if it bites:** add an optional `pMaxDepth As %Integer = 64` parameter to `Redact` and `DeepMerge`, default 64 (same as JSON-spec recommended max nesting), thread through to recursive helpers, throw `%Status` error on overflow. Add corresponding tests.
+  - **Owner:** None — environmental; revisit if a future story routes user-supplied JSON through `Util.Json`.
+  - **Blocking?** Not blocking anything.
+
+---
+
 ## Resolved during Story 1.5 verification (2026-05-02) — superseded by README §"Operator Prerequisites" §1
 
 - **`zpm` was installed in `%SYS` but not mapped into HSCUSTOM. Required `zpm "enable -map -globally"`.**

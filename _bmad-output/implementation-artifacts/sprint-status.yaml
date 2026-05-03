@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-05-02
-last_updated: 2026-05-03 (Story 2.0 done)
+last_updated: 2026-05-03 (Story 2.1 done)
 project: iris-session-agent
 # Epic 1 complete (retro 2026-05-02); Epic 2 retrospective triage gate (Story 2.0) 2026-05-03
 project_key: NOKEY
@@ -55,7 +55,7 @@ development_status:
 
   epic-2: in-progress
   2-0-epic-1-deferred-cleanup: done
-  2-1-util-json-helpers: backlog
+  2-1-util-json-helpers: done
   2-2-util-retrywithbackoff: backlog
   2-3-util-envsecret-credential-resolution: backlog
   2-4-config-agent-persistence-schema-agentdefaults: backlog

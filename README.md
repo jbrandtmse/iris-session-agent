@@ -37,7 +37,7 @@ The 300s value gives a 90s per-call cap × 3-tool-call agent turn comfortable he
 
 ### 3. RBAC
 
-The module installer creates the **`%SessionAgent_ReadOnly`** role automatically with `SELECT`-only grants on `Ens.*` tables (this role install ships in [Epic 1 Story 1.4](_bmad-output/planning-artifacts/epics.md)). After install completes, assign this role to the IRIS user that the portal user maps to (typically the same user — verify via Security Management).
+The module installer creates the **`SessionAgent_ReadOnly`** role automatically with `SELECT`-only grants on `Ens.*` tables (this role install ships in [Epic 1 Story 1.4](_bmad-output/planning-artifacts/epics.md)). After install completes, assign this role to the IRIS user that the portal user maps to (typically the same user — verify via Security Management).
 
 ### 4. Package mapping
 
@@ -86,7 +86,7 @@ This module embeds two AI agents directly in the surfaces operators already use:
 
 **Design properties** that drive the v1 architecture:
 
-- **Read-only by structural enforcement.** Three independent layers — code discipline, dispatch policy gate (`MutatesState=0` check on every tool call), and IRIS RBAC role `%SessionAgent_ReadOnly` granted SELECT-only on `Ens.*` tables — make it operationally impossible for the agent to mutate production data.
+- **Read-only by structural enforcement.** Three independent layers — code discipline, dispatch policy gate (`MutatesState=0` check on every tool call), and IRIS RBAC role `SessionAgent_ReadOnly` granted SELECT-only on `Ens.*` tables — make it operationally impossible for the agent to mutate production data.
 - **Audit logging at FK-linked granularity.** Every LLM round-trip writes an `Audit.LlmCall` row; every tool dispatch writes an `Audit.ToolCall` row; both are foreign-key linked to the chat-history row. Reviewable via standard IRIS SQL — no separate audit UI.
 - **Provider portability.** Four bundled LLM providers (OpenAI, Anthropic, Google Gemini, OpenAI-compatible for Ollama / vLLM / any compatible endpoint) sit behind an Anthropic-canonical wire shape. Adding a 5th provider is one new subclass + one registry entry, no shared-infrastructure edits.
 - **MCP-exportable tool registry.** The tool dispatch contract `(toolName, jsonArgs) → jsonResult` stays MCP-friendly with no `%session.Data` reads, no Zen state coupling, no exceptions as error signals. MCP serving itself is delegated to the sibling [`iris-execute-mcp-v2`](https://github.com/jbrandtmse/iris-execute-mcp-v2) project.
@@ -114,7 +114,7 @@ The v1 scope is delivered across 10 user-value-first epics. Each epic delivers a
 
 The minimum that produces the operator's first delight moment — typing *"what happened?"* into a Visual Trace tab on a real failed session and getting a coherent multi-surface explanation. **Single agent (Inspection), single provider (OpenAI).**
 
-- **Epic 1 — Project Foundation & Installable Package** *(7 stories)*. `zpm install iris-session-agent` succeeds on IRIS 2024.1+ (Python-less); creates `%SessionAgent_ReadOnly` RBAC role; pre-registers four audit event types; prints both Mgmt Portal bookmark URLs (HealthShare + plain-IRIS); README operator-prerequisites is structural.
+- **Epic 1 — Project Foundation & Installable Package** *(7 stories)*. `zpm install iris-session-agent` succeeds on IRIS 2024.1+ (Python-less); creates `SessionAgent_ReadOnly` RBAC role; pre-registers four audit event types; prints both Mgmt Portal bookmark URLs (HealthShare + plain-IRIS); README operator-prerequisites is structural.
 - **Epic 2 — Inspection Agent Backend Plumbing** *(12 stories — maintainer checkpoint)*. Provider abstraction, tool registry + dispatch policy gate, `AgentLoop` with iteration cap + 90s per-call timeout, `Chat.History` with `%OpenId(id, 4)` concurrent-tab serialization, audit ledger, three example tools, end-to-end smoke test against OpenAI mock.
 - **Epic 3 — Inspection Agent UI MVP Demo-able** *(7 stories)*. Custom `EnsPortal.VisualTrace` subclass + chat panel + citation chips wired into parent's `selectItem`/`updateTabs` API. **PRD MVP first-delight gate (Story 3.7).**
 - **Epic 4 — Inspection Agent Full Tool Catalogue** *(7 stories)*. Remaining 10 inspection tools (event log, rule log, BP introspection trio, body-class dispatch ladder, super-session join, search-table pivot, `%Status` decoder). **PRD MVP-complete gate (Story 4.7).**

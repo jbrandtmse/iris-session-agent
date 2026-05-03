@@ -57,3 +57,31 @@ This file accumulates findings, follow-ups, and architect-decision items that ar
   - **Recommendation:** No change required. If a future story touches `Emit.cls` for unrelated reasons, optionally tighten the inline comment then. Not worth a dedicated edit.
   - **Owner:** None (no action required).
   - **Blocking?** Not blocking anything.
+
+---
+
+## Deferred from: code review of story-1.4-read-only-rbac-role-install (2026-05-02)
+
+- **Historical-doc references to `%SessionAgent_ReadOnly` (with leading `%`) preserved as authoring history.**
+
+  - **Source:** Story 1.4 code review.
+  - **Severity:** LOW (no operator-observable impact; the live IRIS role is `SessionAgent_ReadOnly` with no leading `%`, and all operator-facing + agent-authoring-facing artifacts have been updated to match).
+  - **The cross-cutting finding:** Story 1.4 Task 0 probe revealed that IRIS rejects user-created RBAC role names beginning with `%` (error #887 "Invalid role name" — the `%` prefix is reserved exclusively for IRIS-shipped pre-defined system roles per the `Security.Roles.Create` validator). The locked role name was changed from `%SessionAgent_ReadOnly` (per the original project memory + research docs) to `SessionAgent_ReadOnly`. See `_bmad-output/implementation-artifacts/probes/story-1-4-rbac-api-probe-2026-05-02.txt` §"Naming-decision note" for verbatim probe transcript.
+  - **What was updated in this commit (HIGH/MEDIUM auto-resolved):**
+    - `README.md` — operator-facing prereqs, design properties, Epic 1 description.
+    - `_bmad-output/planning-artifacts/architecture.md` — multiple references (lines 28, 91, 112, 253, 862, 980, 1072) — agent-authoring-facing spec.
+    - `_bmad-output/planning-artifacts/prd.md` — multiple references — agent-authoring-facing spec.
+    - `_bmad-output/planning-artifacts/epics.md` — Story 1.4 spec text + FR/NFR/AR cross-references — agent-authoring-facing.
+    - `_bmad-output/planning-artifacts/product-brief-iris-session-agent-distillate.md` — LLM-distillate (agent-authoring-facing).
+    - `_bmad-output/planning-artifacts/implementation-readiness-report-2026-05-02.md` — FR50 coverage row.
+    - `C:/Users/Josh/.claude/projects/c--git-iris-session-agent/memory/project_package_naming.md` — the locked-naming memory; updated with the probe rationale appended so future BMAD runs see both the corrected name AND the historical "why".
+  - **What was deliberately preserved as historical (this deferral):**
+    - `_bmad-output/implementation-artifacts/1-1-project-initialization.md` — Story 1.1 spec, historical authoring record predating the rename.
+    - `_bmad-output/implementation-artifacts/1-2-web-gateway-timeout-task-0-probe-readme-operator-prerequisites.md` — Story 1.2 spec, historical authoring record predating the rename.
+    - `_bmad-output/implementation-artifacts/1-4-read-only-rbac-role-install.md` — Story 1.4's OWN AC/Task wording. The dev's adaptation is captured verbatim in §"Task 0 Output" (Naming-decision note), §"Completion Notes List" (NEW finding paragraph), and §"Change Log". The original AC/Task text is preserved as the authoring trace.
+    - `_bmad-output/planning-artifacts/research/technical-pure-objectscript-session-inspection-agent-no-ai-hub-research-2026-05-01.md` and `…-message-search-agent-no-ai-hub-research-2026-05-02.md` — research input documents that informed the architecture; preserved as frozen historical inputs per the existing `project_package_naming.md` precedent for AI-Hub research docs ("historical and should NOT be retroactively renamed — they document a frozen previous design"). The same logic applies: the research docs reflect the architect's pre-probe assumption.
+    - `src/SessionAgent/Security/ReadOnlyRole.cls` lines 31, 38 + the probe transcript file — explanatory doc-comments that quote the rejected name as the **rationale** for the rename. Removing them would erase the "why" future readers need to understand the name choice. **Intentionally retained.**
+  - **Why deferring the historical refs is correct:** authoring history of dev/story decisions is the audit trail for *why* the project converged on the current spec. Retroactively rewriting Story 1.1 and Story 1.2's authoring text would erase the trace that the rename was discovered in Story 1.4 Task 0, not pre-known at planning. The pattern matches the existing precedent in `project_package_naming.md` for the AI-Hub-coupled research docs ("historical and should NOT be retroactively renamed — they document a frozen previous design").
+  - **Live-IRIS confirmation (2026-05-02 code review):** `Security.Roles.Exists("SessionAgent_ReadOnly")` returns 1; `Security.Roles.Exists("%SessionAgent_ReadOnly")` returns 0. The live role is correct.
+  - **Owner:** None — historical preservation is the resolution. Future stories that re-cite `%SessionAgent_ReadOnly` should be flagged in code review as a stale reference.
+  - **Blocking?** Not blocking. Story 1.5 (the natural carrier for installer-orchestrator wiring) inherits the corrected name from the updated planning artifacts.

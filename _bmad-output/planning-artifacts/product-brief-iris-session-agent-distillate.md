@@ -39,7 +39,7 @@ purpose: "Token-efficient context for downstream PRD creation. Dense bullets; ea
 - **IRIS / IRIS for Health 2024.1+** version floor. Every API/class/parameter must be verified available in 2024.1; design 2024.1-compatible fallbacks before newer-version optimizations.
 - **Pure ObjectScript** only in runtime. No embedded Python (`[Language = python]`) in any shipped class. Build-time tooling, tests, and one-off operator scripts may use Python.
 - **No AI Hub primitives** (`%AI.Agent`, `%AI.ToolSet`, `%AI.Tool`, `%AI.Agent.Session`, `%AI.Policy.Authorization`, `%AI.Shell.*`, `%AI.MCP.Service`). All replaced with custom code.
-- **Read-only** at three layers: (L1) implementation discipline, (L2) `SessionAgent.Tool.Registry.Dispatch` policy gate consulting `MutatesState=0/1`, (L3) IRIS RBAC role `%SessionAgent_ReadOnly` granted SELECT-only on `Ens.*` tables.
+- **Read-only** at three layers: (L1) implementation discipline, (L2) `SessionAgent.Tool.Registry.Dispatch` policy gate consulting `MutatesState=0/1`, (L3) IRIS RBAC role `SessionAgent_ReadOnly` granted SELECT-only on `Ens.*` tables.
 - **MCP serving NOT in this project** — handled by sibling [`../iris-execute-mcp-v2`](https://github.com/jbrandtmse/iris-execute-mcp-v2) project. Our tool registry stays MCP-exportable (clean `(toolName, jsonArgs) → jsonResult` contract; no `%session.Data` reads from inside tools, no Zen state coupling, no `$NAMESPACE` side effects, no exception-as-error-signal) so that suite can wrap it.
 - **IPM-installable** as a single module (`zpm install iris-session-agent`).
 - **`%Library.IRISWallet` does NOT exist in 2024.1** — Secure Wallet introduced in 2026.1. Topic-8 secrets path: env-var via `$SYSTEM.Util.GetEnviron` (primary, container-friendly) → `Ens.Config.Credentials` (secondary, encrypted at rest in `%SYS.Ensemble`) → custom `%Persistent` + `$System.Encryption.AESGCMEncrypt` (last-resort).
@@ -48,7 +48,7 @@ purpose: "Token-efficient context for downstream PRD creation. Dense bullets; ea
 
 - **`SessionAgent.*` is the single root package** for ALL custom classes. No `Custom.*` for portal subclasses (breaks from HSCUSTOM convention by user choice for single-package consistency).
 - Sub-packages (from architecture): `Agent`, `LLM`, `LLM.Util`, `Tool`, `Tool.Inspection`, `Tool.Search`, `Chat`, `Config`, `Audit`, `Security`, `Util`, `Search`, `Task`, `UI`, `EnsPortal`, plus top-level `Installer`.
-- IRIS RBAC role: `%SessionAgent_ReadOnly`. IPM resource: single `<Resource Name="SessionAgent.PKG"/>`. Bookmark URL: `/csp/healthshare/<NS>/SessionAgent.EnsPortal.{VisualTrace,MessageViewer}.zen`.
+- IRIS RBAC role: `SessionAgent_ReadOnly`. IPM resource: single `<Resource Name="SessionAgent.PKG"/>`. Bookmark URL: `/csp/healthshare/<NS>/SessionAgent.EnsPortal.{VisualTrace,MessageViewer}.zen`.
 
 ## V1 Scope (Full Plan, Incremental Delivery)
 
@@ -206,7 +206,7 @@ Foundational facts that downstream PRD/architecture/stories should treat as load
 - `project_iris_version_floor.md` — IRIS 2024.1+ floor, every API verified
 - `project_full_v1_scope.md` — two agents, four providers, per-agent Zen config, lifecycle coupling, IPM-installable
 - `project_v1_scope_boundaries.md` — Phase 1 REPL out, MCP serving in sibling project, tool registry stays MCP-exportable
-- `project_package_naming.md` — `SessionAgent.*` for ALL classes including portal subclasses; `%SessionAgent_ReadOnly` RBAC role
+- `project_package_naming.md` — `SessionAgent.*` for ALL classes including portal subclasses; `SessionAgent_ReadOnly` RBAC role
 - `project_search_agent_body_search_refinement.md` — body-content search via two-stage indexed-prefilter + body-inspection; vocabulary keys gain nullable `MessageBodyClass`
 - `project_product_posture.md` — hobby project, single author, OSS day one, hackathon origin only, no commercial motion, success metrics, downplay AI-Hub framing, elevator pitch
 

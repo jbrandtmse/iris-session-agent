@@ -87,7 +87,7 @@ The product fills a structural gap that exists today on the IRIS the community a
 2. **The user is already in the right page.** Visual Trace already focuses on a session; Message Viewer is already the query surface. Embed the agent there — don't bolt on a parallel UI.
 3. **Provider portability is mechanical, not architectural.** A four-provider LLM abstraction (Anthropic-canonical wire shape; OpenAI, Google Gemini, and any OpenAI-compatible endpoint as adapters) makes switching providers — or adding a fifth — one new concrete subclass plus a registry entry. No refactor.
 
-**Read-only by design.** Three layers of enforcement — code discipline, dispatch policy gate consulting `MutatesState`, and IRIS RBAC role `%SessionAgent_ReadOnly` granted SELECT-only on `Ens.*` tables — make it operationally impossible for the agent to mutate production data. Audit logging captures every LLM round-trip and tool dispatch at FK-linked granularity.
+**Read-only by design.** Three layers of enforcement — code discipline, dispatch policy gate consulting `MutatesState`, and IRIS RBAC role `SessionAgent_ReadOnly` granted SELECT-only on `Ens.*` tables — make it operationally impossible for the agent to mutate production data. Audit logging captures every LLM round-trip and tool dispatch at FK-linked granularity.
 
 **Vision horizons.** *Near term:* incident triage that fits in a coffee break instead of an evening; junior engineers operating without senior-tutorial overhead; correlated cross-surface errors actually getting found instead of getting missed. *Longer term:* the pure-ObjectScript LLM agent + MCP-exportable tool registry + per-agent Zen-page configuration pattern becomes a **reference implementation** for other IRIS-domain agents (Production Health, Schema Discovery, HealthShare Migration Assistant). When AI Hub matures to GA, this remains a community option for the long tail of older-IRIS deployments and a teaching example for the pattern.
 
@@ -131,7 +131,7 @@ This is a **hobby project** with no commercial motion. The standard "business su
 The product passes its technical bar when the platform invariants hold under operator-grade workloads:
 
 - **`zpm install iris-session-agent`** succeeds on a fresh IRIS / IRIS for Health 2024.1+ instance, including instances with embedded Python disabled. Release-gate CI on a Python-less IRIS image (when available) blocks merges that violate this invariant.
-- **Read-only is structurally enforced.** No code path inside the agent mutates `Ens.*` data — verified by (1) periodic audit-log review showing zero non-SELECT statements through the dispatch gate, (2) RBAC role `%SessionAgent_ReadOnly` granted SELECT-only, (3) dispatch policy gate `MutatesState=0` check.
+- **Read-only is structurally enforced.** No code path inside the agent mutates `Ens.*` data — verified by (1) periodic audit-log review showing zero non-SELECT statements through the dispatch gate, (2) RBAC role `SessionAgent_ReadOnly` granted SELECT-only, (3) dispatch policy gate `MutatesState=0` check.
 - **Audit logging is 100% complete.** Every LLM round-trip writes a `SessionAgent.Audit.LlmCall` row; every tool dispatch writes a `SessionAgent.Audit.ToolCall` row, FK-linked to the chat-history row.
 - **Provider switching is mechanical.** Adding a fifth provider is one new concrete `SessionAgent.LLM.Provider` subclass + one registry entry — no edits to `AgentLoop`, `ToolRegistry`, or any shared infrastructure. Validated when a community contributor adds one (or as a v1.5 self-test).
 - **Tool registry remains MCP-exportable.** Sibling `iris-execute-mcp-v2` wraps the registry into MCP `tools/list` + `tools/call` endpoints with no changes to this project. Validated by integration test from the sibling project.
@@ -170,7 +170,7 @@ The product passes its technical bar when the platform invariants hold under ope
 - **Single provider**: OpenAI only.
 - **Embedded as a chat tab** in `SessionAgent.EnsPortal.VisualTrace` (subclass of `EnsPortal.VisualTrace`).
 - **13 inspection tools**: `session_summary`, `session_timeline`, `message_headers`, `event_log`, `rule_log`, `find_related_sessions`, `find_sessions_by_body`, `get_message_body`, `get_message_detail`, `get_business_process_source`, `get_business_process_instance`, `list_business_process_methods`, `explain_error` (3 ship in Epic 3, the remaining 10 in Epic 4).
-- **Three-layer read-only enforcement** (code discipline + dispatch policy gate + RBAC role `%SessionAgent_ReadOnly`).
+- **Three-layer read-only enforcement** (code discipline + dispatch policy gate + RBAC role `SessionAgent_ReadOnly`).
 - **Audit logging** at LLM round-trip and tool dispatch granularity.
 - **Per-agent Zen config page** (`SessionAgent.UI.AgentConfig`) — single-agent variant.
 - **Chat history coupled to `Ens.MessageHeader.Purge()`** via daily sweep task.
@@ -250,7 +250,7 @@ Devin clicks session `1184885` (the rural clinic one). The portal navigates to V
 
 **Obstacle.** Most IRIS open-source tools she's evaluated either skip operator-prerequisites (and her team gets paged at 3am because the Web Gateway timed out an LLM call) or bundle so many transitive deps that approving them through security review is a multi-day saga. She's burned out on both shapes.
 
-**The story.** Aishah opens the README. First H2 is **Operator Prerequisites** with three concrete steps: (1) raise Web Gateway "Server Response Timeout" from 60s → 300s — *with an explanation of why* (LLM-call latencies often sit in the 30-90s band; default kills them mid-stream); (2) grant `%SessionAgent_ReadOnly` to the operator user/role; (3) supply the OpenAI API key via `$SYSTEM.Util.GetEnviron("OPENAI_API_KEY")` (preferred for containers) or `Ens.Config.Credentials` (traditional installs).
+**The story.** Aishah opens the README. First H2 is **Operator Prerequisites** with three concrete steps: (1) raise Web Gateway "Server Response Timeout" from 60s → 300s — *with an explanation of why* (LLM-call latencies often sit in the 30-90s band; default kills them mid-stream); (2) grant `SessionAgent_ReadOnly` to the operator user/role; (3) supply the OpenAI API key via `$SYSTEM.Util.GetEnviron("OPENAI_API_KEY")` (preferred for containers) or `Ens.Config.Credentials` (traditional installs).
 
 She runs `zpm install iris-session-agent` in HSCUSTOM. The Installer compiles `SessionAgent.*` cleanly — no Python required, no transitive Open Exchange deps. The bookmark `/csp/healthshare/HSCUSTOM/SessionAgent.EnsPortal.VisualTrace.zen` shows up in the Mgmt Portal bookmark list. She clicks it on a known-failed session from yesterday. The agent config tab is empty — no provider yet.
 
@@ -258,7 +258,7 @@ She opens **Agent Configuration**, picks `OpenAI` from the provider dropdown, mo
 
 **Resolution.** Total elapsed: 18 minutes including the README. Aishah schedules production rollout review for next sprint and posts to her team Slack: *"This is good. Here's how to use it."* Links the Open Exchange page.
 
-**Capabilities revealed.** IPM packaging as a single module (`<Resource Name="SessionAgent.PKG"/>`); Installer compiles cleanly with no transitive Open Exchange deps and no embedded Python at install or runtime; README **Operator Prerequisites** section as a structural deliverable (not optional copy); Zen-page agent configuration UI (provider / model / max-tokens / temperature / system-prompt-override / read-only flag / credential-ref); credential resolution ladder (env-var → `Ens.Config.Credentials` → custom encrypted store); RBAC role `%SessionAgent_ReadOnly` with SELECT-only grants on `Ens.*`; bookmark URL pattern `/csp/healthshare/<NS>/SessionAgent.EnsPortal.{VisualTrace,MessageViewer}.zen`.
+**Capabilities revealed.** IPM packaging as a single module (`<Resource Name="SessionAgent.PKG"/>`); Installer compiles cleanly with no transitive Open Exchange deps and no embedded Python at install or runtime; README **Operator Prerequisites** section as a structural deliverable (not optional copy); Zen-page agent configuration UI (provider / model / max-tokens / temperature / system-prompt-override / read-only flag / credential-ref); credential resolution ladder (env-var → `Ens.Config.Credentials` → custom encrypted store); RBAC role `SessionAgent_ReadOnly` with SELECT-only grants on `Ens.*`; bookmark URL pattern `/csp/healthshare/<NS>/SessionAgent.EnsPortal.{VisualTrace,MessageViewer}.zen`.
 
 ### Journey 4 — Community contributor: "Adding Cohere"
 
@@ -362,7 +362,7 @@ This section consolidates the developer-facing surfaces into a single reference;
 - **Single distribution channel: IPM (`zpm`)** — `zpm install iris-session-agent` against any IRIS / IRIS for Health 2024.1+ instance.
 - **Single ZPM module** with one `<Resource Name="SessionAgent.PKG"/>` resource and zero transitive Open Exchange dependencies.
 - **No alternate channels** — no Docker-image pre-build (operators run their own IRIS), no `irispip`-installed dependencies. Project rule: `irispip install` is operator-executed, never invoked from a ZPM hook.
-- **Operator prerequisites** documented in README §Operator Prerequisites (covered in Journey 3): Web Gateway "Server Response Timeout" raised from 60s → 300s; `%SessionAgent_ReadOnly` granted to operator user/role; LLM provider API key supplied via env-var (preferred) or `Ens.Config.Credentials` (secondary).
+- **Operator prerequisites** documented in README §Operator Prerequisites (covered in Journey 3): Web Gateway "Server Response Timeout" raised from 60s → 300s; `SessionAgent_ReadOnly` granted to operator user/role; LLM provider API key supplied via env-var (preferred) or `Ens.Config.Credentials` (secondary).
 
 ### API Surface (Developer-Facing Plugin Contracts)
 
@@ -541,7 +541,7 @@ This section is the **binding capability contract** for the product. Every featu
 
 ### Read-Only Enforcement & Audit
 
-- **FR31**: System enforces read-only access to `Ens.*` data through three independent layers: code discipline (no mutation calls in tool implementations), dispatch policy gate (`MutatesState=0` check on every tool dispatch), and IRIS RBAC role `%SessionAgent_ReadOnly` (SELECT-only grants).
+- **FR31**: System enforces read-only access to `Ens.*` data through three independent layers: code discipline (no mutation calls in tool implementations), dispatch policy gate (`MutatesState=0` check on every tool dispatch), and IRIS RBAC role `SessionAgent_ReadOnly` (SELECT-only grants).
 - **FR32**: System logs every LLM round-trip to a persistent audit class (`SessionAgent.Audit.LlmCall`) including provider, model, message count, token counts, latency, and conversation reference.
 - **FR33**: System logs every tool dispatch to a persistent audit class (`SessionAgent.Audit.ToolCall`) including tool name, arguments, result/error, latency, and conversation reference.
 - **FR34**: Audit rows are foreign-key linked to the chat-history row that contained the round-trip / dispatch.
@@ -569,7 +569,7 @@ This section is the **binding capability contract** for the product. Every featu
 
 - **FR48**: Operator-Admin can install the entire product via a single command: `zpm install iris-session-agent` against any IRIS / IRIS for Health 2024.1+ instance.
 - **FR49**: Installation succeeds on IRIS instances regardless of embedded Python availability (no `[Language = python]` in any shipped class, no Python at install or runtime).
-- **FR50**: Installation creates the `%SessionAgent_ReadOnly` RBAC role with SELECT-only grants on `Ens.*` tables.
+- **FR50**: Installation creates the `SessionAgent_ReadOnly` RBAC role with SELECT-only grants on `Ens.*` tables.
 - **FR51**: Installation creates Mgmt Portal bookmarks for both agent surfaces (`/csp/healthshare/<NS>/SessionAgent.EnsPortal.VisualTrace.zen` and `/csp/healthshare/<NS>/SessionAgent.EnsPortal.MessageViewer.zen`).
 - **FR52**: README documents operator prerequisites as a structural section: Web Gateway "Server Response Timeout" raised from 60s → 300s, RBAC role grant, LLM provider API key supply (env-var or `Ens.Config.Credentials`).
 - **FR53**: System ships with no transitive Open Exchange dependencies; everything required runs from the single `<Resource Name="SessionAgent.PKG"/>` resource.
@@ -598,7 +598,7 @@ NFRs specify HOW WELL the system must perform. This list is selective — only c
 
 ### Security
 
-- **NFR-S1 (Read-only invariant)**: No code path inside the agent can mutate `Ens.*` data. Enforced by three independent layers (FR31). **Test:** (1) static — `MutatesState=0` declared on every `SessionAgent.Tool.*` class, CI fails any tool that omits or sets to 1; (2) runtime — dispatch policy gate rejects any tool with `MutatesState=1`; (3) RBAC — installation creates `%SessionAgent_ReadOnly` with SELECT-only grants on `Ens.*` (FR50), validated by attempting a `DELETE` and observing the privilege failure.
+- **NFR-S1 (Read-only invariant)**: No code path inside the agent can mutate `Ens.*` data. Enforced by three independent layers (FR31). **Test:** (1) static — `MutatesState=0` declared on every `SessionAgent.Tool.*` class, CI fails any tool that omits or sets to 1; (2) runtime — dispatch policy gate rejects any tool with `MutatesState=1`; (3) RBAC — installation creates `SessionAgent_ReadOnly` with SELECT-only grants on `Ens.*` (FR50), validated by attempting a `DELETE` and observing the privilege failure.
 - **NFR-S2 (Credential confinement)**: API keys are never persisted in `SessionAgent.Config.Agent` rows. Configuration stores credential *references* only (FR41). **Test:** schema-level — `Config.Agent` has no `ApiKey` property, only `CredentialRef`. Code review enforced.
 - **NFR-S3 (Credential resolution hygiene)**: API key resolution uses the documented ladder env-var → `Ens.Config.Credentials` → custom encrypted store (FR40), *never* logs the resolved key value, and *never* embeds the key in audit-log rows. **Test:** audit-log row inspection validates no key material; redaction unit test covers credential-string detection.
 - **NFR-S4 (Audit completeness)**: Every LLM round-trip and every tool dispatch is logged (FR32-34). 100% completeness — no skipped paths. **Test:** integration test compares `count(SessionAgent.Audit.LlmCall)` and `count(SessionAgent.Audit.ToolCall)` against agent-loop instrumentation counts; equality required.

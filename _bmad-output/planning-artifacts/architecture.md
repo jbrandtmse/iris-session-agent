@@ -25,7 +25,7 @@ persistentMemoryFacts:
   - Implementation language — pure ObjectScript only; no embedded Python in the runtime path
   - IRIS version floor — 2024.1; every API/class/parameter must be verified available in 2024.1
   - V1 scope — TWO agents (Inspection + Search), FOUR providers (OpenAI/Anthropic/Gemini/Ollama-vLLM, OpenAI ships first), per-agent Zen config, MCP serving deferred (registry stays MCP-exportable), Phase 1 REPL out
-  - Package naming — ALL custom classes under SessionAgent.* including portal subclasses; RBAC role is %SessionAgent_ReadOnly
+  - Package naming — ALL custom classes under SessionAgent.* including portal subclasses; RBAC role is SessionAgent_ReadOnly
   - Search agent — body-search via two-stage indexed-prefilter + body-inspection; vocabulary keyed (PortalUser, MessageBodyClass, Alias)
   - Product posture — single-author hobby project, MIT open-source from day one, no commercial motion, milestone-based timeline
 project_name: 'iris-session-agent'
@@ -88,7 +88,7 @@ _This document builds collaboratively through step-by-step discovery. Sections a
 - **Pure ObjectScript runtime.** No `[Language = python]` method exists in any shipped class under `SessionAgent.*`. Build-time tooling and test fixtures may use Python; the runtime artifact does not require embedded Python.
 - **No AI Hub primitives.** `%AI.Agent`, `%AI.ToolSet`, `%AI.Tool`, `%AI.Agent.Session`, `%AI.Policy.Authorization`, `%AI.Shell.Console`, `%AI.MCP.Service` — all out of bounds. Replacements built directly on `%Net.HttpRequest` + `%DynamicObject` + `%Persistent` + `%Dictionary.*` + `%SQL.Statement`.
 - **Single ZPM module** (`zpm install iris-session-agent`) with one `<Resource Name="SessionAgent.PKG"/>` and zero transitive Open Exchange dependencies.
-- **All custom classes under `SessionAgent.*`** (single root package, including portal subclasses — no `Custom.EnsPortal.*`). RBAC role: `%SessionAgent_ReadOnly`.
+- **All custom classes under `SessionAgent.*`** (single root package, including portal subclasses — no `Custom.EnsPortal.*`). RBAC role: `SessionAgent_ReadOnly`.
 - **HSCUSTOMCODE database** with operator-controlled package mapping to interop namespaces (HealthShare convention).
 - **`$NAMESPACE` switching forbidden in CSP context** (per project rule applied to Zen pages and ZenMethod hyperevents). Each bookmark targets one namespace.
 - **MCP serving deferred** to sibling `iris-execute-mcp-v2` project. Tool dispatch contract stays MCP-exportable: `(toolName, jsonArgs) → jsonResult` with no `%session`/`%request`/Zen state coupling, no `%CSP.Response.Write`, no `$NAMESPACE` side effects, no exceptions as error signals.
@@ -109,7 +109,7 @@ _This document builds collaboratively through step-by-step discovery. Sections a
 
 These will appear in multiple components and require consistent treatment across the architecture:
 
-1. **Three-layer read-only enforcement** — code discipline (every tool), dispatch policy gate (`SessionAgent.Tool.Registry.Dispatch` consulting `MutatesState=0/1`), IRIS RBAC role (`%SessionAgent_ReadOnly` granted SELECT-only on `Ens.*` via `SessionAgent.Security.ReadOnlyRole.Install()`).
+1. **Three-layer read-only enforcement** — code discipline (every tool), dispatch policy gate (`SessionAgent.Tool.Registry.Dispatch` consulting `MutatesState=0/1`), IRIS RBAC role (`SessionAgent_ReadOnly` granted SELECT-only on `Ens.*` via `SessionAgent.Security.ReadOnlyRole.Install()`).
 2. **Audit logging interceptor** at `SessionAgent.Tool.Registry.Dispatch` — writes `SessionAgent.Audit.ToolCall` rows; the `SessionAgent.LLM.Provider.CallMessages` boundary writes `SessionAgent.Audit.LlmCall` rows; both FK-linked to `SessionAgent.Chat.History`. Search-agent dispatch enriches with `ResultSetSize`, `QueryTemplate`, `IndexUsed` columns.
 3. **LLM Provider abstraction** — `SessionAgent.LLM.Provider` abstract + 4 concretes (`OpenAIProvider`, `AnthropicProvider`, `GeminiProvider`, `OpenAICompatProvider`) + `SessionAgent.LLM.Util.{MessageAdapter, ToolDefAdapter, RetryWithBackoff}`. Canonical Anthropic shape; mechanical adapters down to OpenAI / Gemini / OpenAI-compat.
 4. **Chat-history lifecycle coupling** — Inspection-agent rows coupled to `Ens.MessageHeader.Purge()` via `SessionAgent.Task.PurgeOrphanedChatHistory` (daily sweep, Topic 10 Option B from research). Search-agent rows TTL-swept (default 30d, configurable) via `SessionAgent.Task.PurgeStaleSearchChat`. Vocabulary rows decay-swept weekly via `SessionAgent.Task.UserVocabularyDecay`.
@@ -250,7 +250,7 @@ The architecture for `iris-session-agent` is largely **pre-decided by upstream a
 |---|---|---|
 | Operator authentication | Inherits CSP/Zen portal session (no new auth surface) | UX, research |
 | Page authorization | Inherits parent's `%Ens_MessageTrace:USE` / `%Ens_MessageViewer:USE` resource gating | research |
-| Tool authorization | Three-layer enforcement: L1 code discipline + L2 dispatch policy gate (`MutatesState=0/1`) + L3 IRIS RBAC role `%SessionAgent_ReadOnly` granted SELECT-only on `Ens.*` | FR31, NFR-S1 |
+| Tool authorization | Three-layer enforcement: L1 code discipline + L2 dispatch policy gate (`MutatesState=0/1`) + L3 IRIS RBAC role `SessionAgent_ReadOnly` granted SELECT-only on `Ens.*` | FR31, NFR-S1 |
 | Search-arg safety | Three-layer: L1 parameterized prepare (`%SQL.Statement.%Prepare` + `%Execute(?)`) + L2 whitelist regex + L3 bounded-WHERE invariant | research §"Search-Arg-Construction Safety" |
 | Credential storage | env-var (`$SYSTEM.Util.GetEnviron`) → `Ens.Config.Credentials` → custom AES-encrypted store; never in `Config.Agent` row | FR40, FR41, NFR-S2 |
 | Encryption in transit | TLS via `%Net.HttpRequest.Https=1`; `SSLConfiguration = "DefaultSSL"` (operator-installed) | research |
@@ -859,7 +859,7 @@ iris-session-agent/
     │   │   ├── SeedVocabulary.cls         # %Persistent — ship-with templates (~10); seeded by installer
     │   │   └── VocabularyDigest.cls       # ClassMethod Build(portalUser) — top-N digest for first-user-message prefix
     │   ├── Security/
-    │   │   └── ReadOnlyRole.cls           # Layer-3 RBAC installer for %SessionAgent_ReadOnly; idempotent
+    │   │   └── ReadOnlyRole.cls           # Layer-3 RBAC installer for SessionAgent_ReadOnly; idempotent
     │   ├── Util/                          # cross-cutting helpers
     │   │   ├── EnvSecret.cls              # env-var → Ens.Config.Credentials → AES-encrypted custom store
     │   │   ├── Json.cls                   # %DynamicObject helpers (null-emit, deep-merge, redact)
@@ -977,7 +977,7 @@ The boundary is **the `RunTurn` entry point**. Everything above can be replaced 
 | `Config.*` | Per-agent runtime config; system-prompt defaults; credential references | (none — pure %Persistent) | `Agent.AgentLoop`, `LLM.Provider`, `UI.AgentConfig` |
 | `Audit.*` | Audit ledger persistence; native IRIS audit emit helper | `Chat.History` (FK), `%SYS Security.Events` (pre-registration) | `Tool.Registry` (interceptor), `LLM.Provider` (boundary), `Search.UserVocabulary` (vocab writes), `Task.*` (task-run events) |
 | `Search.*` | Per-user vocabulary; namespace baseline (v1.5); seed templates; digest assembly | `Audit.Emit` (vocab-write events), `Config.Agent` (digest tuning) | `Agent.AgentLoop` (first-turn injection), `Tool.Search.VocabLookup`, `Task.UserVocabularyDecay` |
-| `Security.ReadOnlyRole` | Layer-3 RBAC role install (`%SessionAgent_ReadOnly`); SELECT grants on `Ens.*` | %SYS `Security.Roles`, `%SYSTEM.SQL.Security` | `Installer.Install` |
+| `Security.ReadOnlyRole` | Layer-3 RBAC role install (`SessionAgent_ReadOnly`); SELECT grants on `Ens.*` | %SYS `Security.Roles`, `%SYSTEM.SQL.Security` | `Installer.Install` |
 | `Util.*` | Cross-cutting helpers — secret resolution, JSON helpers, retry policy | (none cross-package) | `LLM.*`, `Tool.*`, `Audit.*`, `Search.*`, `Task.*` |
 | `Task.*` | Three sweep tasks: orphaned chat (inspection), stale chat (search), vocabulary decay | `Chat.History`, `Search.UserVocabulary`, `Audit.Emit` (TaskRun events), `Ens.MessageHeader` (read-only) | `Installer.Install` (schedule installation) |
 | `UI.AgentConfig` | Zen-page operator configuration form | `Config.Agent`, `Ens.Config.Credentials` (dropdown population) | (operator browser) |
@@ -1069,7 +1069,7 @@ The boundary is **the `RunTurn` entry point**. Everything above can be replaced 
 - **Google Gemini generateContent API** — `https://generativelanguage.googleapis.com/v1beta/models/<model>:generateContent`; `x-goog-api-key`.
 - **Ollama / vLLM / OpenAI-compat** — operator-specified endpoint (`Config.Agent.EndpointUrl`); OpenAI Chat Completions wire format.
 - **Operator's Web Gateway** — README documents raising "Server Response Timeout" 60s → 300s.
-- **Operator's IRIS instance** — installer creates `%SessionAgent_ReadOnly` role and grants SELECT on `Ens.*`.
+- **Operator's IRIS instance** — installer creates `SessionAgent_ReadOnly` role and grants SELECT on `Ens.*`.
 
 #### Data Flow — Operator Asks "What Happened?"
 

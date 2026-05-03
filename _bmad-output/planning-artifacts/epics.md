@@ -82,7 +82,7 @@ The 10 v1 epics below consolidate the architect's original 18-step implementatio
 
 **Read-Only Enforcement & Audit (FR31–FR37)**
 
-- **FR31**: System enforces read-only access to `Ens.*` data through three independent layers: code discipline (no mutation calls in tool implementations), dispatch policy gate (`MutatesState=0` check on every tool dispatch), and IRIS RBAC role `%SessionAgent_ReadOnly` (SELECT-only grants).
+- **FR31**: System enforces read-only access to `Ens.*` data through three independent layers: code discipline (no mutation calls in tool implementations), dispatch policy gate (`MutatesState=0` check on every tool dispatch), and IRIS RBAC role `SessionAgent_ReadOnly` (SELECT-only grants).
 - **FR32**: System logs every LLM round-trip to a persistent audit class (`SessionAgent.Audit.LlmCall`) including provider, model, message count, token counts, latency, and conversation reference.
 - **FR33**: System logs every tool dispatch to a persistent audit class (`SessionAgent.Audit.ToolCall`) including tool name, arguments, result/error, latency, and conversation reference.
 - **FR34**: Audit rows are foreign-key linked to the chat-history row that contained the round-trip / dispatch.
@@ -110,7 +110,7 @@ The 10 v1 epics below consolidate the architect's original 18-step implementatio
 
 - **FR48**: Operator-Admin can install the entire product via a single command: `zpm install iris-session-agent` against any IRIS / IRIS for Health 2024.1+ instance.
 - **FR49**: Installation succeeds on IRIS instances regardless of embedded Python availability (no `[Language = python]` in any shipped class, no Python at install or runtime).
-- **FR50**: Installation creates the `%SessionAgent_ReadOnly` RBAC role with SELECT-only grants on `Ens.*` tables.
+- **FR50**: Installation creates the `SessionAgent_ReadOnly` RBAC role with SELECT-only grants on `Ens.*` tables.
 - **FR51**: Installation creates Mgmt Portal bookmarks for both agent surfaces (`/csp/healthshare/<NS>/SessionAgent.EnsPortal.VisualTrace.zen` and `/csp/healthshare/<NS>/SessionAgent.EnsPortal.MessageViewer.zen`).
 - **FR52**: README documents operator prerequisites as a structural section: Web Gateway "Server Response Timeout" raised from 60s → 300s, RBAC role grant, LLM provider API key supply (env-var or `Ens.Config.Credentials`).
 - **FR53**: System ships with no transitive Open Exchange dependencies; everything required runs from the single `<Resource Name="SessionAgent.PKG"/>` resource.
@@ -137,7 +137,7 @@ The 10 v1 epics below consolidate the architect's original 18-step implementatio
 
 **Security (NFR-S1–S6)**
 
-- **NFR-S1 (Read-only invariant)**: No code path inside the agent can mutate `Ens.*` data. Three independent layers (FR31). Test: (1) static — `MutatesState=0` declared on every `SessionAgent.Tool.*`; (2) runtime — dispatch policy gate rejects `MutatesState=1`; (3) RBAC — installation creates `%SessionAgent_ReadOnly` SELECT-only, validated by attempting a `DELETE`.
+- **NFR-S1 (Read-only invariant)**: No code path inside the agent can mutate `Ens.*` data. Three independent layers (FR31). Test: (1) static — `MutatesState=0` declared on every `SessionAgent.Tool.*`; (2) runtime — dispatch policy gate rejects `MutatesState=1`; (3) RBAC — installation creates `SessionAgent_ReadOnly` SELECT-only, validated by attempting a `DELETE`.
 - **NFR-S2 (Credential confinement)**: API keys never persisted in `SessionAgent.Config.Agent` rows (FR41). Test: schema-level — `Config.Agent` has no `ApiKey` property, only `CredentialRef`.
 - **NFR-S3 (Credential resolution hygiene)**: API key resolution uses the documented ladder (FR40), never logs the resolved key value, never embeds the key in audit-log rows. Test: audit-log row inspection; redaction unit test for credential-string detection.
 - **NFR-S4 (Audit completeness)**: Every LLM round-trip and every tool dispatch logged (FR32–34). 100% completeness — no skipped paths. Test: integration test compares `count(SessionAgent.Audit.LlmCall)` and `count(SessionAgent.Audit.ToolCall)` against agent-loop instrumentation counts; equality required.
@@ -191,7 +191,7 @@ Architecture-derived requirements that shape epic structure and acceptance crite
 - **AR3 (HSCUSTOMCODE distribution + dual bookmark patterns)**: Operator-controlled package mapping to interop namespaces (HealthShare convention); plain-IRIS Interop deployments document an alternative pattern; README shows BOTH bookmark URL patterns (`/csp/healthshare/<NS>/...zen` AND `/csp/<NS>/...zen`); installer prints both. Source: Architecture OD2/OD3.
 - **AR4 (Three sweep tasks scheduled at install time)**: `SessionAgent.Task.PurgeOrphanedChatHistory` (daily 02:00 UTC, removes Inspection chat-history rows whose Ens session was purged via `Ens.MessageHeader.Purge()`); `SessionAgent.Task.PurgeStaleSearchChat` (daily 03:00 UTC, TTL 30d default — operator-tunable via `Config.Agent.SearchChatRetentionDays`); `SessionAgent.Task.UserVocabularyDecay` (Sunday 04:00 UTC, deletes `Confidence < 0.2 AND LastUsed > 90d`). All scheduled by `Installer.Install`. Source: Architecture §"Sweep tasks".
 - **AR5 (Audit event pre-registration)**: `SessionAgent.Audit.Emit.EnsureEvents()` invoked at install time via `<Invoke>`; registers four event types in `%SYS` via `Security.Events.Create()` idempotently — `(SessionAgent, LlmCall, <provider>)`, `(SessionAgent, ToolCall, <tool_name>)`, `(SessionAgent, VocabWrite, clickthrough|explicit|extracted|seed)`, `(SessionAgent, TaskRun, <task_name>)`. Without pre-registration, `$System.Security.Audit(...)` silently returns 0. Source: Architecture §"Audit event triples" + project rule "Security.Events Pre-Registration for Audit".
-- **AR6 (`%SessionAgent_ReadOnly` RBAC role install)**: `SessionAgent.Security.ReadOnlyRole.Install()` via `<Invoke>`; idempotent SELECT-only grants on `Ens.*` tables; `Test/ReadOnlyRoleTest.cls` validates by attempting INSERT/DELETE → privilege failure. Source: Architecture + FR50.
+- **AR6 (`SessionAgent_ReadOnly` RBAC role install)**: `SessionAgent.Security.ReadOnlyRole.Install()` via `<Invoke>`; idempotent SELECT-only grants on `Ens.*` tables; `Test/ReadOnlyRoleTest.cls` validates by attempting INSERT/DELETE → privilege failure. Source: Architecture + FR50.
 - **AR7 (`SessionAgent.Util.RetryWithBackoff`)**: Full-jitter exponential backoff; `MaxAttempts=4`, `BaseDelaySec=1`, `MaxDelaySec=32`; non-retryable on 4xx (except 429); honor `Retry-After` (Anthropic/OpenAI) and `error.details[].retryDelay` (Gemini); never retry mid-flight network failures (no idempotency key documented across providers); surface mid-flight failures with `request-id` from response header. Source: Architecture §"API & Communication Patterns" + §"HTTP retry-after parsing".
 - **AR8 (`SessionAgent.Util.EnvSecret` credential resolution)**: env-var (`$SYSTEM.Util.GetEnviron`) preferred → `Ens.Config.Credentials` named entry → AES-encrypted custom store (`$System.Encryption.AESGCMEncrypt`) as last resort; never log resolved key value; never embed key in audit-log rows; redaction unit test covers credential-string detection. Source: Architecture + FR40 + NFR-S3.
 - **AR9 (`SessionAgent.Agent.AgentLoop` constants)**: `MaxIterationsPerTurn=10` (hitting cap appends synthetic "max-iterations reached, summarize" + break); `PerCallProviderTimeoutSec=90` (caught by agent + structured timeout-error envelope before 300s Web Gateway timeout fires). Source: Architecture OD5.
@@ -205,7 +205,7 @@ Architecture-derived requirements that shape epic structure and acceptance crite
   - **Epic 7 / arch Epic 11**: `&sql(SELECT 1 INTO :exists FROM Ens.MessageHeader WHERE %EXACT(SessionId)='...')` SQLCODE=0/100 semantics on 2024.1 (Story 7.1).
   - **Epic 9 / arch Epic 12**: `%OnAfterSave` issuing direct SQL UPDATE on the same row does NOT re-fire on 2024.1 (Story 9.1).
   - **Epic 9 / arch Epic 14**: `SynthesizeAlias` deterministic stringification unit test against ~10 reordering scenarios (Story 9.1).
-- **AR14 (README operator-prerequisites as structural deliverable)**: Three concrete steps: (1) raise Web Gateway "Server Response Timeout" 60s → 300s with explanation, (2) grant `%SessionAgent_ReadOnly` to operator user/role, (3) supply LLM provider API key via env-var (preferred for containers) or `Ens.Config.Credentials` (traditional installs); both bookmark URL patterns (HealthShare + plain IRIS); render-from-research-doc §"Operator README Content" for MVP. Source: FR52 + Aishah Journey 3.
+- **AR14 (README operator-prerequisites as structural deliverable)**: Three concrete steps: (1) raise Web Gateway "Server Response Timeout" 60s → 300s with explanation, (2) grant `SessionAgent_ReadOnly` to operator user/role, (3) supply LLM provider API key via env-var (preferred for containers) or `Ens.Config.Credentials` (traditional installs); both bookmark URL patterns (HealthShare + plain IRIS); render-from-research-doc §"Operator README Content" for MVP. Source: FR52 + Aishah Journey 3.
 - **AR15 (Operator quickstart and audit recipe docs)**: `docs/operator-quickstart.md` (Aishah Journey 3 walkthrough complementing README); `docs/audit-sql-recipes.md` (sample SQL queries against `SessionAgent.Audit.LlmCall` and `SessionAgent.Audit.ToolCall` for operator self-service audit per FR35 + NFR-O3); `docs/initial-prompt.md` (existing). Source: Architecture §"Project Directory Structure".
 - **AR16 (Lightweight CI for v1)**: `.github/workflows/ci.yml` with markdown lint + structural checks; full `%UnitTest` gate added once Python-less 2024.1 community image lands; manual smoke-test per release tag is the v1 baseline. Source: Architecture OD1.
 - **AR17 (ISO-8601 UTC timestamp standard)**: Every audit and chat timestamp uses `$Translate($ZDateTime($ZTimeStamp, 3, 1), " ", "T") _ "Z"` (`$ZTimeStamp` UTC, never `$Horolog` local). Source: Architecture §"Format Patterns" + project rule.
@@ -321,7 +321,7 @@ Every FR mapped to its **primary** epic (the epic that completes its acceptance)
 
 - **FR48** (`zpm install iris-session-agent` against IRIS 2024.1+) → Epic 1
 - **FR49** (Python-less install success) → Epic 1
-- **FR50** (Installation creates `%SessionAgent_ReadOnly` RBAC role) → Epic 1
+- **FR50** (Installation creates `SessionAgent_ReadOnly` RBAC role) → Epic 1
 - **FR51** (Installation creates Mgmt Portal bookmarks for both agents) → Epic 1
 - **FR52** (README operator-prerequisites as structural section) → Epic 1
 - **FR53** (no transitive Open Exchange dependencies — single Resource) → Epic 1
@@ -341,7 +341,7 @@ Every FR mapped to its **primary** epic (the epic that completes its acceptance)
 
 ### Epic 1: Project Foundation & Installable Package
 
-**Operator outcome:** Operator-Admin runs `zpm install iris-session-agent` on a fresh IRIS / IRIS for Health 2024.1+ instance and observes: package compiles cleanly with no transitive deps and no Python required, `%SessionAgent_ReadOnly` RBAC role created, four audit event types pre-registered in `%SYS`, both Mgmt Portal bookmarks visible (HealthShare + plain-IRIS patterns documented), README's three-step operator-prerequisites section is concrete and actionable. The product is *installable and trustworthy* — but no chat experience yet.
+**Operator outcome:** Operator-Admin runs `zpm install iris-session-agent` on a fresh IRIS / IRIS for Health 2024.1+ instance and observes: package compiles cleanly with no transitive deps and no Python required, `SessionAgent_ReadOnly` RBAC role created, four audit event types pre-registered in `%SYS`, both Mgmt Portal bookmarks visible (HealthShare + plain-IRIS patterns documented), README's three-step operator-prerequisites section is concrete and actionable. The product is *installable and trustworthy* — but no chat experience yet.
 
 **FRs covered:** FR48, FR49, FR50, FR51, FR52, FR53
 **ARs covered:** AR1 (no starter, hand-author from research-doc), AR2 (module.xml shape — single Resource + 3 install hooks + FileCopy + unauthenticated CSPApplication), AR3 (HSCUSTOMCODE + dual bookmark patterns), AR4 (sweep tasks scheduled by Installer — task implementations land in Epics 7 + 10), AR5 (4-event audit pre-registration in `%SYS`), AR6 (RBAC role install — idempotent SELECT-only on `Ens.*`), AR13-Epic1 (Web Gateway timeout Task-0 probe), AR14 (README operator-prerequisites structural deliverable), AR15-quickstart (`docs/operator-quickstart.md`), AR16 (lightweight CI scaffolding)
@@ -502,7 +502,7 @@ Each probe story records the probe output verbatim in its Tasks/Subtasks block b
 
 ## Epic 1: Project Foundation & Installable Package
 
-**Operator outcome:** Operator-Admin runs `zpm install iris-session-agent` on a fresh IRIS / IRIS for Health 2024.1+ instance and observes a clean, idempotent install that creates the `%SessionAgent_ReadOnly` RBAC role, pre-registers four audit event types in `%SYS`, prints both Mgmt Portal bookmark URLs (HealthShare + plain-IRIS patterns), and surfaces operator-prerequisites via a structural README section. The product is *installable and trustworthy* — no chat experience yet, but the foundation is verifiable end-to-end.
+**Operator outcome:** Operator-Admin runs `zpm install iris-session-agent` on a fresh IRIS / IRIS for Health 2024.1+ instance and observes a clean, idempotent install that creates the `SessionAgent_ReadOnly` RBAC role, pre-registers four audit event types in `%SYS`, prints both Mgmt Portal bookmark URLs (HealthShare + plain-IRIS patterns), and surfaces operator-prerequisites via a structural README section. The product is *installable and trustworthy* — no chat experience yet, but the foundation is verifiable end-to-end.
 
 **Stories (in order — each completable based only on previous stories within this epic):**
 
@@ -557,7 +557,7 @@ So that I can complete the prerequisites in under 30 minutes before installing t
 
 **Given** the operator opens the README
 **When** they navigate to §"Operator Prerequisites"
-**Then** the section enumerates three concrete steps in order: (1) raise Web Gateway "Server Response Timeout" to 300s with the documented reason (LLM-call latencies often sit in the 30–90s band; default kills them mid-stream), (2) grant `%SessionAgent_ReadOnly` to the operator user/role, (3) supply LLM provider API key via env-var (preferred for containers) or `Ens.Config.Credentials` (traditional installs)
+**Then** the section enumerates three concrete steps in order: (1) raise Web Gateway "Server Response Timeout" to 300s with the documented reason (LLM-call latencies often sit in the 30–90s band; default kills them mid-stream), (2) grant `SessionAgent_ReadOnly` to the operator user/role, (3) supply LLM provider API key via env-var (preferred for containers) or `Ens.Config.Credentials` (traditional installs)
 **And** the section shows BOTH bookmark URL patterns — HealthShare (`/csp/healthshare/<NS>/SessionAgent.EnsPortal.{VisualTrace,MessageViewer}.zen`) AND plain IRIS (`/csp/<NS>/SessionAgent.EnsPortal.{...}.zen`)
 **And** the section is positioned as the first H2 heading after the project introduction (per Aishah Journey 3 expectation that prerequisites precede the install command)
 
@@ -594,7 +594,7 @@ So that subsequent `$System.Security.Audit("SessionAgent","<Type>","<Name>", ...
 ### Story 1.4: Read-Only RBAC Role Install
 
 As an Operator-Admin,
-I want the install process to create the `%SessionAgent_ReadOnly` RBAC role with SELECT-only grants on `Ens.*` tables, idempotent across reinstalls,
+I want the install process to create the `SessionAgent_ReadOnly` RBAC role with SELECT-only grants on `Ens.*` tables, idempotent across reinstalls,
 So that the agent's read-only invariant has structural enforcement at the IRIS database privilege layer (NFR-S1 Layer 3, FR50).
 
 **Acceptance Criteria:**
@@ -602,18 +602,18 @@ So that the agent's read-only invariant has structural enforcement at the IRIS d
 **Given** the developer is implementing `SessionAgent.Security.ReadOnlyRole`
 **When** they implement the `Install()` class method
 **Then** the method switches to `%SYS` namespace using the explicit save/restore pattern (never `New $NAMESPACE`)
-**And** if the `%SessionAgent_ReadOnly` role does not exist, the method calls `Security.Roles.Create("%SessionAgent_ReadOnly", "Read-only access to Ens.* tables for iris-session-agent", "")` per IRIS 2024.1 `Security.Roles` API (verified by reading `irislib/Security/Roles.cls` source per project rule "IRIS Library Source")
+**And** if the `SessionAgent_ReadOnly` role does not exist, the method calls `Security.Roles.Create("SessionAgent_ReadOnly", "Read-only access to Ens.* tables for iris-session-agent", "")` per IRIS 2024.1 `Security.Roles` API (verified by reading `irislib/Security/Roles.cls` source per project rule "IRIS Library Source")
 **And** the method grants SELECT on `Ens.MessageHeader`, `Ens.Util.Log`, `Ens.Rule.Log`, `Ens.SuperSessionIndex`, and standard body-class projections to the role via `%SQL.Statement` GRANT — using `%EXACT()` discipline where applicable
 **And** the grants are explicitly SELECT-only — no INSERT, UPDATE, DELETE, or REFERENCES privileges
 **And** the method returns `%Status` per project convention
 
-**Given** the install has run once and `%SessionAgent_ReadOnly` exists with grants
+**Given** the install has run once and `SessionAgent_ReadOnly` exists with grants
 **When** `Install()` runs again (idempotent reinstall per NFR-R5)
 **Then** the role and its grants are not duplicated
 **And** the second invocation completes with `$$$OK`
 
 **Given** an integration test (`Test/ReadOnlyRoleTest.cls`) is run
-**When** the test grants `%SessionAgent_ReadOnly` to a test user, switches process context to that user via `$System.Security.Login()` (or equivalent that doesn't lose process context per project rule), and attempts `INSERT INTO Ens.MessageHeader ...` and `DELETE FROM Ens.MessageHeader WHERE ...`
+**When** the test grants `SessionAgent_ReadOnly` to a test user, switches process context to that user via `$System.Security.Login()` (or equivalent that doesn't lose process context per project rule), and attempts `INSERT INTO Ens.MessageHeader ...` and `DELETE FROM Ens.MessageHeader WHERE ...`
 **Then** both operations fail with a `<PROTECT>` privilege error (or equivalent SQL privilege exception)
 **And** a subsequent `SELECT FROM Ens.MessageHeader` succeeds for the same test user
 **And** the test cleans up the test user grant before completing
@@ -1325,7 +1325,7 @@ So that we explicitly satisfy the [PRD §"Product Scope MVP exit criteria"](prd.
 **Given** the MVP is built (Stories 3.1–3.6 + Epic 1 + Epic 2 complete) and installed on a pilot IRIS instance
 **When** the maintainer prepares the pilot operator walkthrough
 **Then** the maintainer identifies a real failed Ens session from the pilot operator's recent on-call history (not a synthetic test fixture)
-**And** the maintainer ensures Web Gateway timeout is raised to 300s (Story 1.2 README prereq), `%SessionAgent_ReadOnly` is granted to the pilot operator (Story 1.4), an OpenAI API key is configured (Story 2.3 EnvSecret resolution), and the `Config.Agent` row for `session-inspection` is `Enabled=1` with provider=openai, model=gpt-4o (Story 1.5 Installer seeded; flipped to enabled manually)
+**And** the maintainer ensures Web Gateway timeout is raised to 300s (Story 1.2 README prereq), `SessionAgent_ReadOnly` is granted to the pilot operator (Story 1.4), an OpenAI API key is configured (Story 2.3 EnvSecret resolution), and the `Config.Agent` row for `session-inspection` is `Enabled=1` with provider=openai, model=gpt-4o (Story 1.5 Installer seeded; flipped to enabled manually)
 
 **Given** the pilot operator opens Visual Trace on the chosen real-failed session
 **When** they click "Ask the agent" and type *"what happened?"* (or an equivalent natural-language opening)

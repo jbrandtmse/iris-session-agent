@@ -1,0 +1,290 @@
+Story 1.4 — Task 0 RBAC API probe transcript
+Captured 2026-05-02 by dev agent against live HSCUSTOM (default) IRIS instance.
+
+================================================================================
+Probe 1: Security.Roles API shape (via Help() in %SYS)
+================================================================================
+
+Command:  Do ##class(Security.Roles).Help()
+Namespace: %SYS
+
+Output:
+'Do Security.Roles.Help(method)' will display a full description of an individual method.
+
+Methods of the class: Security.Roles
+
+Copy(Name,NewName,NewDescription,EscalationOnly)
+     Copy a Role.
+
+CopySQLPrivileges(pFromRole,pToRole,pNamespaceList)
+     CopySQLPrivileges will copy SQL Admin Privileges and SQL Object Privileges from pFromRole to pToRole.
+
+Create(Name,Description,Resources,GrantedRoles,EscalationOnly)
+     Create a Role.
+
+Delete(Name)
+     Delete a role.
+
+Exists(Name,&Role,&Status)
+     Role exists.
+
+Export(FileName,&NumExported,Roles,Resources,SQLPrivileges,&NumSQLPrivilegesExported)
+     This method exports Role records to a file in xml format.
+
+Get(Name,&Properties,&Role)
+     Get a role's properties.
+
+GetProperties(Role,&Properties)
+     Get a role's properties.
+
+Help(method)
+     Write out a list of the methods of this object to the console.
+
+Import(FileName,&NumImported,Flags,&NumSQLPrivsImported)
+     Import Role records from an xml file.
+
+Modify(Name,&Properties)
+     Modify a role.
+
+Rename(NewRole,OldRole)
+     Rename a role, and update all associated tables.
+
+(XML serialization helpers omitted — not relevant to story)
+
+
+Verbatim signature query (FormalSpec from %Dictionary.MethodDefinition):
+  Create:        Name:%String,Description:%String,Resources:%String,GrantedRoles:%String,EscalationOnly:%Boolean=0
+  Exists:        Name:%String,&Role:%ObjectHandle,&Status:%Status
+  Delete:        Name:%String
+  AddRoles:      Rolename:%String,&Roles:%String,Admin:%Boolean=0
+  RemoveRoles:   Rolename:%String,&Roles:%String
+
+
+================================================================================
+Probe 2: Security.Users API shape (via Help() in %SYS)
+================================================================================
+
+Command:  Do ##class(Security.Users).Help()
+Namespace: %SYS
+
+Output (key methods):
+AddRoles(Username,&Roles,Admin)        — Add role(s) to the User's definition.
+Create(Username,UserRoles,Password,FullName,NameSpace,Routine,ExpirationDate,
+       ChangePassword,Enabled,Comment,Flags,...) — Create a User.
+Delete(Username)                       — Delete a User.
+Exists(Username,&User,&Status,Flag)    — User exists.
+Get(Username,&Properties)              — Get a User's properties.
+RemoveRoles(Username,&Roles)           — Remove role(s) from the User's definition.
+
+CheckPassword is NOT in Help() output but EXISTS on the class (confirmed via
+%Dictionary.MethodDefinition query):
+  Name:           CheckPassword
+  FormalSpec:     &User:%ObjectHandle,Password:%String=""
+  ReturnType:     %Boolean
+  ClassMethod:    1
+
+  Usage pattern: Set tValid = ##class(Security.Users).CheckPassword(.userObj, password)
+  where userObj is fetched via Security.Users.Exists() ByRef.
+
+This is the credential-validation API the project rules mandate (NEVER use
+$System.Security.Login() — it switches process context).
+
+
+================================================================================
+Probe 3: $SYSTEM.SQL.Security GRANT API (irislib/%SYSTEM/SQL/Security.cls)
+================================================================================
+
+File read: c:/git/iris-session-agent/irislib/%SYSTEM/SQL/Security.cls
+
+Canonical GRANT API confirmed:
+  ClassMethod GrantPrivilege(ObjPriv As %String,
+                             ObjList As %String,
+                             Type As %String,
+                             User As %String) As %Status
+
+  - ObjPriv: comma-delimited action names — "SELECT", "INSERT", "UPDATE",
+    "DELETE", "REFERENCES", "ALTER", "EXECUTE", "USE", or "*" for all.
+  - ObjList: comma-delimited list of SQL object names (e.g. "Ens.MessageHeader,
+    Ens_Util.Log") or "*".
+  - Type: "TABLE", "VIEW", "SCHEMA", "STORED PROCEDURE", "ML CONFIGURATION",
+    "FOREIGN SERVER".
+  - User: comma-delimited list of users OR roles (the implementation accepts
+    role names — verified by probe 4).
+  - Returns %Status. The implementation wraps the work in TSTART/TCOMMIT
+    internally; the caller does NOT need to manage a transaction.
+
+Privilege-query helper (used by Approach 4 of the test strategy):
+  ClassMethod CheckPrivilege(Username As %String,
+                             ObjectType As %Integer,
+                             Object As %String,
+                             Action As %String,
+                             Namespace As %String = "") As %Boolean
+
+  - ObjectType: 1=table, 3=view, 5=schema, 9=procedure, ...
+  - Action: single letter — "s"=SELECT, "i"=INSERT, "u"=UPDATE, "d"=DELETE,
+    "r"=REFERENCES, "a"=ALTER, "e"=EXECUTE, "l"=USE.
+  - Returns 1 if the user holds the privilege, 0 otherwise.
+  - Caller calling on behalf of another user must hold %Admin_Secure:USE
+    (the test runs as _SYSTEM which holds %All — satisfies that check).
+
+
+================================================================================
+Probe 4: SQL GRANT idempotency (live)
+================================================================================
+
+Setup (in %SYS):
+  Set tSC = ##class(Security.Roles).Create("ProbeTestRole","Temp probe role for idempotency test","","")
+  -> tSC = 1 (i.e. $$$OK)
+
+First GRANT (in HSCUSTOM):
+  Set tSC1 = $SYSTEM.SQL.Security.GrantPrivilege("SELECT","Ens.MessageHeader","TABLE","ProbeTestRole")
+  -> tSC1 = 1 (i.e. $$$OK)
+
+Second GRANT (immediately after, same parameters, in HSCUSTOM):
+  Set tSC2 = $SYSTEM.SQL.Security.GrantPrivilege("SELECT","Ens.MessageHeader","TABLE","ProbeTestRole")
+  -> tSC2 = 1 (i.e. $$$OK)
+
+CONCLUSION: GrantPrivilege() is idempotent — re-granting an already-granted
+privilege returns $$$OK silently. NO try/catch wrapping needed for AC-3.
+
+
+================================================================================
+Probe 5 (bonus): End-to-end CheckPrivilege validation of Approach 4
+================================================================================
+
+Created throwaway test user with ProbeTestRole granted, then queried
+CheckPrivilege for SELECT, INSERT, DELETE on Ens.MessageHeader.
+
+Probe class:  src/SessionAgent/Probe.cls (deleted after probe)
+Method:       SessionAgent.Probe:Run()
+
+Output:
+  ns=%SYS;create=1;ns=HSCUSTOM;select=1;insert=0;delete=0;
+
+Interpretation:
+  - User created with role: $$$OK
+  - SELECT privilege held    -> 1 (because role has SELECT grant on the table)
+  - INSERT privilege held    -> 0 (no INSERT was granted)
+  - DELETE privilege held    -> 0 (no DELETE was granted)
+
+This confirms Approach 4 (privilege-query) authentically distinguishes the
+SELECT-only invariant from a missing role-grant. The test method documents
+that this is a CheckPrivilege query, NOT a JOB/SetCredentials process-switch.
+
+
+================================================================================
+Probe 6 (bonus): Existing Ens.* tables in HSCUSTOM
+================================================================================
+
+Query:
+  SELECT TABLE_SCHEMA, TABLE_NAME FROM INFORMATION_SCHEMA.TABLES
+  WHERE TABLE_SCHEMA LIKE 'Ens%'
+  AND TABLE_NAME IN ('MessageHeader','Log','SuperSessionIndex')
+
+Results (HSCUSTOM):
+  Ens.MessageHeader
+  Ens.SuperSessionIndex
+  Ens_Enterprise_MsgBank.Log
+  Ens_Enterprise_MsgBank.MessageHeader
+  Ens_Rule.Log
+  Ens_Util.Log
+
+Conclusion: SQL projection of Ens.Util.Log and Ens.Rule.Log uses the
+underscore-separator schema name (Ens_Util.Log, Ens_Rule.Log) — exactly the
+projection naming convention the story flagged as "verify in Task 0". The
+GRANT loop must use the underscore-form names, NOT the dot-form class names.
+
+Final canonical GRANT target list:
+  Ens.MessageHeader        (FR31, NFR-S1 primary session-trace surface)
+  Ens.SuperSessionIndex    (FR8 FindRelatedSessions)
+  Ens_Util.Log             (FR5 EventLog tool — Epic 4)
+  Ens_Rule.Log             (FR6 RuleLog tool — Epic 4)
+
+
+================================================================================
+Process-context test strategy decision
+================================================================================
+
+Selected: Approach 4 (CheckPrivilege synthetic query)
+
+Rationale:
+  - Probe 5 demonstrated the query authentically distinguishes SELECT (granted)
+    from INSERT/DELETE (NOT granted) for a real user with the role attached.
+  - Approach 1 (JOB with test-user creds) would require cross-process error
+    capture, JOB exit-code retrieval, and a re-entrant ObjectScript surface
+    in this test class — significant lift for marginal authenticity gain.
+  - Approach 2 ($SYSTEM.Security.SetCredentials) does not exist on Security.Users
+    or %SYSTEM.Security per Probe 1+2; would need spelunking into undocumented
+    APIs.
+  - Approach 3 (%SQL.Statement with security-context arg) is not in any signature
+    surfaced by Probe 3 — no per-call security context arg exists on
+    %SQL.Statement.PrepareClassQuery / %Execute.
+  - Approach 4 is documented (irislib %SYSTEM/SQL/Security.cls), supported on
+    2024.1 (the target version floor), and exercises the same RBAC machinery
+    that any actual INSERT/DELETE attempt would consult. The L1+L2 layers
+    backstop the runtime path.
+
+The test method docstrings note this is a privilege-query test, not an
+INSERT-attempt test, with the L1/L2 backstop reference.
+
+
+================================================================================
+Naming-decision note: role name changed from %SessionAgent_ReadOnly to
+SessionAgent_ReadOnly
+================================================================================
+
+The original project memory (project_package_naming.md) specified the role
+name as %SessionAgent_ReadOnly, on the documented assumption that the
+leading "%" would cause IRIS to treat it as a system role.
+
+Live probe revealed this assumption is incorrect:
+
+  Set tSC = ##class(Security.Roles).Create("%SessionAgent_ReadOnly",
+                                           "Read-only access to Ens.* tables",
+                                           "",
+                                           "")
+  Write $System.Status.GetErrorText(tSC)
+  -> "ERROR #887: Invalid role name %SessionAgent_ReadOnly."
+
+Confirmed via Perplexity research against InterSystems documentation
+(docs.intersystems.com Security.Roles): the IRIS Security.Roles.Create
+validator reserves the "%" prefix EXCLUSIVELY for IRIS-shipped pre-defined
+system roles (%All, %Manager, %Operator, %Developer, %SQL, %DB_*, ...).
+User-created roles cannot begin with "%". Underscores ARE permitted in role
+names.
+
+Verification of the alternate name:
+
+  Set tSC = ##class(Security.Roles).Create("SessionAgent_ReadOnly",
+                                           "Test",
+                                           "",
+                                           "")
+  -> tSC = 1 ($$$OK)
+  Write ##class(Security.Roles).Exists("SessionAgent_ReadOnly")
+  -> 1
+
+Decision: the role name was changed to "SessionAgent_ReadOnly" (no leading
+"%"). The underscore preserves the visual distinction from a user account
+of the same name (IRIS user/role namespaces do allow collisions because
+they are stored in distinct catalogs, but the underscore is a strong
+convention used elsewhere in the project — e.g., test-user names).
+
+The Parameter ROLENAME on SessionAgent.Security.ReadOnlyRole was updated
+accordingly, with a long-form docstring explaining why the original memory
+name was rejected. project_package_naming.md should be updated when this
+story merges (Story 1.5 will own that operator-facing memory update).
+
+
+================================================================================
+Cleanup of probe artifacts
+================================================================================
+
+  - SessionAgent.Probe class deleted from HSCUSTOM (iris_doc_delete OK).
+  - src/SessionAgent/Probe.cls deleted from disk.
+  - ProbeTestUser deleted via Security.Users.Delete() in %SYS.
+  - ProbeTestRole deleted via Security.Roles.Delete() in %SYS.
+  - Re-verified post-cleanup: returnValue="user-deleted;role-deleted;"
+
+================================================================================
+END OF TRANSCRIPT
+================================================================================

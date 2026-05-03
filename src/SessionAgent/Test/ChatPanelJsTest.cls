@@ -284,6 +284,47 @@ Method TestRenderToolCardEmitsToolNameAttr()
     Do $$$AssertTrue(..FileContents [ "setAttribute('data-tool-name'", "renderToolCard tags every card with data-tool-name (Story 3.4 Carry-Forward Path 2 closure)")
 }
 
+/// <p>Story 3.5 AC-5 — <code>ERROR_KIND_TO_TEXT</code> map literal
+/// present + load-bearing kinds. Asserts the JS source contains the
+/// canonical map identifier AND the six wire-format error kinds the
+/// AgentLoop / OpenAIProvider / SendChatMessage envelopes can produce
+/// (provider_timeout, provider_error, provider_auth, provider_rate_limit,
+/// no_config, internal). A regression that drops one of the kinds would
+/// silently fall back to the generic "Something went wrong" path,
+/// burying operator-actionable per-kind advice.</p>
+Method TestErrorKindToTextMapPresent()
+{
+    Do $$$AssertStatusOK(..LoadFile(), "LoadFile resolved chat-panel.js at " _ ..FilePath)
+    Do $$$AssertTrue(..FileContents [ "ERROR_KIND_TO_TEXT", "ERROR_KIND_TO_TEXT map identifier present (Story 3.5 AC-5)")
+    Do $$$AssertTrue(..FileContents [ "'provider_timeout'", "ERROR_KIND_TO_TEXT keys provider_timeout (Story 3.5 AC-5)")
+    Do $$$AssertTrue(..FileContents [ "'provider_error'", "ERROR_KIND_TO_TEXT keys provider_error (Story 3.5 AC-5)")
+    Do $$$AssertTrue(..FileContents [ "'provider_auth'", "ERROR_KIND_TO_TEXT keys provider_auth (Story 3.5 AC-5)")
+    Do $$$AssertTrue(..FileContents [ "'provider_rate_limit'", "ERROR_KIND_TO_TEXT keys provider_rate_limit (Story 3.5 AC-5)")
+    Do $$$AssertTrue(..FileContents [ "'no_config'", "ERROR_KIND_TO_TEXT keys no_config (Story 3.5 AC-5)")
+    Do $$$AssertTrue(..FileContents [ "'internal'", "ERROR_KIND_TO_TEXT keys internal (Story 3.5 AC-5)")
+    ; UX-DR18-MVP-subset verbatim text fragments — locks the wording.
+    Do $$$AssertTrue(..FileContents [ "exceeded 90 seconds", "provider_timeout includes the 90-second mention (UX-DR18-MVP-subset)")
+    Do $$$AssertTrue(..FileContents [ "operator-admin needs to set up", "no_config text uses the operator-admin call-to-action (UX-DR18-MVP-subset)")
+}
+
+/// <p>Story 3.5 AC-5 — <code>renderErrorBlock</code> handles unknown
+/// kinds via the generic fallback. Asserts the JS source contains the
+/// fallback text fragment <code>"Something went wrong: "</code>; this
+/// is the literal that fires when <code>error.kind</code> is undefined
+/// or not present in the map. A regression that hard-codes the AC-5 map
+/// without the unknown-kind fallback would break backward compatibility
+/// with Story 3.2's existing error paths (which emit
+/// <code>{kind:'provider_error', message:'...'}</code> but used to
+/// render via the prior <code>error.message</code>-only path — the
+/// generic fallback is the safety net).</p>
+Method TestRenderErrorBlockHandlesUnknownKind()
+{
+    Do $$$AssertStatusOK(..LoadFile(), "LoadFile resolved chat-panel.js at " _ ..FilePath)
+    Do $$$AssertTrue(..FileContents [ "Something went wrong: ", "renderErrorBlock has unknown-kind fallback text (Story 3.5 AC-5)")
+    ; Map lookup pattern — locks the renderer-via-map dispatch shape.
+    Do $$$AssertTrue(..FileContents [ "ERROR_KIND_TO_TEXT[kind]", "renderErrorBlock looks up by kind (Story 3.5 AC-5)")
+}
+
 /// <p>Story 3.4 AC-7 — <code>parseInlineCitations</code> regex widened
 /// to capture an OPTIONAL third group (the body class name needed by
 /// parent <code>selectItem</code>'s <code>extraType</code> param).

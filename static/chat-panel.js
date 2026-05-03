@@ -63,6 +63,49 @@
     /* Code-fence regex: ```lang\n...\n``` — captures lang (optional) + body. */
     var CODE_FENCE_RE = /```([a-zA-Z0-9_+-]*)\n([\s\S]*?)\n```/g;
 
+    /* Story 3.5 AC-5 — operator-readable error text per kind, keyed by
+     * the canonical envelope `error.kind` values produced by the
+     * AgentLoop / OpenAIProvider error envelopes:
+     *   provider_timeout  — 90s cap exceeded (Story 2.9 OpenAIProvider).
+     *   provider_error    — generic provider HTTP error.
+     *   provider_auth     — 401/403 from provider (bad/missing API key).
+     *   provider_rate_limit — 429 from provider.
+     *   no_config         — agent not configured (caught fallback when
+     *                       the EnsPortal.VisualTrace AC-4 server-side
+     *                       no-config detection didn't fire — defense-
+     *                       in-depth at the JS layer).
+     *   internal          — defense-in-depth catch-all from the
+     *                       SendChatMessage never-throw envelope.
+     * Each entry is a function(error) -> string so per-kind retry hints
+     * + provider/reason interpolation can vary. The UX-DR18-MVP-subset
+     * spec text is preserved verbatim where possible. Unknown kinds
+     * fall back to the generic message via renderErrorBlock. */
+    var ERROR_KIND_TO_TEXT = {
+        'provider_timeout': function (err) {
+            return 'The LLM call exceeded 90 seconds. The provider may be overloaded or the question too complex. Try again or simplify.';
+        },
+        'provider_error': function (err) {
+            var provider = (err && err.provider) || 'the provider';
+            var reason = (err && err.message) || 'unknown error';
+            return "Couldn't reach " + provider + ': ' + reason + ". Check the provider's status or your API key.";
+        },
+        'provider_auth': function (err) {
+            var provider = (err && err.provider) || 'the provider';
+            return "Couldn't authenticate to " + provider + '. Check your API key in the agent configuration.';
+        },
+        'provider_rate_limit': function (err) {
+            var provider = (err && err.provider) || 'the provider';
+            return provider + ' is rate-limiting requests. Wait a moment and try again.';
+        },
+        'no_config': function (err) {
+            return "This agent isn't configured. An operator-admin needs to set up an LLM provider.";
+        },
+        'internal': function (err) {
+            var msg = (err && err.message) || 'an unexpected error';
+            return 'Something went wrong: ' + msg + '. See the audit log for details.';
+        }
+    };
+
     /* ------------------------------------------------------------------ */
     /* Init: wait for DOMContentLoaded if needed, then wire handlers.      */
     /* ------------------------------------------------------------------ */
@@ -373,9 +416,14 @@
     /* ------------------------------------------------------------------ */
 
     /**
-     * AC-4: render an error block. error = {kind, message}. The message
-     * is rendered as plain textContent so any provider-side strings
-     * containing HTML are inert.
+     * Story 3.5 AC-5 (extends Story 3.2 AC-4) — render an error block.
+     * error = {kind, message, provider?}. The kind is looked up in
+     * ERROR_KIND_TO_TEXT for an operator-readable message + per-kind
+     * retry hint. Unknown kinds fall back to the generic
+     * "Something went wrong: <message>" pattern.
+     *
+     * The message is rendered as plain textContent so any provider-side
+     * strings containing HTML are inert (XSS-safety per Story 3.2 AC-3).
      */
     function renderErrorBlock(error) {
         var block = document.createElement('div');
@@ -383,13 +431,29 @@
 
         var text = document.createElement('span');
         text.setAttribute('class', 'sa-error-text');
-        text.textContent = (error && error.message) || 'An error occurred.';
+
+        // Story 3.5 AC-5: look up by kind. Unknown kinds fall through to
+        // the generic message which preserves the prior Story 3.2 shape
+        // (so existing behavior is backward-compatible when kind is
+        // missing or unrecognized).
+        var kind = error && error.kind;
+        var renderer = kind && ERROR_KIND_TO_TEXT[kind];
+        if (renderer) {
+            text.textContent = renderer(error);
+        } else {
+            text.textContent = 'Something went wrong: ' + ((error && error.message) || 'unknown error');
+        }
         block.appendChild(text);
 
-        var hint = document.createElement('span');
-        hint.setAttribute('class', 'sa-error-hint');
-        hint.textContent = ' (Try resubmitting; if the error persists, check the agent configuration.)';
-        block.appendChild(hint);
+        // Per-kind retry hints already live inside the ERROR_KIND_TO_TEXT
+        // renderers; the generic .sa-error-hint span stays only for the
+        // unknown-kind path so the operator still sees a recovery cue.
+        if (!renderer) {
+            var hint = document.createElement('span');
+            hint.setAttribute('class', 'sa-error-hint');
+            hint.textContent = ' (Try resubmitting; if the error persists, check the agent configuration.)';
+            block.appendChild(hint);
+        }
 
         state.transcriptEl.appendChild(block);
     }

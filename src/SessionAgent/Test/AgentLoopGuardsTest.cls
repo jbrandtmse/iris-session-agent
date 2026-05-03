@@ -177,6 +177,91 @@ Method TestRunTurnSurvivesMalformedToolUseBlocks()
     Quit
 }
 
+/// <p>Story 3.5 AC-6 (closes Story 3.3 reviewer's binding deferral F5)
+/// — system-prompt session-id injection. Constructs a probe mock that
+/// captures the system prompt passed into <method>Invoke</method>;
+/// invokes <method>RunTurn</method> with bound <var>pSessionKey="1"</var>;
+/// asserts the captured prompt contains the canonical binding sentence.</p>
+///
+/// <p>Capture mechanism: the probe mock subclasses
+/// <CLASS>SessionAgent.Test.AgentLoopMockProvider</CLASS> and overrides
+/// <method>Invoke</method> to stash <var>pSystemPrompt</var> into a
+/// process-private global before delegating to <code>##super</code>.
+/// Process-private globals (<code>^||...</code>) preserve plain string
+/// state across the AgentLoop's per-turn provider re-instantiation
+/// (the OREF identity problem the production code uses
+/// <CLASS>SessionAgent.Agent.ProviderOverride</CLASS> to solve does NOT
+/// apply here — strings round-trip through globals fine).</p>
+Method TestRunTurnInjectsBoundSessionIdIntoSystemPrompt()
+{
+    Set tSessionKey = ..SessionKey("sysprompt-bind")
+    Set tResponses = ##class(%DynamicArray).%New()
+    Do tResponses.%Push(..BuildOpenAiResponse("Captured."))
+
+    ; Install the capture mock in place of the standard mock provider.
+    Set tConfig = ##class(%DynamicObject).%New()
+    Do tConfig.%Set("responses", tResponses)
+    Do ##class(SessionAgent.Agent.ProviderOverride).SetOverride("SessionAgent.Test.SystemPromptCaptureMock", tConfig.%ToJSON())
+    Kill ^||SessionAgentSystemPromptCapture
+
+    Set tResult = ##class(SessionAgent.Agent.AgentLoop).RunTurn("session-inspection", tSessionKey, "tester", "Use the bound session id")
+    Do $$$AssertTrue($IsObject(tResult), "RunTurn returns TurnResult OREF")
+
+    Set tCaptured = $Get(^||SessionAgentSystemPromptCapture, "")
+    Do $$$AssertNotEquals(tCaptured, "", "SystemPromptCaptureMock captured the system prompt (got: " _ $Extract(tCaptured, 1, 200) _ ")")
+    Do $$$AssertTrue(tCaptured [ "currently-bound IRIS Production Ens session ID for this conversation is " _ tSessionKey, "system prompt contains the AC-6 binding sentence with bound session-key (got: " _ $Extract(tCaptured, 1, 400) _ ")")
+    Do $$$AssertTrue(tCaptured [ "Use this id verbatim", "system prompt contains the AC-6 verbatim-use directive")
+
+    Kill ^||SessionAgentSystemPromptCapture
+    Quit
+}
+
+/// <p>Story 3.5 AC-6 — sibling structural assertion. The binding sentence
+/// must be OMITTED when <var>pSessionKey</var> is empty (search-agent
+/// contexts where session_id isn't bound — future Epic 8+). This is a
+/// structural test rather than an integration test because
+/// <method>SessionAgent.Chat.History.LoadOrCreate</method> rejects empty
+/// session keys (the empty-pSessionKey path is unreachable via
+/// <method>RunTurn</method>); we instead read the compiled
+/// <method>RunTurn</method> body and assert the load-bearing
+/// <code>If pSessionKey '= ""</code> guard is present immediately before
+/// the binding-sentence concatenation. A regression that drops the
+/// guard would slip the binding into search-agent contexts where it
+/// makes no sense.</p>
+Method TestRunTurnOmitsSessionIdSentenceWhenSessionKeyEmpty()
+{
+    ; Read the compiled RunTurn method body via %Dictionary.CompiledMethod
+    ; (mirrors the static-inspection pattern used in
+    ; SessionAgent.Test.VisualTraceTest.TestOnCitationClickPresent for
+    ; ClientMethod bodies).
+    Set tMethod = ##class(%Dictionary.CompiledMethod).%OpenId("SessionAgent.Agent.AgentLoop||RunTurn")
+    Do $$$AssertTrue($IsObject(tMethod), "RunTurn ClassMethod is defined on SessionAgent.Agent.AgentLoop")
+    If '$IsObject(tMethod) Quit
+
+    Do tMethod.Implementation.Rewind()
+    Set tBody = ""
+    While 'tMethod.Implementation.AtEnd {
+        Set tBody = tBody _ tMethod.Implementation.Read(32000)
+    }
+
+    ; The AC-6 guard literal: "If pSessionKey '= """ (the IF + the
+    ; not-equal-to-empty test). The injection sentence appears INSIDE
+    ; that guard's braces.
+    Do $$$AssertTrue(tBody [ "If pSessionKey '= """, "RunTurn body contains the AC-6 empty-session-key guard 'If pSessionKey ''= """"' before the binding-sentence concatenation")
+    Do $$$AssertTrue(tBody [ "currently-bound IRIS Production Ens session ID for this conversation is", "RunTurn body contains the AC-6 binding-sentence literal")
+    Do $$$AssertTrue(tBody [ "Use this id verbatim", "RunTurn body contains the AC-6 verbatim-use directive literal")
+
+    ; Tighter check: the binding-sentence concatenation must appear
+    ; AFTER the guard (so the guard actually controls it). Find the
+    ; positions and assert order.
+    Set tGuardPos = $Find(tBody, "If pSessionKey '= """) - 1
+    Set tBindPos = $Find(tBody, "currently-bound IRIS Production Ens session ID") - 1
+    Do $$$AssertTrue(tGuardPos > 0, "guard literal located in RunTurn body")
+    Do $$$AssertTrue(tBindPos > 0, "binding-sentence literal located in RunTurn body")
+    Do $$$AssertTrue(tGuardPos < tBindPos, "guard precedes the binding-sentence concatenation (guardPos=" _ tGuardPos _ ", bindPos=" _ tBindPos _ ")")
+    Quit
+}
+
 /// <p>Helper — build an OpenAI-shape response with a malformed tool_call:
 /// the <code>id</code> field is empty (provider violation we want to
 /// defend against). <code>finish_reason</code> = <code>tool_calls</code>

@@ -192,4 +192,69 @@ ClassMethod DrawChatPanel(pAgentName As %String, pSessionKey As %String = "", pP
     Quit tSC
 }
 
+/// <p>Story 3.5 AC-1 / AC-4 — emit the config-empty prompt instead of
+/// the chat shell when no <CLASS>SessionAgent.Config.Agent</CLASS> row
+/// exists for the bound agent OR the row is disabled. Replaces the
+/// transcript area + disables the input field per UX-DR7-admin.</p>
+///
+/// <p><b>Two variants:</b></p>
+/// <ul>
+/// <li><b>Admin variant</b> (<var>pIsAdmin</var>=1): the prompt names
+/// the future Epic 6 config page (<code>SessionAgent.UI.AgentConfig.zen</code>)
+/// as a placeholder URL with a "coming in Epic 6" caveat. Operators
+/// with <code>%All</code> see actionable language.</li>
+/// <li><b>Non-admin variant</b> (<var>pIsAdmin</var>=0): the prompt
+/// reads *"This agent isn't configured yet. Ask your operator-admin."*
+/// — no link, no actionable language. Aligns with UX-DR7-admin (only
+/// admins see the configuration link).</li>
+/// </ul>
+///
+/// <p><b>Accessibility (UX-DR20-MVP):</b> the prompt has
+/// <code>role="alert"</code> so screen readers announce the empty state
+/// on tab open. The input field has <code>aria-disabled="true"</code>
+/// plus the visual de-emphasis CSS class
+/// <code>sa-input-field-disabled</code> (Story 3.5 AC-1 +
+/// <CLASS>SessionAgent.UI.ChatPanel</CLASS> CSS additions).</p>
+///
+/// <p><b>NO bootstrap script.</b> chat-panel.js does NOT initialize in
+/// this state — the input field is disabled, the transcript is replaced
+/// by the prompt, and there's no submit affordance. Skipping the
+/// bootstrap also avoids the <code>SessionAgentChat</code> global being
+/// emitted with empty values that could confuse a future smoke test.</p>
+ClassMethod EmitConfigEmpty(pAgentName As %String, pIsAdmin As %Boolean = 0) As %Status
+{
+    Set tSC = $$$OK
+    Try {
+        If $Get(pAgentName) = "" {
+            Set tSC = $$$ERROR($$$GeneralError, "EmitConfigEmpty: pAgentName is required")
+            Quit
+        }
+
+        ; Build the prompt text per the admin / non-admin variant.
+        ; Both use plain English text; the admin variant adds the
+        ; placeholder Epic-6-link sentence.
+        If pIsAdmin {
+            Set tPromptText = "This agent isn't configured yet. Set up an LLM provider at SessionAgent.UI.AgentConfig.zen (configuration page coming in Epic 6 — placeholder URL for now)."
+        } Else {
+            Set tPromptText = "This agent isn't configured yet. Ask your operator-admin."
+        }
+
+        ; Emit the panel shell with the prompt replacing the transcript +
+        ; disabled input. The shape matches DrawChatPanel's wrapper so
+        ; CSS selectors like .sa-chat-panel still apply (UX-DR7-admin
+        ; says "replace transcript area"; we keep the panel chrome and
+        ; replace the inner content).
+        &html<<section role="region" aria-label="Agent chat panel" class="sa-chat-panel">>
+        &html<<div class="sa-config-empty-prompt" role="alert">#($ZConvert(tPromptText, "O", "HTML"))#</div>>
+        &html<<form class="sa-input-area">>
+        &html<<textarea class="sa-input-field sa-input-field-disabled" aria-label="Agent not configured" aria-disabled="true" disabled></textarea>>
+        &html<</form>>
+        &html<</section>>
+    }
+    Catch ex {
+        Set tSC = ex.AsStatus()
+    }
+    Quit tSC
+}
+
 }

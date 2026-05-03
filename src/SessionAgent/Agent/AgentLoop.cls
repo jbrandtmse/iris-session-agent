@@ -184,6 +184,19 @@ ClassMethod RunTurn(pAgentName As %String, pSessionKey As %String, pPortalUser A
             Set tSysPrompt = ##class(SessionAgent.Config.AgentDefaults).GetSystemPrompt(pAgentName)
         }
 
+        ; Story 3.5 AC-6 (closes Story 3.3 reviewer's binding deferral F5).
+        ; Append a sentence binding the system prompt to pSessionKey so the
+        ; LLM grounds inspection-tool calls in the bound IRIS session id
+        ; rather than hallucinating UUIDs. Omitted when pSessionKey is
+        ; empty (search-agent contexts where session_id isn't bound — future
+        ; Epic 8+ usage). The sentence sits AFTER the per-row override or
+        ; per-agent default so an operator-customized system prompt still
+        ; receives the binding (the override doesn't escape the binding —
+        ; that would defeat the purpose of the fix).
+        If pSessionKey '= "" {
+            Set tSysPrompt = tSysPrompt _ " The currently-bound IRIS Production Ens session ID for this conversation is " _ pSessionKey _ ". Use this id verbatim when calling inspection tools unless the operator explicitly asks about a different session."
+        }
+
         ; ─────────────────────────────────────────────────────────────
         ; Step 7 — Iteration loop. Bounded by MaxIterationsPerTurn.
         ; ─────────────────────────────────────────────────────────────

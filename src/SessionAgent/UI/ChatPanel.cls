@@ -128,6 +128,17 @@ ClassMethod EmitStyle() As %Status
     ; "active link" hue the chip itself does.
     &html<.sa-tool-card-highlight { outline: 2px solid var(--sa-citation-chip-text); transition: outline 0.3s ease; }>
 
+    ; --- Story 3.5 AC-1 / AC-4 — config-empty prompt + disabled input
+    ; field. Both rules reference existing tokens from the 10-token MVP
+    ; set per UX-DR26 (no hex/rgba in component classes). The
+    ; .sa-config-empty-prompt rule uses --sa-error-text-color (the same
+    ; muted-error tone the panel uses for inline errors). The
+    ; .sa-input-field-disabled rule uses opacity + cursor only — no
+    ; color literal — so it inherits any parent disabled-input styling
+    ; the host page contributes.
+    &html<.sa-config-empty-prompt { padding: 1em; color: var(--sa-error-text-color); }>
+    &html<.sa-input-field-disabled { opacity: 0.6; cursor: not-allowed; }>
+
     &html<</style>>
     Quit $$$OK
 }

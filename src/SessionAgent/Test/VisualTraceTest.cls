@@ -327,6 +327,85 @@ Method TestVisualTraceClassResolves()
     Quit
 }
 
+/// <p>Story 3.5 AC-1 / AC-4 — config-empty admin variant. Invokes
+/// <method>SessionAgent.EnsPortal.Util.ChatPanelDrawHelper.EmitConfigEmpty</method>
+/// with <var>pIsAdmin=1</var> via I/O capture into a string, asserts
+/// the rendered HTML contains: the canonical class
+/// <code>sa-config-empty-prompt</code> with <code>role="alert"</code>,
+/// the AC-1 admin-variant Epic-6 placeholder URL fragment, and the
+/// disabled input field with <code>aria-disabled="true"</code> +
+/// <code>sa-input-field-disabled</code> CSS class.</p>
+///
+/// <p>Capture mechanism: open a temporary file in the IRIS temp dir,
+/// redirect output via <code>Use</code>, invoke the helper, restore
+/// the prior device, then read the captured bytes back from disk.
+/// Mirrors the project rule §"Subagent Briefing Requirements" pattern
+/// for capturing &amp;html-emitting helpers.</p>
+Method TestDrawChatPanelConfigEmptyAdmin()
+{
+    Set tCaptured = ..CaptureEmitConfigEmpty("session-inspection", 1)
+    Do $$$AssertNotEquals(tCaptured, "", "EmitConfigEmpty (admin) produced output")
+    Do $$$AssertTrue(tCaptured [ "sa-config-empty-prompt", "admin variant emits sa-config-empty-prompt class (Story 3.5 AC-1)")
+    Do $$$AssertTrue(tCaptured [ "role=""alert""", "admin variant emits role=alert per UX-DR20-MVP")
+    Do $$$AssertTrue(tCaptured [ "SessionAgent.UI.AgentConfig.zen", "admin variant references the Epic-6 placeholder URL (Story 3.5 AC-1)")
+    Do $$$AssertTrue(tCaptured [ "sa-input-field-disabled", "admin variant emits sa-input-field-disabled CSS class (Story 3.5 AC-1)")
+    Do $$$AssertTrue(tCaptured [ "aria-disabled=""true""", "admin variant emits aria-disabled=true on input (Story 3.5 AC-1 / UX-DR20-MVP)")
+    Quit
+}
+
+/// <p>Story 3.5 AC-1 / AC-4 — config-empty non-admin variant. Same as
+/// admin variant but asserts: NO Epic-6-link reference, the non-admin
+/// guidance fragment <code>"Ask your operator-admin"</code> appears,
+/// and the structural elements (class + role + disabled input) still
+/// fire identically. UX-DR7-admin says the link only goes to admins;
+/// non-admins should see the prompt without the actionable URL.</p>
+Method TestDrawChatPanelConfigEmptyNonAdmin()
+{
+    Set tCaptured = ..CaptureEmitConfigEmpty("session-inspection", 0)
+    Do $$$AssertNotEquals(tCaptured, "", "EmitConfigEmpty (non-admin) produced output")
+    Do $$$AssertTrue(tCaptured [ "sa-config-empty-prompt", "non-admin variant emits sa-config-empty-prompt class (Story 3.5 AC-1)")
+    Do $$$AssertTrue(tCaptured [ "role=""alert""", "non-admin variant emits role=alert per UX-DR20-MVP")
+    Do $$$AssertTrue('(tCaptured [ "SessionAgent.UI.AgentConfig.zen"), "non-admin variant does NOT reference the Epic-6 link (UX-DR7-admin)")
+    Do $$$AssertTrue(tCaptured [ "Ask your operator-admin", "non-admin variant uses 'Ask your operator-admin' wording (Story 3.5 AC-1)")
+    Do $$$AssertTrue(tCaptured [ "sa-input-field-disabled", "non-admin variant emits sa-input-field-disabled CSS class (Story 3.5 AC-1)")
+    Do $$$AssertTrue(tCaptured [ "aria-disabled=""true""", "non-admin variant emits aria-disabled=true (Story 3.5 AC-1 / UX-DR20-MVP)")
+    Quit
+}
+
+/// <p>Helper — invoke
+/// <method>SessionAgent.EnsPortal.Util.ChatPanelDrawHelper.EmitConfigEmpty</method>
+/// with output captured to a temp file via <code>Open/Use</code>.
+/// Returns the captured string. Re-throws any exception from the
+/// helper (the test asserts no throw via the AssertStatusOK on the
+/// returned status).</p>
+ClassMethod CaptureEmitConfigEmpty(pAgentName As %String, pIsAdmin As %Boolean) As %String
+{
+    Set tTempFile = ##class(%File).TempFilename("html")
+    Set tIO = $IO
+    Set tCaptured = ""
+    Try {
+        Open tTempFile:("WNS"):2
+        Use tTempFile
+        Set tSC = ##class(SessionAgent.EnsPortal.Util.ChatPanelDrawHelper).EmitConfigEmpty(pAgentName, pIsAdmin)
+        Use tIO
+        Close tTempFile
+
+        Set tStream = ##class(%Stream.FileCharacter).%New()
+        Do tStream.LinkToFile(tTempFile)
+        While 'tStream.AtEnd {
+            Set tCaptured = tCaptured _ tStream.Read(32000)
+        }
+    }
+    Catch ex {
+        ; Restore IO + ensure file is closed even on exception.
+        Use tIO
+        Try { Close tTempFile } Catch ex2 {}
+    }
+    ; Cleanup the temp file.
+    Try { Do ##class(%File).Delete(tTempFile) } Catch ex3 {}
+    Quit tCaptured
+}
+
 /// <p>Story 3.4 AC-1, AC-2, AC-3, AC-4 + Carry-Forward closure — static
 /// class-content inspection for the <code>onCitationClick</code>
 /// ClientMethod. Asserts the compiled

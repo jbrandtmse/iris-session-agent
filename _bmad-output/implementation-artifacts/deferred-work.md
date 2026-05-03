@@ -311,6 +311,60 @@ This file accumulates findings, follow-ups, and architect-decision items that ar
 
 ---
 
+## Deferred from: code review of story-2.11-three-example-inspection-tools (2026-05-03)
+
+- **`Ens.MessageHeader.TimeCreated` surfaced as server-local ODBC timestamp string (not ISO-8601 UTC with Z) in tool output.**
+
+  - **Source:** Story 2.11 code review (2026-05-03) — Blind Hunter + Edge Case Hunter overlap.
+  - **Severity:** LOW (no operator-observable break in Story 2.11 itself; the tool output is structurally well-formed and the dev's tests assert chronological ordering via lexical compare which works on ODBC strings; deferring because the fix needs to span all three tools and a future test asserting the format).
+  - **The observation:** Three tools project `TimeCreated` (`Ens.DataType.UTC` — ODBC TIMESTAMP) directly into `pResult.structuredContent.events[].time` (SessionTimeline) and `headers[].time_created` (MessageHeaders), and DATEDIFF computes durations from the same column (SessionSummary). IRIS surfaces TIMESTAMP values as `yyyy-mm-dd hh:mm:ss[.fff]` strings WITHOUT a `Z` suffix, in the IRIS process locale (server-local time) — NOT the ISO-8601 UTC `2026-05-03T10:30:45Z` shape mandated by the project rule §"Timestamp and Encoding Standards". When SessionTimeline's optional `from_time` / `to_time` ISO-8601 UTC bounds are exercised against this server-local stored data, the `WHERE TimeCreated >= ?` comparison silently mixes timezones — operator filters by UTC bounds but the rows are stored in local time, producing an off-by-N hours skew when the server is not on UTC.
+  - **Why deferring is acceptable:** (a) Story 2.11's AC-2/AC-3 specify the tool output shape but do NOT mandate ISO-8601 UTC normalization on the projection — the spec was written assuming the column projects as-is; (b) every other Ens tool in the namespace (Mgmt Portal, business-process viewer, message browser) shows the same server-local rendering, so the inspection tool is consistent with operator expectations on this IRIS install; (c) a fix would need to (i) normalize the projection in all three tools, (ii) pre-convert the SessionTimeline `from_time`/`to_time` bounds back to server-local for the SQL predicate (or change the query to `CAST` the column to UTC inside SQL), and (iii) add covering tests — this is a focused tightening pass, not a one-line edit; (d) the most likely natural carrier is the AgentLoop smoke-test story (2.12) which is the first story to exercise these tools end-to-end against the LLM and observe what the operator-readable text actually looks like.
+  - **What to do if it bites:** in SessionSummary/SessionTimeline/MessageHeaders, replace `TimeCreated AS event_time` / `... AS time_created` projections with `$Translate($ZDateTime($ZDateTimeH(TimeCreated, 3) - $ZTimeZoneH/86400, 3, 1), ' ', 'T') || 'Z'` (or the SQL equivalent) to normalize to ISO-8601 UTC at the projection. Add `TestTimeProjectionIsIsoUtcWithZ` per tool that asserts the format `^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$`. For SessionTimeline, also pre-convert `from_time` / `to_time` UTC ISO inputs to server-local before binding into the predicate (or wrap the column in a UTC-conversion SQL function on both sides of the comparison).
+  - **Owner:** Story 2.12 dev (AgentLoop smoke test) — first story that will see the operator-facing output of these tools and judge whether the server-local timestamp format is acceptable for operator/LLM consumption. If 2.12 dev confirms acceptable, defer further until an operator complains; if not, fix in 2.12's scope.
+  - **Blocking?** Not blocking Story 2.11 or Story 2.12. Becomes a real bug only when (a) an operator queries SessionTimeline with explicit UTC ISO bounds AND (b) the IRIS server runs in a non-UTC locale. Both currently true for very few hobby installs.
+
+- **`min_severity` filter in MessageHeaders is case-sensitive — `"ERROR"` / `"Error"` silently no-ops.**
+
+  - **Source:** Story 2.11 code review (2026-05-03) — Edge Case Hunter.
+  - **Severity:** LOW (JSON Schema enum constrains valid values to lowercase `info|warning|error`; only relevant if the LLM ignores the schema and sends mixed-case input).
+  - **The observation:** `MessageHeaders.cls:77` uses `If tMinSev = "error"` — ObjectScript string comparison is case-sensitive, so `"Error"` / `"ERROR"` / `"eRRor"` skip the IsError=1 filter and return all 5 rows instead of the 2 error rows. The JSON Schema declares `enum: ["info","warning","error"]` so a strictly compliant LLM will only send the canonical lowercase form, but the schema is informational at the tool level (the architecture's "Tool input JSON Schema subset" doesn't mandate runtime schema validation inside `Invoke`).
+  - **Why deferring is acceptable:** the JSON Schema enum is the contract; non-conformant input is the LLM's bug, not the tool's. Adding case-folding (`If $$$LOWER(tMinSev) = "error"`) would silently mask a contract violation that should surface as a no-op result (5 rows instead of the expected 2). When the LLM's prompt is wrong, returning more data than expected is the safer failure mode than silently coercing — the operator will notice "wait, all 5 rows are showing".
+  - **What to do if it bites:** if Story 2.12's AgentLoop smoke-test or a real operator session shows the LLM consistently sending mis-cased severity values, add `Set tMinSev = $ZConvert(tMinSev, "L")` immediately after the `pJsonArgs.%Get("min_severity")` read to normalize. Add `TestMessageHeadersAcceptsMixedCaseMinSeverity` to lock the new behavior.
+  - **Owner:** Story 2.12 dev or a future per-tool-hardening story.
+  - **Blocking?** Not blocking.
+
+- **Process-private global subscript naming convention — hyphens (`-`) are invalid; use camelcase or remove punctuation.**
+
+  - **Source:** Story 2.11 code review (2026-05-03) — Edge Case Hunter; recurrence-tracking from dev's empirical discovery in Story 2.11 implementation.
+  - **Severity:** LOW (project-wide convention finding; Story 2.11 already self-corrected from `^||SessionAgentTest2-11Ids` to `^||SessionAgentTest211Ids`).
+  - **The observation:** ObjectScript treats `-` as the subtraction/negation operator inside subscript expressions, so `^||SessionAgentTest2-11Ids` parses as `^||(SessionAgentTest2 - 11) _ "Ids"` — almost always a `<SYNTAX>` error. The same trap applies to `^||X.y.z` (`.` is OREF dispatch), `^||X+1` (`+` is unary plus), and any other operator character. Safe characters: alphanumeric + `_` (when not at the start). The Story 2.11 spec proposed a hyphenated subscript and the dev had to discover and fix it during implementation.
+  - **Why this is worth recording at the project level:** the `bmad-create-story` workflow has shipped at least one story spec with an invalid subscript (Story 2.11). If the spec had been written by a less-experienced dev or a future agent without the empirical context, the trap could ship as a runtime `<SYNTAX>` error in the test fixture. Codifying the convention here lets future story specs (and code reviewers) flag invalid subscripts at spec-writing time.
+  - **What to do:** when a story spec proposes a `^||` (or any global) subscript with non-alphanumeric characters, the lead/code-reviewer should flag it during spec review. Recommended convention: alphanumeric + camelcase (e.g., `^||SessionAgentTest211Ids`, `^||MyToolFixtureRowIds`) — no hyphens, dots, or operator characters.
+  - **Owner:** None (process item). Lead at story-creation time. Code reviewer if the spec slips through.
+  - **Blocking?** Not blocking.
+
+- **`OnBeforeAllTests` observed running TWICE within a single `iris_execute_tests` invocation per dev's notes — root cause not investigated.**
+
+  - **Source:** Story 2.11 dev notes (Other observations) + code review (2026-05-03).
+  - **Severity:** LOW (idempotent in practice — the defensive `DELETE FROM Ens.MessageHeader WHERE SessionId = ?` sweep at the top of `OnBeforeAllTests` makes the duplicate invocation harmless; the second seed write happens with a fresh slate after the first's rows are wiped).
+  - **The observation:** Dev added a `^ClineDebug` instrument during fixture diagnosis and observed `OnBeforeAllTests` firing twice in a single `iris_execute_tests SessionAgent.Test.InspectionToolTest` invocation. The fixture is idempotent (defensive sweep + capture-IDs-by-tIdx so the second call overwrites the first's IDs in the same global), so all 9/9 tests still pass. Cause not investigated.
+  - **Why deferring is acceptable:** behavior is idempotent and the test counts come out correct. Investigation cost (instrument the test runner, walk `^UnitTest.Result` writes, possibly file an iris-dev-mcp issue) far exceeds the impact (zero — fixture is built to tolerate the duplication).
+  - **What to do if it bites:** if a future test class's `OnBeforeAllTests` does NON-idempotent work (e.g., increments a counter, reserves a unique ID, sends an email) and surfaces a duplicate side effect, instrument with `^ClineDebug = ^ClineDebug _ "OnBeforeAllTests called at " _ $ZH _ ";"` and run the suite to confirm the doubling, then file an iris-dev-mcp issue. Until then the convention should be: `OnBeforeAllTests` MUST be idempotent (defensive sweep + overwrite-safe fixture writes).
+  - **Owner:** None — environmental quirk; recurrence-tracking only.
+  - **Blocking?** Not blocking.
+
+- **SessionSummary returns success envelope (zeros + empty root_class) for unknown session_id — operator cannot distinguish "session does not exist" from "session exists with 0 messages."**
+
+  - **Source:** Story 2.11 code review (2026-05-03) — Edge Case Hunter.
+  - **Severity:** LOW (semantic ambiguity; Story 2.11 spec does not require differentiation; the LLM/operator can infer "unknown session" from the message_count=0 + empty root_class combination).
+  - **The observation:** `SessionSummary.cls:102-118` — when `tRs.%Next()` returns nothing (unknown session_id), the aggregate query returns one row with COUNT=0 / SUM=NULL / MIN=NULL / MAX=NULL, so `tMsgCount=0`, `tErrCount=0`, `tDurationMs=0`. The root-class query returns no rows so `tRootClass=""`. The output text reads `"Session 99999: 0 messages, 0 errors, root class ."` — slightly malformed (period directly after "class " with no class name) and semantically indistinguishable from a real session that happens to be empty (which would never happen in real Ens runtime — every session has at least one message).
+  - **Why deferring is acceptable:** Ens sessions in practice always have ≥1 message (the session is created BY the first message), so an empty real session does not exist. The "unknown session" case surfaces as the all-zeros envelope which the LLM/operator can reasonably interpret. The fix would add a 4th SQL probe (`SELECT COUNT(*) FROM Ens.MessageHeader WHERE SessionId = ?` short-circuit) or a structuredContent boolean field `session_exists` — both add complexity for a marginal UX improvement.
+  - **What to do if it bites:** add `If tMsgCount = 0 { Set pResult.content.%Get(0).text = "Session " _ tSessionId _ " not found or empty." Do pResult.structuredContent.%Set("session_exists", 0, "boolean") }` plus a corresponding non-zero branch. Add `TestSessionSummaryUnknownSessionReturnsExistsFalse`.
+  - **Owner:** Story 2.12 dev or a future per-tool-hardening story; if AgentLoop smoke-test sees the LLM mis-interpret the all-zeros envelope, fix at that point.
+  - **Blocking?** Not blocking.
+
+---
+
 ## Resolved during Story 1.5 verification (2026-05-02) — superseded by README §"Operator Prerequisites" §1
 
 - **`zpm` was installed in `%SYS` but not mapped into HSCUSTOM. Required `zpm "enable -map -globally"`.**

@@ -730,3 +730,16 @@ This file accumulates findings, follow-ups, and architect-decision items that ar
   - **Defer rationale (Rule 8 test 3 — pure cosmetic, no predicted-bug shape):** no field break; no carrier exists yet for an operator-friendly error-redaction utility. Cross-cutting concern that belongs in an Inspection-tool quality-of-life pass.
   - **Owner:** Same future Inspection-tool cleanup story as B-3 above (suggested Story 4.7 sweep).
   - **Blocking?** Not blocking.
+
+---
+
+## Deferred from: code review of story-4.6-findsessionsbybody-ens-searchtablebase-pivot (2026-05-03)
+
+- **Live OpenAI smoke turn substituted with three direct ObjectScript probes — credential not resolvable on dev install (Rule 11 conformance follow-up).**
+
+  - **Source:** Story 4.6 code review (lead-flagged item #6 + Acceptance Auditor AC-6 review).
+  - **Severity:** LOW (Rule 11 conformance: this story does not add OpenAI integration code, just consumes the existing path; substitution is acceptable per Rule 11 "if credential absent, test skipped not failed". Story 4.5 reportedly succeeded with the same credential check 2026-05-04, so the credential may have been rotated/expired between 4.5 and 4.6, OR Story 4.5's verification used a different credential path).
+  - **The observation:** Dev report says `Util.EnvSecret.IsResolvable("OPENAI_API_KEY","SessionAgentInspectionApiKey") = 0` on this dev install. Three direct ObjectScript probes substituted: (1) `EnsLib.HL7.SearchTable` + `MRN=12345` → `render_strategy="no_matches"`, (2) `EnsLib.HL7v3.SearchTable` (truly not installed) → `render_strategy="search_table_not_installed"` + isError=1, (3) `Ens.MessageHeader` (wrong superclass) → `render_strategy="not_search_table_subclass"` + isError=1. All three render-paths exercised end-to-end; the visual-gate screenshot captures the rendered "not installed" envelope from path (2).
+  - **Why deferred (Rule 8 test 3 — pure verification gap, no predicted-bug shape):** all three render paths the live LLM would exercise are already empirically verified via direct invocation. The remaining gap is purely "did the LLM choose the right tool name in response to the operator's English question?" — which Story 4.5 already proved end-to-end on the same tool surface. No predicted bug shape; the Story 4.7 (`ExplainError + comprehensive read-only suite verification`) sweep is the natural carrier for re-running live LLM smoke across the whole Epic 4 inspection-tool family once a credential is resolvable on the dev install.
+  - **Owner:** Story 4.7 — should add as a verification-task line item: re-resolve `Util.EnvSecret.IsResolvable("OPENAI_API_KEY","SessionAgentInspectionApiKey")`. If 0, escalate to operator for credential setup before running live LLM smoke; if 1, run a single live-LLM turn covering each Epic 4 inspection tool (`event_log`, `rule_log`, `message_headers`, `session_summary`, `session_timeline`, `get_message_body`, `get_message_detail`, `get_business_process_source`, `get_business_process_instance`, `list_business_process_methods`, `find_related_sessions`, `find_sessions_by_body`).
+  - **Blocking?** Not blocking. Acceptable Rule 11 substitution for Story 4.6 specifically; Story 4.7 sweep is the natural moment to verify the credential and exercise the full live-LLM matrix.

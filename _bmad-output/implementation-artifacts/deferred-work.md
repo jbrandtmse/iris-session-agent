@@ -572,3 +572,24 @@ This file accumulates findings, follow-ups, and architect-decision items that ar
   - **Owner:** No bound successor. Pick up at the next epic-end retrospective or any future story that touches `_bmad-output/planning-artifacts/epics.md` Story 4.1 / Story 4.0 visual-gate language.
   - **Blocking?** Not blocking. Story 4.1 ships clean; the visual gate was satisfied via the substitution; the F-1 fix locks the more important contract (`severity_counts` semantics).
 
+---
+
+## Deferred from: Story 4.2 code review (2026-05-04) — GetMessageBody dispatch ladder
+
+- **HL7 summary mode does not extract per-segment `:0` field walk; `body_repr` is just the raw ER7 truncated to 256 chars.**
+
+  - **Source:** Story 4.2 review (auditor finding A2, 2026-05-04). Spec AC-3 Step 3 wording: *"render via `body.OutputToString()` for raw; `body.GetMessageType()` + `body.GetSegmentCount()` + per-segment `:0` field for summary."* The implementation uses `Name` (message type) + `SegCount` (segment count) calculated properties — both correct per Task 0 probe — but does NOT extract per-segment `:0` (the segment-name field) for the summary output. Summary mode for HL7 falls through the same code path as raw, producing the full ER7 string and relying on the outer Invoke truncation to 256 chars.
+  - **Severity:** LOW. Sample data has zero HL7 rows in production; only the test fixture exercises Step 3. Operator-readable summary is still produced via `message_type` + `segment_count` extras + truncated `body_repr`. The per-segment `:0` field walk is a nice-to-have absent from impl, not a correctness bug.
+  - **Why this is a Rule 8 valid defer (Test 3: pure cosmetic with no predicted-bug shape):** The structuredContent already carries `message_type` and `segment_count` as first-class extras; per-segment field enumeration would duplicate information for operators inspecting the `body_repr`. If a future operator needs structured HL7 segment introspection, a dedicated `get_hl7_segment` tool (or an `extract` mode for `get_message_body`) is a cleaner addition than retrofitting summary-mode field walking into the dispatch helper.
+  - **Owner:** No bound successor. Could be picked up by Epic 8 Story 8.6 `InspectBodyCandidates` if it wants per-segment introspection, OR by a future Epic 4.x dedicated HL7 helper.
+  - **Blocking?** Not blocking. Story 4.2 ships with summary-mode parity for HL7 == raw-mode + truncation, which matches the Step 6 stream-summary behavior pattern.
+
+- **Step 9 fallback path (`render_strategy="unknown"`, `dispatch_failed:1`) lacks empirical test coverage.**
+
+  - **Source:** Story 4.2 review (auditor + edge-case finding A6 + E1, 2026-05-04). `TestStep9UnknownDispatchFailed` uses a header pointing at a non-existent class, which fails Step 2 body open with `body_not_found` — NOT Step 9's `unknown`. The test's assertion accepts both outcomes (`tStrategy = "body_not_found" || "unknown"`), so the live path it exercises is Step 2's failure, not Step 9's fallback. The originally-seeded `GmbFixtureRegistered.cls` (a pure %RegisteredObject) was deleted in code review since it was unreferenced dead code.
+  - **Severity:** LOW (Step 9 is by design a defensive fallback that's structurally unreachable for any object successfully passing Step 2 `%OpenId` — every Ens-persistable body extends `%Persistent` or `%RegisteredObject` and therefore matches Step 8's predicate, leaving Step 9 as defense-in-depth only).
+  - **Why this is a Rule 8 valid defer (Test 1: external-dependency / structural unreachability):** Constructing a body that opens via `%OpenId` but extends NEITHER `%Persistent` NOR `%RegisteredObject` requires bypassing IRIS's OREF-construction layer, which is not possible from ObjectScript. The Step 9 path is reachable ONLY via a future architectural change (e.g., `%Library.Base` directly opening as a body) that is out of scope for any current epic.
+  - **The deferral:** if Epic 8 Story 8.6 `InspectBodyCandidates` ends up reusing the dispatch ladder (deferred per architecture.md G2), it should add a synthetic test that monkey-patches `ClassExtends` to return false for all 5 ladder predicates — this is the only practical way to drive Step 9 to fire. Until then, the path is exercised by the type-system invariant (every OREF extends one of the two), not by a runtime test.
+  - **Owner:** No bound successor. Could be picked up by Epic 8 Story 8.6 if/when the dispatch ladder is extracted to `SessionAgent.Body.DispatchLadder`.
+  - **Blocking?** Not blocking. Story 4.2's 11 other test methods (1-8, empty-body, missing-id, header-not-found, registry-listing) cover every reachable dispatch outcome.
+

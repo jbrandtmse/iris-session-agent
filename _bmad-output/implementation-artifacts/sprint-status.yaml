@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-05-02
-last_updated: 2026-05-04 (Epic 4 COMPLETE — all 8 stories done; reviewer caught HIGH off-by-one in FormatExceptionForOperator; epic-4-retrospective awaits user decision)
+last_updated: 2026-05-04 (Epic 4 retrospective done — 1 Rule 6 sub-clause + 1 Rule 2 sharpening + 2 watch-items + 5 carry-forwards into Story 5.0)
 project: iris-session-agent
 # Epic 1 complete (retro 2026-05-02); Epic 2 retrospective triage gate (Story 2.0) 2026-05-03
 project_key: NOKEY
@@ -91,7 +91,7 @@ development_status:
   4-5-findrelatedsessions-ens-supersessionindex: done
   4-6-findsessionsbybody-ens-searchtablebase-pivot: done
   4-7-explainerror-comprehensive-read-only-suite-verification: done
-  epic-4-retrospective: optional
+  epic-4-retrospective: done
 
   epic-5: backlog
   5-1-llm-anthropicprovider-concrete: backlog

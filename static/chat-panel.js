@@ -226,9 +226,9 @@
     function renderWelcomeMessage() {
         var block = document.createElement('div');
         block.setAttribute('class', 'sa-message-block sa-msg-agent');
-        block.textContent = "I can read this session's headers, bodies, event log, rule log, and BP state. " +
+        block.textContent = "I can read this session's message headers, get a session summary, and show the chronological event timeline. " +
             "I can't change anything; I only read. " +
-            "Try: what happened? · why did the rule fire? · show me the failing body.";
+            "Try: what happened in this session? · which messages had errors? · what was the timing?";
         state.transcriptEl.appendChild(block);
     }
 

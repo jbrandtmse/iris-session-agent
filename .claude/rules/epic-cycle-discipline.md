@@ -115,8 +115,8 @@ If the fix is found in <15 min total: apply it, update affected docs in the same
 
 1. **End-to-end install:** `zpm load` (or epic-specific install path), capture full lifecycle output.
 2. **Expected state via typed MCPs:** `iris_role_list`, `iris_audit_events`, `iris_namespace_list`, `iris_task_list`, etc. — whichever surfaces are owned by the epic's deliverables.
-3. **Full regression suite:** `iris_execute_tests` per-class sweep (the package-level runner truncates; per-class is the workaround codified across Stories 2.4 through 2.12).
-4. **Live integration test** (per Rule 11 below — added Epic 2 retro): if the epic ships any code path that calls an external API, run the live test. Mock-only smoke tests are insufficient.
+3. **Full regression suite:** `iris_execute_tests` per-class sweep (the package-level runner truncates; per-class is the workaround codified across Stories 2.4 through 2.12; see [`.claude/rules/object-script-testing.md` §"MCP `iris_execute_tests` Truncation Workaround"](object-script-testing.md)).
+4. **Live integration test** (per Rule 11 below — added Epic 2 retro; **sharpened Epic 3 retro AI-13**): if the epic ships any code path that calls an external API, run the live test against **rich, production-shaped data** — sample production, fixture data, or real captured traffic. A bare namespace with synthetic test sessions does NOT count. For projects without a sample production, the lead must build minimal fixture data before claiming the battery is complete. Cited reason: Epic 3 Story 3.7 lead-walkthrough-on-bare-HSCUSTOM → user-redirected-to-sample-production incident — the redirect surfaced 5 manual-test bugs in 30 minutes that the bare-namespace smoke missed. Mock-only smoke tests are insufficient.
 5. **CI gates:** run each gate locally as the workflow would.
 6. **Cross-cutting invariant checks:** file-presence, `Language = python` grep, CDN grep, any other invariant the epic's stories depend on.
 7. **Document results in the retrospective opening as the empirical foundation.**
@@ -210,9 +210,58 @@ Without this line, the lead self-blocks the spec.
 - Test must invoke the actual external API path (real HTTPS, real auth, real wire format) and assert at least one round-trip succeeds.
 - Live tests participate in the epic-end battery (Rule 6 step 4). Lead runs them. Failure = epic not done.
 
+## Rule 12: Rendered-text readability — read it as a human (added Epic 3 retro AI-12)
+
+**Rule.** Every UI story's empirical battery MUST include a step where the lead
+reads the **rendered text content** AS A HUMAN and confirms it is readable
+English (or the project's UI language). Welcome messages, error envelopes,
+status messages, button labels, attribution prefixes — every visible string
+the operator can see. **Screenshot-and-look-at-it counts.** Automated DOM
+dumps + a11y-tree scrapes alone do **NOT** count — both pass cleanly when
+the underlying characters are mojibake.
+
+**Trigger.** Any story whose acceptance criteria include UI rendering
+(component HTML, CSS classes, asset files served to the browser, generated
+strings displayed in chat panels / portals / banners). Applies to the lead
+running the empirical battery, the dev agent producing the smoke output,
+and the code reviewer verifying the rendered surface.
+
+**Rationale.** Epic 3 Story 3.7 shipped a UTF-8 mojibake welcome message to
+production — `Â·` replaced the `·` separator because the
+`SessionAgent.UI.ChatPanelAsset` stream was not configured with
+`TranslateTable=UTF8`. Every automated check (DOM-snapshot diff, a11y-tree
+walk, header inspection) passed because the bytes were valid in some
+encoding — the bug only surfaced when a human read the rendered chat panel.
+The fix landed in commit `ebde251`. The retrospective AI-12 codified the
+rule because the next UI story (Story 3.8 cross-session disclosure) was
+about to repeat the same failure mode in a different asset path, and the
+lead would have shipped it again without a human-read step in the battery.
+
+**How to apply.**
+
+- For each UI story, the empirical battery includes a screenshot or
+  rendered-content paste of every new or modified visible string. The lead
+  reads each one and asks: *"Is this readable English? Are there mojibake
+  artifacts (`Â`, `â€™`, `Ã©`, etc.)? Does the spacing make sense?"*
+- Acceptable evidence forms: a screenshot via `chrome-devtools-mcp`'s
+  `take_screenshot`, a rendered-DOM `textContent` paste, or an in-browser
+  console transcript showing the visible strings.
+- **Not acceptable** as the sole evidence: HTML-source diff (the bytes
+  may be valid HTML but encode mojibake when interpreted), a11y-tree
+  output (screen readers announce mojibake as garbage but the tree walker
+  still passes), or a passing DOM-snapshot test (snapshots compare bytes
+  — they cannot tell `·` from `Â·`).
+- The reviewer enforces: a UI story whose empirical battery is missing a
+  human-readability evidence step is a HIGH-severity finding per Rule 8 —
+  predicted-bug shape (mojibake / encoding drift will ship silently).
+
+**Originating finding.** UTF-8 mojibake `Â·` welcome-message incident
+(Story 3.7 → fix in commit `ebde251`). First applied: this story (4.0,
+the same commit that codifies the rule).
+
 ---
 
-## Application matrix (updated Epic 2 retro)
+## Application matrix (updated Epic 3 retro)
 
 | Rule | Applies to Lead | Applies to Dev agent | Applies to Code-Review agent |
 |---|---|---|---|
@@ -227,6 +276,7 @@ Without this line, the lead self-blocks the spec.
 | 9. Predicted-bug deferrals binding on named successor | ✓ (spec drafting) | — | ✓ (records the reassignment) |
 | 10. External-default research at spec time | ✓ | ✓ (escalate if discovered mid-execution) | ✓ (block on missing verification line) |
 | 11. Live integration smoke test mandatory | ✓ (epic-end) | ✓ (story authoring if API touched) | ✓ (verifies test exists) |
+| 12. Rendered-text readability — human-read step in UI-story battery | ✓ (UI-story epic-end) | ✓ (smoke-output evidence) | ✓ (blocks on missing evidence) |
 
 ## How to load these rules in a future cycle
 

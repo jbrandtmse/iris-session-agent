@@ -271,6 +271,21 @@
         var citeId = chip.getAttribute('data-cite-id');
         var citeKlass = chip.getAttribute('data-cite-klass'); // null when absent — handler treats as ""
 
+        // Story 4.0 AC-6 (1) — validate before dispatching. For id-bearing
+        // citation types (message / session / process — and the existing
+        // typed citations rule_log / event_log / message / ack / iolog),
+        // the id MUST be a non-empty numeric string. Invent / drift bugs
+        // in the LLM output produce empty or non-numeric ids; without
+        // this guard we'd dispatch the bad value into zenPage.onCitationClick
+        // which then throws or silently no-ops, leaving the operator
+        // staring at an unresponsive chip with no feedback.
+        // The 'tool' citation type is exempt because tool ids may be
+        // string names (e.g., "list_sessions") not numeric tc-N indices.
+        if (!isCitationDispatchable(citeType, citeId)) {
+            surfaceCitationErrorNotice(chip);
+            return;
+        }
+
         if (typeof zenPage !== 'undefined' && zenPage && typeof zenPage.onCitationClick === 'function') {
             try {
                 zenPage.onCitationClick(citeType, citeId, citeKlass);
@@ -278,6 +293,12 @@
                 if (typeof console !== 'undefined' && console.warn) {
                     console.warn('[chat-panel] zenPage.onCitationClick threw: ' + (e && e.message));
                 }
+                // Story 4.0 AC-6 (2) — surface a user-visible notice when
+                // zenPage.onCitationClick throws. The previous behavior
+                // only logged to console; the operator saw nothing change
+                // when they clicked the chip. Now they get a visible cue
+                // that something went wrong and they can move on or retry.
+                surfaceCitationErrorNotice(chip);
             }
             return;
         }
@@ -294,6 +315,70 @@
             } catch (e2) {
                 // Swallow — the hook is test-only.
             }
+        }
+    }
+
+    /**
+     * Story 4.0 AC-6 (1) — determine whether a (type, id) pair is safe to
+     * dispatch into zenPage.onCitationClick. Returns false for empty/null
+     * ids on every type, and false for non-numeric ids on the typed
+     * id-bearing citation types. Returns true for the 'tool' citation
+     * type when the id is non-empty, regardless of numeric-ness, because
+     * tool ids may be either tc-N synthetic indices OR plain tool names.
+     */
+    function isCitationDispatchable(citeType, citeId) {
+        if (citeId == null || citeId === '') {
+            return false;
+        }
+        if (citeType === 'tool') {
+            // Tool citations may be 'tc-3' or 'list_sessions' — any
+            // non-empty string passes validation. The downstream
+            // onCitationClick handles the lookup-or-fallback.
+            return true;
+        }
+        // For numeric id-bearing types, require pure digits. Reject
+        // negative numbers, decimals, scientific notation, leading/
+        // trailing whitespace — the underlying ObjectId is a positive
+        // integer. /^\d+$/ is intentionally strict.
+        return /^\d+$/.test(citeId);
+    }
+
+    /**
+     * Story 4.0 AC-6 (1) + (2) + (3) — surface a user-visible notice that
+     * a citation chip click failed (validation rejection OR parent-side
+     * dispatch throw). The notice is an inline span appended to the
+     * chip's parent paragraph (NOT in place of the chip itself), so the
+     * original citation chip stays clickable for retry. Dedup: if the
+     * same chip already has a notice attached, do not duplicate it on
+     * subsequent clicks.
+     *
+     * The notice text is fixed and pre-translated (no template
+     * substitution of untrusted LLM strings). Construction is
+     * createElement + textContent — XSS-safe.
+     */
+    function surfaceCitationErrorNotice(chip) {
+        if (!chip) {
+            return;
+        }
+        // Dedup: a single chip emits at most one notice. Use a chip-level
+        // flag so subsequent clicks no-op without piling up notices in
+        // the transcript.
+        if (chip.getAttribute('data-cite-error-shown') === '1') {
+            return;
+        }
+        chip.setAttribute('data-cite-error-shown', '1');
+
+        var notice = document.createElement('span');
+        notice.setAttribute('class', 'sa-citation-error');
+        notice.setAttribute('role', 'alert');
+        notice.textContent = " Couldn't resolve this citation — the agent may have referenced a missing or malformed id.";
+
+        // Append to the chip's parent (typically a <p> from the markdown
+        // fallback render). Falls back to the chip's parentNode if the
+        // closest('p') walk returns null (defensive).
+        var host = (chip.closest && chip.closest('p')) || chip.parentNode;
+        if (host && host.appendChild) {
+            host.appendChild(notice);
         }
     }
 
@@ -459,6 +544,50 @@
     }
 
     /**
+     * Story 4.0 AC-5 — extract a human-readable error preview from a
+     * tool-call card for display in the COLLAPSED card summary.
+     *
+     * Returns a non-empty string (truncated to 80 chars + ellipsis when
+     * longer) when ALL of the following are true:
+     *   1. card.status === 'error'
+     *   2. card.result is a non-null object
+     *   3. card.result.content is a non-empty array
+     *   4. card.result.content[0].type === 'text'
+     *   5. card.result.content[0].text is a non-empty string
+     *
+     * Returns the empty string for any shape mismatch — the caller falls
+     * back to the prior "called <name>" wording. Never throws; never
+     * inspects untrusted strings beyond .substring (which can't crash on
+     * any String value). The result is consumed via textContent — no
+     * markup interpretation, XSS-safe by construction.
+     */
+    function extractToolErrorPreview(card) {
+        if (!card || card.status !== 'error') {
+            return '';
+        }
+        var result = card.result;
+        if (!result || typeof result !== 'object') {
+            return '';
+        }
+        var content = result.content;
+        if (!content || !content.length) {
+            return '';
+        }
+        var first = content[0];
+        if (!first || first.type !== 'text') {
+            return '';
+        }
+        var text = first.text;
+        if (typeof text !== 'string' || !text.length) {
+            return '';
+        }
+        if (text.length > 80) {
+            return text.substring(0, 80) + '…';
+        }
+        return text;
+    }
+
+    /**
      * AC-2: render one tool-call card. card shape per Agent.TurnResult
      * DTO (Story 2.7, verified Task 0): {name, args, result, status}.
      * status is "ok" or "error" in the actual DTO. The CSS tokens shipped
@@ -510,7 +639,21 @@
 
         var summaryText = document.createElement('span');
         summaryText.setAttribute('class', 'sa-tool-summary');
-        summaryText.textContent = ' called ' + ((card && card.name) || '(unnamed)');
+        // Story 4.0 AC-5 — validator-rejection visibility in COLLAPSED state.
+        // When the tool returned an error envelope and the first content block
+        // is a text block (the canonical Anthropic / OpenAI tool_result shape
+        // emitted by Tool.Base.WrapError), prepend the first 80 chars of
+        // that text to the summary so the operator sees the validation
+        // message without having to expand the card. Keep the trailing
+        // " called <name>" so the tool identity stays visible. XSS-safety
+        // preserved (textContent only). Defensive: any shape mismatch falls
+        // back to the prior "called <name>" wording.
+        var errorPreview = extractToolErrorPreview(card);
+        if (errorPreview) {
+            summaryText.textContent = errorPreview + ' — called ' + ((card && card.name) || '(unnamed)');
+        } else {
+            summaryText.textContent = ' called ' + ((card && card.name) || '(unnamed)');
+        }
         summary.appendChild(summaryText);
 
         details.appendChild(summary);

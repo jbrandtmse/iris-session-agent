@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-05-02
-last_updated: 2026-05-03 (Epic 3 retrospective done — 1 new rule + 2 sharpenings + 4 carry-forwards)
+last_updated: 2026-05-03 (Story 4.0 reviewed and approved — Epic 3 deferred cleanup; Epic 4 in progress)
 project: iris-session-agent
 # Epic 1 complete (retro 2026-05-02); Epic 2 retrospective triage gate (Story 2.0) 2026-05-03
 project_key: NOKEY
@@ -82,7 +82,8 @@ development_status:
   3-9-sample-interoperability-production-and-walkthrough-rerun: done
   epic-3-retrospective: done
 
-  epic-4: backlog
+  epic-4: in-progress
+  4-0-epic-3-deferred-cleanup: done
   4-1-eventlog-rulelog-tools: backlog
   4-2-getmessagebody-9-step-body-class-dispatch-ladder: backlog
   4-3-getmessagedetail: backlog

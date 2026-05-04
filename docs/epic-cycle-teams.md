@@ -229,16 +229,22 @@ These patterns were tested and failed due to agent self-scheduling behavior:
 
 ## Lead Discipline (load-bearing rules)
 
-The lead's behavior across the cycle is governed by [`.claude/rules/epic-cycle-discipline.md`](../.claude/rules/epic-cycle-discipline.md). **Read that file in pre-flight before starting any cycle.** It is the durable capture of the Epic 1 retrospective lessons:
+The lead's behavior across the cycle is governed by [`.claude/rules/epic-cycle-discipline.md`](../.claude/rules/epic-cycle-discipline.md). **Read that file in pre-flight before starting any cycle.** As of the Epic 3 retrospective (2026-05-03) the rule count is **12** — the file is the durable capture of the Epic 1, Epic 2, and Epic 3 retrospective lessons:
 
 1. Spec length governance (≤ 250 lines)
 2. No `[x]` without verification — ever
 3. Higher-level MCP before generic `iris_execute_command`
 4. Stale-reference scan at story start
 5. One-liner check before deferring
-6. Self-initiated empirical test pass at epic end
+6. Self-initiated empirical test pass at epic end (sharpened Epic 3 retro: rich-data battery)
+7. Operator setup at sprint planning
+8. Defer threshold raised — "fix now" is the default
+9. Predicted-bug deferrals binding on the named successor
+10. External-default research at spec time (Perplexity-mandatory)
+11. Live integration smoke test mandatory when external API is in scope
+12. Rendered-text readability — human-read step in every UI-story empirical battery (added Epic 3 retro)
 
-Each rule is grounded in a specific Epic 1 incident requiring user intervention. The rule file documents the trigger, rule, rationale, and how-to-apply for each.
+Each rule is grounded in a specific incident requiring user intervention from one of the first three epics. The rule file documents the trigger, rule, rationale, and how-to-apply for each.
 
 ## Lessons Learned (Epic 1 Retrospective — 2026-05-02, real)
 

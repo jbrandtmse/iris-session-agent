@@ -188,20 +188,24 @@ Method TestSmokeEndToEnd()
     If tRs2.%Next() Set tToolCount = +tRs2.%Get("cnt")
     Do $$$AssertEquals(tToolCount, 1, "ToolCall row count = 1 (got: " _ tToolCount _ ")")
 
-    ; (6) TurnsJson contains 4 entries: user, assistant tool_use,
-    ; tool_result, assistant final.
+    ; (6) TurnsJson contains 5 entries: user, assistant tool_use,
+    ; tool_result, assistant final, assistant cross-session-notice
+    ; (Story 3.8 AC-2 — cross-session disclosure persists as a trailing
+    ; assistant turn when the dispatched session_id differs from the
+    ; bound conv key, which it does here: bound=smoke-conv-1, dispatched
+    ; session_id=999212).
     Do tHist.TurnsJson.Rewind()
     Set tTurnsBuf = ""
     While 'tHist.TurnsJson.AtEnd {
         Set tTurnsBuf = tTurnsBuf _ tHist.TurnsJson.Read(32000)
     }
     Set tTurnsArr = ##class(%DynamicArray).%FromJSON(tTurnsBuf)
-    Do $$$AssertEquals(tTurnsArr.%Size(), 4, "TurnsJson contains 4 entries (user / assistant tool_use / tool_result / assistant final; got: " _ tTurnsArr.%Size() _ ")")
+    Do $$$AssertEquals(tTurnsArr.%Size(), 5, "TurnsJson contains 5 entries (user / assistant tool_use / tool_result / assistant final / assistant cross-session-notice; got: " _ tTurnsArr.%Size() _ ")")
 
     Set tTurn0 = tTurnsArr.%Get(0)
     Do $$$AssertEquals(tTurn0.%Get("role"), "user", "Turn 0 is the user message")
-    Set tTurn3 = tTurnsArr.%Get(3)
-    Do $$$AssertEquals(tTurn3.%Get("role"), "assistant", "Turn 3 is the final assistant turn")
+    Set tTurn4 = tTurnsArr.%Get(4)
+    Do $$$AssertEquals(tTurn4.%Get("role"), "assistant", "Turn 4 is the trailing assistant turn (cross-session notice per Story 3.8 AC-2)")
 
     Do tHist.%Close()
     Quit

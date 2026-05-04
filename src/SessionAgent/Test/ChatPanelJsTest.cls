@@ -258,7 +258,7 @@ Method TestWelcomeMessagePresent()
 {
     Do $$$AssertStatusOK(..LoadFile(), "LoadFile resolved chat-panel.js at " _ ..FilePath)
     Do $$$AssertTrue(..FileContents [ "renderWelcomeMessage", "renderWelcomeMessage helper present (Story 3.3 AC-4)")
-    Do $$$AssertTrue(..FileContents [ "I can read this session's headers", "welcome message capability-summary fragment present (Story 3.3 AC-4)")
+    Do $$$AssertTrue(..FileContents [ "I can read this session's message headers", "welcome message capability-summary fragment present (Story 3.3 AC-4 / Story 3.10 commit d7ebf80 wording)")
 }
 
 /// <p>Story 3.4 AC-6 — citation-chip click delegation listener
@@ -346,6 +346,52 @@ Method TestParseInlineCitationsKlassCapture()
     Do $$$AssertTrue(..FileContents [ "(?::([^\]]+))?", "Citation regex includes the optional klass capture group (Story 3.4 AC-7)")
     Do $$$AssertTrue(..FileContents [ "setAttribute('data-cite-klass'", "Chip writes data-cite-klass when klass capture matched (Story 3.4 AC-7)")
     Do $$$AssertTrue(..FileContents [ "setAttribute('aria-label'", "Chip writes aria-label per citation type (Story 3.4 AC-5)")
+}
+
+/// <p>Story 4.0 AC-5 — <code>extractToolErrorPreview</code> helper
+/// present + tool-card summary path consumes it. The helper extracts a
+/// human-readable error preview from a tool-call card with status=error
+/// for display in the COLLAPSED card summary line. The renderer concat
+/// pattern <code>errorPreview + ' &mdash; called ' +</code> proves the
+/// summary path actually consumes the preview rather than ignoring it.
+/// A regression that silently drops the helper would re-hide validator
+/// rejections behind the expand affordance — the predicted-bug shape
+/// from the Epic 3 manual-testing surface (item F in Story 4.0
+/// triage).</p>
+Method TestExtractToolErrorPreviewPresent()
+{
+    Do $$$AssertStatusOK(..LoadFile(), "LoadFile resolved chat-panel.js at " _ ..FilePath)
+    Do $$$AssertTrue(..FileContents [ "function extractToolErrorPreview", "extractToolErrorPreview helper present (Story 4.0 AC-5)")
+    Do $$$AssertTrue(..FileContents [ "extractToolErrorPreview(card)", "renderToolCard call site invokes extractToolErrorPreview (Story 4.0 AC-5)")
+    ; The summary-line concat uses an em-dash (U+2014) which the IRIS XML
+    ; round-trip converts to the &mdash; entity in this .cls source. Match
+    ; on the load-bearing identifiers around it instead, which are stable
+    ; under the round-trip and still prove the renderer-consumes-preview
+    ; path is wired (a regression that drops the consumption would have
+    ; to also rename one of these tokens).
+    Do $$$AssertTrue(..FileContents [ "if (errorPreview)", "renderToolCard branches on errorPreview presence (Story 4.0 AC-5)")
+    Do $$$AssertTrue(..FileContents [ "summaryText.textContent = errorPreview", "summary line consumes the preview when present (Story 4.0 AC-5)")
+}
+
+/// <p>Story 4.0 AC-6 — citation-chip click defensive guards present.
+/// Asserts the JS source contains the <code>isCitationDispatchable</code>
+/// validator AND the <code>surfaceCitationErrorNotice</code> renderer AND
+/// the strict numeric-id regex <code>/^\d+$/</code> the validator uses
+/// for typed id-bearing citation types. A regression that drops any of
+/// these helpers re-opens the silent-no-op behavior the Epic 3 manual
+/// testing surface (item H in Story 4.0 triage) flagged as predicted-bug
+/// shape. The dedup attribute <code>data-cite-error-shown</code> assertion
+/// locks the (3) dedup behavior so subsequent clicks don't pile up
+/// duplicate notices.</p>
+Method TestCitationDefensiveGuardsPresent()
+{
+    Do $$$AssertStatusOK(..LoadFile(), "LoadFile resolved chat-panel.js at " _ ..FilePath)
+    Do $$$AssertTrue(..FileContents [ "function isCitationDispatchable", "isCitationDispatchable helper present (Story 4.0 AC-6.1)")
+    Do $$$AssertTrue(..FileContents [ "function surfaceCitationErrorNotice", "surfaceCitationErrorNotice helper present (Story 4.0 AC-6.1+2)")
+    Do $$$AssertTrue(..FileContents [ "/^\d+$/", "strict numeric-id regex present in validator (Story 4.0 AC-6.1)")
+    Do $$$AssertTrue(..FileContents [ "data-cite-error-shown", "dedup attribute present in surfaceCitationErrorNotice (Story 4.0 AC-6.3)")
+    Do $$$AssertTrue(..FileContents [ "sa-citation-error", "notice CSS class present (Story 4.0 AC-6.1+2)")
+    Do $$$AssertTrue(..FileContents [ "isCitationDispatchable(citeType, citeId)", "onTranscriptClick gates dispatch through validator (Story 4.0 AC-6.1)")
 }
 
 }

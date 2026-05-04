@@ -384,3 +384,48 @@ Other things to keep in mind:
 The excute_command tool can only be used with very simple commands. Instead of creating a complex commands, create a helper class method and use the execute_classmethod tool
 To debug instance methods, create a temporary class method that calls the instance method. You can use ^ClineDebug within the class method if desired.
 Make sure you clean up any temporary classes after you are finished with them.
+
+## LLM Prompt Construction (Story 4.0 / Epic 3 retro AI-15)
+
+**Anti-pattern: hardcoded enumeration of runtime-provided state in system prompts.**
+When an ObjectScript-emitted system prompt could enumerate runtime state — tool
+names, available providers, configured agents, registered transformations,
+loaded productions, anything else assembled at process startup — **do NOT**
+hardcode that enumeration in the prompt template. Instead, write a *directive*
+that points the LLM at the runtime-provided typed list it already receives in
+the same turn (the OpenAI/Anthropic `tools` array, the function-calling
+manifest, etc.):
+
+> *"Use only the tools in the list provided in this turn. Do not invent tool
+> names. Do not describe capabilities you do not actually have."*
+
+Reserve enumeration for **genuinely-static taxonomies** — protocol-level
+keywords (`HL7`, `CSV`, `JSON`), enum members defined by the IRIS API, fixed
+escalation tiers — values that the runtime cannot drift from in the field.
+
+**Originating incident.** [`SessionAgent.Config.AgentDefaults:GetSystemPrompt`](../../src/SessionAgent/Config/AgentDefaults.cls)
+shipped a hardcoded 13-tool enumeration in its system-prompt template through
+Stories 2.4 → 3.8. Only 3 tools were actually loaded into the live tool
+registry. Operators (and the agent itself) had no way to detect the drift —
+the LLM happily described the 10 phantom capabilities and refused to fall
+back to "I can only…" wording. Nine stories of capability hallucination shipped
+before manual testing surfaced it; commit `768be17` deleted the enumeration
+and replaced it with the directive form above. The subsequent retrospective
+codified this anti-pattern as Epic 3 AI-15 because the same shape will
+re-appear the moment Epic 4 / Epic 5 / Epic 6 add new tools, providers, or
+agent presets.
+
+**How to apply.**
+
+- At spec-writing time: any story authoring or modifying a system-prompt
+  template MUST audit it for enumeration-of-runtime-state. If found, rewrite
+  to directive form before the dev agent gets the spec.
+- At review time: a system-prompt diff that contains a hardcoded list of
+  things the runtime separately ships in the request payload (tools,
+  providers, namespaces, etc.) is a HIGH-severity finding per Rule 8 —
+  predicted-bug shape (drift will silently ship). Block the PR.
+- At runtime / smoke-test time: when exercising the chat path against a
+  real provider, the empirical battery (Rule 12) must include a turn that
+  asks the agent to enumerate its capabilities. If the agent claims a
+  capability the runtime tool registry does not actually load, the prompt
+  has drifted — file as a hot fix.

@@ -111,3 +111,58 @@ Set ^ClineDebug = ^ClineDebug _ "Step 1 completed; "
 6. Use test fixtures for common test data
 7. Always implement %OnNew properly when extending %UnitTest.TestCase
 8. Use debug globals (^ClineDebug) to trace test execution issues
+
+## MCP `iris_execute_tests` Truncation Workaround (Story 4.0 / Epic 3 retro)
+
+**Symptom.** When `mcp__iris-dev-mcp__iris_execute_tests` is invoked with the
+**package-runner form** (e.g., `package: "SessionAgent.Test"`) on a package
+with many test classes, the **tail entries of the per-class result list are
+truncated** in the JSON returned to the agent. The summary `total / pass /
+fail` counts the runner reports may be *lower* than the actual count
+recorded in the `^UnitTest.Result` global on the IRIS side.
+
+**Recurring incidents.** Stories 2.4 → 2.12 each saw the symptom at least
+once during regression sweeps; Story 3.0 saw it on its initial sweep; Story
+3.5 confirmed it again on the 161-test Epic 3 baseline. Each story
+re-discovered the workaround independently, costing roughly 5 – 10 minutes
+of confused investigation per story. This codification ends the
+re-explanation cost.
+
+**Workaround — per-class invocation.** Replace the package-runner call with
+a sequence of single-class calls and aggregate the sums in the agent /
+lead summary:
+
+```
+mcp__iris-dev-mcp__iris_execute_tests  test_class: SessionAgent.Test.UtilJsonTest
+mcp__iris-dev-mcp__iris_execute_tests  test_class: SessionAgent.Test.UtilRetryWithBackoffTest
+…  (repeat per class)
+```
+
+The per-class form returns the full result list reliably because each call
+fits inside the truncation budget. Aggregate `total / pass / fail` across
+calls; the union of all per-class result lists is the ground-truth
+regression sweep.
+
+**Verification path — `^UnitTest.Result` global walk.** When in doubt, read
+the global directly to confirm the actual recorded counts:
+
+```
+mcp__iris-dev-mcp__iris_global_get  global: ^UnitTest.Result
+```
+
+The global is shaped `^UnitTest.Result(<runIdx>, <suiteName>, <className>,
+<methodName>, …)` — walk the most recent `<runIdx>` (max subscript) to see
+every method recorded in this run, regardless of whether the runner JSON
+truncated the response. If the global walk shows more entries than the
+runner's summary, the runner truncated and the per-class workaround applies.
+
+**When to use which form.**
+
+- **Single-class probe / smoke during dev:** package form is fine —
+  truncation only bites at scale.
+- **Epic-end full regression sweep (Rule 6 step 3):** ALWAYS per-class.
+  Aggregate counts in the retrospective opening so the empirical battery
+  evidence is reliable.
+- **Cross-suite invariant check** (e.g., "does any class fail under
+  audit-ledger writes?"): per-class, scripted, results captured to a file
+  the lead reads end-to-end before claiming green.

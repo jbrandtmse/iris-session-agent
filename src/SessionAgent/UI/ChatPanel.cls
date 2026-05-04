@@ -174,6 +174,16 @@ ClassMethod EmitStyle() As %Status
     &html<.sa-config-empty-prompt { padding: 1em; color: var(--sa-error-text-color); }>
     &html<.sa-input-field-disabled { opacity: 0.6; cursor: not-allowed; }>
 
+    ; --- Story 4.0 AC-6 — citation-chip click failure notice. The notice
+    ; is appended next to a chip when (a) the chip's id is empty/non-
+    ; numeric (validation rejection pre-dispatch) or (b) the parent-side
+    ; zenPage.onCitationClick handler threw (post-dispatch failure). It
+    ; reuses --sa-error-text-color so the cue is visually consistent
+    ; with the inline-error block (.sa-msg-error left border, the
+    ; .sa-error-text span in the error envelope path). No new token
+    ; needed — UX-DR21 / NFR-T1 satisfied via reuse.
+    &html<.sa-citation-error { color: var(--sa-error-text-color); font-style: italic; margin-left: 0.25em; }>
+
     &html<</style>>
     Quit $$$OK
 }

@@ -593,3 +593,62 @@ This file accumulates findings, follow-ups, and architect-decision items that ar
   - **Owner:** No bound successor. Could be picked up by Epic 8 Story 8.6 if/when the dispatch ladder is extracted to `SessionAgent.Body.DispatchLadder`.
   - **Blocking?** Not blocking. Story 4.2's 11 other test methods (1-8, empty-body, missing-id, header-not-found, registry-listing) cover every reachable dispatch outcome.
 
+
+
+---
+
+## Deferred from: code review of 4-3-getmessagedetail (2026-05-03)
+
+- **`get_message_detail` description sharpening to dampen redundant `rule_log` follow-up.**
+
+  - **Source:** Story 4.3 code review.
+  - **Severity:** LOW (Rule 8 valid defer Test 1 — natural carrier is Story 4.7 `ExplainError` + comprehensive read-only suite verification, where prompt-engineering / tool-description tightening across the full inspection suite is in scope).
+  - **The observation:** Live OpenAI smoke turn (Rule 6 sharpened, session 850 / message 854) showed agent dispatching `get_message_detail` (correct primary) PLUS `rule_log` (1 follow-up call to confirm session-wide rules) — 2 tool calls instead of the spec`s implicit 1-call expectation. The redundancy is technical: `get_message_detail.rule_decisions` already covers the per-message scope (which is what the user asked about); the agent`s decision to additionally check `rule_log` for session-wide visibility is reasonable but produces an extra tool round-trip.
+  - **Why this is not a Story 4.3 ship blocker:** the `rule_log` call is genuinely broader scope (session-wide vs per-message), and the LLM`s decision to check it is defensible. The first call (`get_message_detail`) was correctly grounded and complete. Wall-clock impact: 5.1s end-to-end including both tool calls, not problematic.
+  - **Two clean resolutions for Story 4.7:**
+    1. **Sharpen `get_message_detail`s tool description** to make explicit that `rule_decisions` already covers per-message rule-firing (e.g., "Return full message header + body summary + linked rule-log decisions for a single message — `rule_decisions` covers all rules that fired for THIS message; use `rule_log` only for session-wide rule history beyond the current message").
+    2. **Leave as-is** if the cross-tool prompt engineering pass in Story 4.7 finds the session-wide check is operator-valuable in practice.
+  - **Recommendation:** Resolution #1 (description sharpening) is the lower-risk fix; the description currently makes both tools look "redundantly" applicable for "tell me about message N + rules that fired".
+  - **Owner:** Dev agent for Story 4.7 (comprehensive read-only suite verification).
+  - **Blocking?** Not blocking Stories 4.4–4.6. Becomes scope-relevant when Story 4.7 enters dev (cross-tool prompt-engineering pass).
+
+- **Bootstrap.cls `Write` statements block `iris_execute_classmethod` smoke calls.**
+
+  - **Source:** Story 4.3 code review (lead-flagged item #4).
+  - **Severity:** LOW (Rule 8 valid defer Test 3 — pure cosmetic with no predicted-bug shape: Write statements are intentional operator-facing console output for `iris session` interactive shell use).
+  - **The observation:** `src/SessionAgent/Sample/Bootstrap.cls` `InstallProduction` (lines 49-54), `UninstallProduction` (lines 93, 97), and `StartProductionIfStopped` (no Write) emit `Write !, "[SessionAgent.Sample.Bootstrap] ..."` lines as operator-readable console feedback. When invoked via `iris_execute_classmethod` MCP, the Write output is intermixed with the JSON return envelope, breaking JSON-shape parsers.
+  - **Story 4.3 dev workaround:** re-bootstrapped the sample production via `iris_production_control start` instead of `Bootstrap.InstallProduction` — operator-friendly alternate path that skips the Write-output friction.
+  - **Why this is not a Story 4.3 regression:** the Write statements are a Story 3.9 carry-over (sample interop production scaffolding); they have NEVER been MCP-friendly. The friction was discovered during Story 4.3`s Rule 6 empirical battery, not introduced by Story 4.3 code.
+  - **Two clean resolutions:**
+    1. **Wrap operator console output in a guard:** check `$IO` / device context and skip Write when called from a non-interactive shell (e.g., MCP / programmatic invocation). Returns the same operator-readable text via the `
+
+---
+
+## Deferred from: code review of 4-3-getmessagedetail (2026-05-03)
+
+- **`get_message_detail` description sharpening to dampen redundant `rule_log` follow-up.**
+
+  - **Source:** Story 4.3 code review (lead-flagged item #5).
+  - **Severity:** LOW (Rule 8 valid defer Test 1 — natural carrier is Story 4.7 `ExplainError` + comprehensive read-only suite verification, where prompt-engineering / tool-description tightening across the full inspection suite is in scope).
+  - **The observation:** Live OpenAI smoke turn (Rule 6 sharpened, session 850 / message 854) showed agent dispatching `get_message_detail` (correct primary) PLUS `rule_log` (1 follow-up call to confirm session-wide rules) — 2 tool calls instead of the spec's implicit 1-call expectation. The redundancy is technical: `get_message_detail.rule_decisions` already covers the per-message scope (which is what the user asked about); the agent's decision to additionally check `rule_log` for session-wide visibility is reasonable but produces an extra tool round-trip.
+  - **Why this is not a Story 4.3 ship blocker:** the `rule_log` call is genuinely broader scope (session-wide vs per-message), and the LLM's decision to check it is defensible. The first call (`get_message_detail`) was correctly grounded and complete. Wall-clock impact: 5.1s end-to-end including both tool calls — not problematic.
+  - **Two clean resolutions for Story 4.7:**
+    1. **Sharpen `get_message_detail`'s tool description** to make explicit that `rule_decisions` already covers per-message rule-firing — e.g., "Return full message header + body summary + linked rule-log decisions for a single message — rule_decisions covers all rules that fired for THIS message; use rule_log only for session-wide rule history beyond the current message."
+    2. **Leave as-is** if the cross-tool prompt-engineering pass in Story 4.7 finds the session-wide check is operator-valuable in practice.
+  - **Recommendation:** Resolution #1 (description sharpening) is the lower-risk fix; the description currently makes both tools look "redundantly" applicable for "tell me about message N + rules that fired".
+  - **Owner:** Dev agent for Story 4.7 (comprehensive read-only suite verification).
+  - **Blocking?** Not blocking Stories 4.4–4.6. Becomes scope-relevant when Story 4.7 enters dev (cross-tool prompt-engineering pass).
+
+- **`SessionAgent.Sample.Bootstrap` `Write` statements block `iris_execute_classmethod` smoke calls.**
+
+  - **Source:** Story 4.3 code review (lead-flagged item #4).
+  - **Severity:** LOW (Rule 8 valid defer Test 3 — pure cosmetic with no predicted-bug shape: `Write` statements are intentional operator-facing console output for `iris session` interactive shell use).
+  - **The observation:** `src/SessionAgent/Sample/Bootstrap.cls` `InstallProduction` (lines 49-54), `UninstallProduction` (lines 93, 97), and `StartProductionIfStopped` (no Write) emit `Write !, "[SessionAgent.Sample.Bootstrap] ..."` lines as operator-readable console feedback. When invoked via `iris_execute_classmethod` MCP, the Write output is intermixed with the JSON return envelope, breaking JSON-shape parsers (the dev's empirical observation during Story 4.3's Rule 6 battery).
+  - **Story 4.3 dev workaround:** re-bootstrapped the sample production via `iris_production_control start` instead of `Bootstrap.InstallProduction` — operator-friendly alternate path that skips the Write-output friction.
+  - **Why this is not a Story 4.3 regression:** the Write statements are a Story 3.9 carry-over (sample interop production scaffolding); they have NEVER been MCP-friendly. The friction was discovered during Story 4.3's Rule 6 empirical battery, not introduced by Story 4.3 code.
+  - **Two clean resolutions:**
+    1. **Wrap operator console output in a guard:** check `$IO` / device context and skip Write when called from a non-interactive shell (e.g., MCP / programmatic invocation). Return the same operator-readable text via the `%Status` payload instead.
+    2. **Add a sibling `InstallProductionSilent` ClassMethod** that returns `%Status` only with no Write side-effects, and document it as the MCP-callable variant.
+  - **Recommendation:** Resolution #1 — fewer methods to maintain, single source of truth for the install instructions text. Either resolution is fine.
+  - **Owner:** No bound successor. Could be picked up opportunistically when a future story touches `Bootstrap.cls` (Story 4.x deferred clean-up, Story 6.x multi-namespace install support).
+  - **Blocking?** Not blocking. The `iris_production_control start` operator workaround is canonical and documented (Story 4.3 Tasks/Subtasks Task 4).

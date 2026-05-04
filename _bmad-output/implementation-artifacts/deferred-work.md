@@ -685,3 +685,48 @@ This file accumulates findings, follow-ups, and architect-decision items that ar
   - **Resolution applied at code review:** rewrote the `Description` parameter on `ListBusinessProcessMethods.cls` and `GetBusinessProcessInstance.cls` to match the actual implementation. Both LLM-surfaced descriptions are now wire-truthful.
   - **Owner:** Resolved (this commit).
   - **Blocking?** Not blocking.
+
+---
+
+## Deferred from: code review of story-4.5-findrelatedsessions-ens-supersessionindex (2026-05-04)
+
+- **Prepare-failure path returns bare success-shaped envelope without `isError:1`.**
+
+  - **Source:** Story 4.5 code review (Blind Hunter B-3).
+  - **Severity:** LOW (predicted-bug shape, but matches existing codebase pattern across Story 4.1+ tools; no genuine field-observable failure path on the dev install — `%Prepare` only fails on syntax errors in the literal SQL, which are caught by compile + per-class tests).
+  - **The observation:** `FindRelatedSessions.Invoke()` initializes `pResult` to `{"content":[{"type":"text","text":""}], "structuredContent":{"related_sessions":[]}}` at the top of Try. The `Quit:$$$ISERR(tSCp)` / `Quit:$$$ISERR(tSCs)` / `Quit:$$$ISERR(tSCer)` / `Quit:$$$ISERR(tSCec)` patterns exit the Try on prepare failure but do NOT set `isError:1` — the caller would receive a success-shaped envelope with empty content text and an empty `related_sessions` array. Same shape exists in `EventLog.cls` line 156 + `RuleLog.cls` and was inherited by the dev as the codebase pattern.
+  - **Predicted-bug shape:** if a future schema change breaks one of the `%Prepare` SQL strings (e.g., `Ens.SuperSessionIndex` schema migration removes the `MessageHeader` FK), operators see "no related sessions" instead of a meaningful error. The audit row would still emit with `IsError=0` but empty `ToolName` data — silent degradation rather than a loud failure.
+  - **Defer rationale (Rule 8):** the bug shape is genuine but the carrier is the **whole Inspection-tool family**, not just Story 4.5. A cross-cutting fix should flow into Epic 7 or a dedicated cleanup story that adds an `EnsureIsErrorOnPrepareFailure` helper to `SessionAgent.Tool.Base` and retrofits all 9 inspection tools (EventLog, RuleLog, MessageHeaders, SessionSummary, SessionTimeline, GetMessageBody, GetMessageDetail, GetBusinessProcessSource, GetBusinessProcessInstance, ListBusinessProcessMethods, FindRelatedSessions) in one commit. Single-story fix would create inconsistency.
+  - **Owner:** Cross-cutting Inspection-tool cleanup (suggested carrier: Story 4.7 — "ExplainError + comprehensive read-only suite verification" — already in scope to sweep all read-only inspection tools for safety invariants).
+  - **Blocking?** Not blocking. Cosmetic robustness improvement; no current operator-observable break.
+
+- **`Ens.MessageHeader.SuperSession` direct-column optimization (vs JOIN through `Ens.SuperSessionIndex`).**
+
+  - **Source:** Story 4.5 code review (Edge Case Hunter E-1).
+  - **Severity:** LOW (purely an optimization; current JOIN approach is semantically correct + matches spec intent "uses Ens.SuperSessionIndex").
+  - **The observation:** `Ens.MessageHeader` has its own `SuperSession varchar` column (column #18). `Ens.SuperSessionIndex` is a side-table that indexes the same value with `SQLUPPER(250)` truncation + a unique-per-MessageHeader assumption. A direct query against `Ens.MessageHeader.SuperSession` (no JOIN) would be simpler and avoid one table touch. Tradeoffs: (a) the side-table has different population semantics — it's only populated when a `Ens.MessageHeader.OnSave` index trigger fires successfully; (b) the side-table's `SQLUPPER(250)` index makes case-insensitive lookups fast; (c) the spec said "uses Ens.SuperSessionIndex" so the JOIN approach is what was specified.
+  - **Why deferred (Rule 8 test 3 — pure optimization, no predicted-bug shape):** the JOIN is correct, the spec says use the SuperSessionIndex, the dev install has zero rows on either side so we can't measure performance empirically. Optimization belongs in a future "search-tool performance pass" story.
+  - **Owner:** Future Inspection/Search tool performance story (Epic 8 likely carrier — search tools share the same JOIN-vs-direct-column tradeoff against `Ens.SearchTableBase`).
+  - **Blocking?** Not blocking.
+
+- **Test fixture `OnBeforeAllTests` does not propagate seed-row failures to the test runner.**
+
+  - **Source:** Story 4.5 code review (Edge Case Hunter E-3 + E-4).
+  - **Severity:** LOW (cosmetic robustness — fixture failures would surface as assertion failures in the test bodies, not silent green tests, so the safety net catches the bug shape; just slightly later in the call stack than ideal).
+  - **The observations:**
+    1. `OnBeforeAllTests` checks `tRsHdr.%SQLCODE < 0` then does `Quit` — exits the For loop but does NOT return an error %Status to the test runner, so subsequent test methods run with partial fixture state.
+    2. The "second header row to session A" insertion (line 147–150) ignores `%SQLCODE < 0` entirely. If A2 insert fails, `message_count >= 1` assertion in `TestRelatedSessionsFindsTwoOthers` would still pass (one row is enough), but the multi-row case wouldn't be exercised.
+    3. The `tShiftedSecsA2 = tBaseSecs + 100` shift handles 1-day rollover via `$Select` but not 2-day. Real-world hit rate is essentially zero (test would have to run within the last 100 seconds before midnight).
+  - **Why deferred (Rule 8 test 3 — no predicted-bug shape; assertion failures ARE the safety net):** if the fixture genuinely fails, test bodies will assert on missing rows and fail loudly. Hardening the fixture to also fail at the OnBeforeAllTests boundary is incremental robustness.
+  - **Owner:** Any future Story-4.5 fixture-touching change.
+  - **Blocking?** Not blocking.
+
+- **Catch-block error_text uses `ex.DisplayString()` directly — may include raw IRIS error codes.**
+
+  - **Source:** Story 4.5 code review (Edge Case Hunter E-7).
+  - **Severity:** LOW (matches existing codebase pattern across all Story 4.1+ inspection tools; no operator-friendly redaction layer exists yet).
+  - **The observation:** The outer `Catch ex` block sets `error_text:(ex.DisplayString())` in the `query_error` envelope. `ex.DisplayString()` returns IRIS-internal error formats like `<UNDEFINED>tIdx+5^SessionAgent.Tool...`, `<INVALID OREF>`, `<METHOD DOES NOT EXIST>` which are not operator-friendly. Operators see raw IRIS error codes in the chat panel rather than human-readable messages.
+  - **Predicted-bug shape:** none — the `content[0].text` is also `ex.DisplayString()`, and the audit `ErrorText` column captures the same. So operators get a self-consistent (if unfriendly) error path.
+  - **Defer rationale (Rule 8 test 3 — pure cosmetic, no predicted-bug shape):** no field break; no carrier exists yet for an operator-friendly error-redaction utility. Cross-cutting concern that belongs in an Inspection-tool quality-of-life pass.
+  - **Owner:** Same future Inspection-tool cleanup story as B-3 above (suggested Story 4.7 sweep).
+  - **Blocking?** Not blocking.

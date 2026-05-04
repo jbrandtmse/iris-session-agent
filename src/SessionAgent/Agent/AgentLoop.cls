@@ -193,8 +193,20 @@ ClassMethod RunTurn(pAgentName As %String, pSessionKey As %String, pPortalUser A
         ; per-agent default so an operator-customized system prompt still
         ; receives the binding (the override doesn't escape the binding —
         ; that would defeat the purpose of the fix).
+        ;
+        ; Story 3.7 fix-now (2026-05-03 — surfaced by lead's pilot
+        ; walkthrough). Soft-scope cross-session access: the LLM may
+        ; dispatch tools against a different session_id when the operator
+        ; explicitly asks, but MUST disclose the cross-session reach in
+        ; its response so the operator sees they are reaching outside the
+        ; bound session. Audit ledger always records the args (including
+        ; session_id) regardless. This is the "soft scope" choice (over
+        ; strict-reject) per project-lead direction.
         If pSessionKey '= "" {
-            Set tSysPrompt = tSysPrompt _ " The currently-bound IRIS Production Ens session ID for this conversation is " _ pSessionKey _ ". Use this id verbatim when calling inspection tools unless the operator explicitly asks about a different session."
+            Set tSysPrompt = tSysPrompt _ " The currently-bound IRIS Production Ens session ID for this conversation is " _ pSessionKey _ "."
+            Set tSysPrompt = tSysPrompt _ " Default to using this id verbatim when calling inspection tools."
+            Set tSysPrompt = tSysPrompt _ " If the operator explicitly asks about a different session, you may dispatch against that session id, but you MUST mention in your response that you are reaching outside the bound session — for example: ""Note: you asked about session 99999 which is outside this chat's bound session " _ pSessionKey _ "."""
+            Set tSysPrompt = tSysPrompt _ " Audit policy: every tool dispatch is logged regardless."
         }
 
         ; ─────────────────────────────────────────────────────────────

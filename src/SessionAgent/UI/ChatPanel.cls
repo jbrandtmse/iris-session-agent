@@ -117,6 +117,30 @@ ClassMethod EmitStyle() As %Status
     &html<.sa-input-field { flex: 1 1 auto; }>
     &html<.sa-status-text { color: var(--sa-status-text-color); font-style: italic; }>
 
+    ; Story 3.7 fix-now (lead-driven walkthrough screenshot finding):
+    ; operator/agent message attribution per UX-design-spec §"Operator vs.
+    ; agent message attribution" line 776 — both visual-tint difference
+    ; (token-driven) AND attribution prefix (`**You** —` / `**Agent** —`)
+    ; were specified but never implemented. Without them the operator
+    ; cannot visually tell which lines are their own questions vs. the
+    ; agent's answers, especially in returning-conversation surfacing
+    ; (Story 3.3 AC-3) which can have many alternating turns.
+    ;
+    ; Implementation: (a) every message block gets padding + margin so
+    ; turns are visually separable; (b) operator vs. agent backgrounds
+    ; differ via the existing --sa-message-{operator,agent}-bg tokens;
+    ; (c) ::before pseudo-elements add the attribution prefix per the
+    ; UX spec — the prefix is bold and slightly muted so it's clearly
+    ; metadata not body content. Error variant inherits agent styling
+    ; with a left border in --sa-error-text-color for at-a-glance
+    ; visibility (color + structural cue per UX-DR21).
+    &html<.sa-message-block { padding: 0.5em 0.75em; margin: 0.25em 0; border-radius: 4px; }>
+    &html<.sa-msg-operator { background: var(--sa-message-operator-bg); }>
+    &html<.sa-msg-agent { background: var(--sa-message-agent-bg); }>
+    &html<.sa-msg-operator::before { content: "You — "; font-weight: bold; }>
+    &html<.sa-msg-agent::before { content: "Agent — "; font-weight: bold; }>
+    &html<.sa-msg-error { border-left: 3px solid var(--sa-error-text-color); }>
+
     ; --- Story 3.4 AC-4: tool-card highlight flash for citation-chip
     ; click target. Added to <details class="sa-tool-call-card"> by
     ; SessionAgent.EnsPortal.VisualTrace.onCitationClick(), removed

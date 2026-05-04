@@ -74,14 +74,23 @@ Method LoadFile() As %Status
         ; Already loaded? Reuse.
         If ..FilePath '= "" Quit
 
-        ; Candidate 1: post-install CSP path. Resolve cspdir then append
-        ; the static subpath the FileCopy in module.xml uses.
-        Set tCspDir = $System.CSP.GetFileName("/csp/static/iris-session-agent/chat-panel.js")
-        If tCspDir '= "", ##class(%File).Exists(tCspDir) {
-            Set ..FilePath = tCspDir
+        ; Candidate 1: IPM module root. Same lookup pattern as
+        ; SessionAgent.UI.ChatPanelAsset (Story 3.6 fix-now). Works on any
+        ; install topology where the IPM source tree is intact post-install.
+        Try {
+            Set tMod = ##class(%IPM.Storage.Module).NameOpen("iris-session-agent")
+            If $IsObject(tMod) {
+                Set tCandidate = tMod.Root _ "static/chat-panel.js"
+                If ##class(%File).Exists(tCandidate) {
+                    Set ..FilePath = tCandidate
+                }
+            }
+        } Catch tIpmEx {
+            ; IPM lookup fail is non-fatal — fall through to repo-path candidates.
         }
 
-        ; Candidate 2 + 3: repo-source paths (dev-cycle pre-zpm-load).
+        ; Candidate 2 + 3: hardcoded repo-source paths (dev-cycle fallback
+        ; for environments where IPM module isn't registered yet).
         If ..FilePath = "" {
             Set tRepoWin = "c:\git\iris-session-agent\static\chat-panel.js"
             If ##class(%File).Exists(tRepoWin) {

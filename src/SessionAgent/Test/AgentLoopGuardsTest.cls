@@ -210,7 +210,7 @@ Method TestRunTurnInjectsBoundSessionIdIntoSystemPrompt()
     Set tCaptured = $Get(^||SessionAgentSystemPromptCapture, "")
     Do $$$AssertNotEquals(tCaptured, "", "SystemPromptCaptureMock captured the system prompt (got: " _ $Extract(tCaptured, 1, 200) _ ")")
     Do $$$AssertTrue(tCaptured [ "currently-bound IRIS Production Ens session ID for this conversation is " _ tSessionKey, "system prompt contains the AC-6 binding sentence with bound session-key (got: " _ $Extract(tCaptured, 1, 400) _ ")")
-    Do $$$AssertTrue(tCaptured [ "Use this id verbatim", "system prompt contains the AC-6 verbatim-use directive")
+    Do $$$AssertTrue(tCaptured [ "Default to using this id verbatim", "system prompt contains the AC-6 verbatim-use directive")
 
     Kill ^||SessionAgentSystemPromptCapture
     Quit
@@ -249,7 +249,7 @@ Method TestRunTurnOmitsSessionIdSentenceWhenSessionKeyEmpty()
     ; that guard's braces.
     Do $$$AssertTrue(tBody [ "If pSessionKey '= """, "RunTurn body contains the AC-6 empty-session-key guard 'If pSessionKey ''= """"' before the binding-sentence concatenation")
     Do $$$AssertTrue(tBody [ "currently-bound IRIS Production Ens session ID for this conversation is", "RunTurn body contains the AC-6 binding-sentence literal")
-    Do $$$AssertTrue(tBody [ "Use this id verbatim", "RunTurn body contains the AC-6 verbatim-use directive literal")
+    Do $$$AssertTrue(tBody [ "Default to using this id verbatim", "RunTurn body contains the AC-6 verbatim-use directive literal")
 
     ; Tighter check: the binding-sentence concatenation must appear
     ; AFTER the guard (so the guard actually controls it). Find the

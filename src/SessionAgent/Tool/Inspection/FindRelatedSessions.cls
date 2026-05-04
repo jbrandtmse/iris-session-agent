@@ -117,7 +117,13 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
         Set tSqlLookup = "SELECT TOP 1 %EXACT(ssi.SuperSession) AS super_session FROM Ens.SuperSessionIndex ssi JOIN Ens.MessageHeader mh ON ssi.MessageHeader = mh.ID WHERE mh.SessionId = ?"
         Set tStmtLookup = ##class(%SQL.Statement).%New()
         Set tSCp = tStmtLookup.%Prepare(tSqlLookup)
-        Quit:$$$ISERR(tSCp)
+        ; Story 4.7 AC-7 — emit isError envelope on prepare failure
+        ; (Story 4.5 R-1 carry-forward fix).
+        If $$$ISERR(tSCp) {
+            Set tErr = $System.Status.GetErrorText(tSCp)
+            Set pResult = {"isError":(1), "content":[{"type":"text","text":(tErr)}], "structuredContent":{"render_strategy":"prepare_error", "error_text":(tErr)}}
+            Quit
+        }
         Set tRsLookup = tStmtLookup.%Execute(tSessionId)
         Set tSuperSession = ""
         If tRsLookup.%Next() {
@@ -139,7 +145,12 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
         Set tSqlSiblings = "SELECT DISTINCT TOP ? mh.SessionId AS session_id FROM Ens.SuperSessionIndex ssi JOIN Ens.MessageHeader mh ON ssi.MessageHeader = mh.ID WHERE %EXACT(ssi.SuperSession) = ? AND mh.SessionId <> ? ORDER BY mh.SessionId ASC"
         Set tStmtSib = ##class(%SQL.Statement).%New()
         Set tSCs = tStmtSib.%Prepare(tSqlSiblings)
-        Quit:$$$ISERR(tSCs)
+        ; Story 4.7 AC-7 — emit isError envelope on prepare failure.
+        If $$$ISERR(tSCs) {
+            Set tErr = $System.Status.GetErrorText(tSCs)
+            Set pResult = {"isError":(1), "content":[{"type":"text","text":(tErr)}], "structuredContent":{"render_strategy":"prepare_error", "error_text":(tErr)}}
+            Quit
+        }
         Set tRsSib = tStmtSib.%Execute(tLimit, tSuperSession, tSessionId)
 
         ; NOTE: $ListBuild() with no args creates a list of length 1
@@ -155,10 +166,19 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
         ; row (earliest TimeCreated ASC) + total message count.
         Set tEnrichRow = ##class(%SQL.Statement).%New()
         Set tSCer = tEnrichRow.%Prepare("SELECT TOP 1 %EXACT(SourceConfigName) AS src, %EXACT(TargetConfigName) AS tgt, TimeCreated AS tc FROM Ens.MessageHeader WHERE SessionId = ? ORDER BY TimeCreated ASC, ID ASC")
-        Quit:$$$ISERR(tSCer)
+        ; Story 4.7 AC-7 — emit isError envelope on prepare failure.
+        If $$$ISERR(tSCer) {
+            Set tErr = $System.Status.GetErrorText(tSCer)
+            Set pResult = {"isError":(1), "content":[{"type":"text","text":(tErr)}], "structuredContent":{"render_strategy":"prepare_error", "error_text":(tErr)}}
+            Quit
+        }
         Set tEnrichCount = ##class(%SQL.Statement).%New()
         Set tSCec = tEnrichCount.%Prepare("SELECT COUNT(*) AS cnt FROM Ens.MessageHeader WHERE SessionId = ?")
-        Quit:$$$ISERR(tSCec)
+        If $$$ISERR(tSCec) {
+            Set tErr = $System.Status.GetErrorText(tSCec)
+            Set pResult = {"isError":(1), "content":[{"type":"text","text":(tErr)}], "structuredContent":{"render_strategy":"prepare_error", "error_text":(tErr)}}
+            Quit
+        }
 
         Set tRelated = []
         Set tRelatedCount = 0
@@ -206,8 +226,10 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
         Quit
     }
     Catch ex {
-        Set pResult = {"isError":(1), "content":[{"type":"text","text":(ex.DisplayString())}]}
-        Set pResult.structuredContent = {"render_strategy":"query_error", "error_text":(ex.DisplayString())}
+        ; Story 4.7 AC-7 — operator-friendly catch text (Story 4.5 R-4).
+        Set tErrText = ##class(SessionAgent.Tool.Base).FormatExceptionForOperator(ex)
+        Set pResult = {"isError":(1), "content":[{"type":"text","text":(tErrText)}]}
+        Set pResult.structuredContent = {"render_strategy":"query_error", "error_text":(tErrText)}
         Quit
     }
     Quit tSC

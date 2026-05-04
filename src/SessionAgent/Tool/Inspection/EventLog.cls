@@ -153,7 +153,13 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
 
         Set tStmt = ##class(%SQL.Statement).%New()
         Set tSC = tStmt.%Prepare(tSql)
-        Quit:$$$ISERR(tSC)
+        ; Story 4.7 AC-7 — emit isError envelope on prepare failure
+        ; (Story 4.5 R-1 carry-forward fix).
+        If $$$ISERR(tSC) {
+            Set tErr = $System.Status.GetErrorText(tSC)
+            Set pResult = {"isError":(1), "content":[{"type":"text","text":(tErr)}], "structuredContent":{"render_strategy":"prepare_error", "error_text":(tErr)}}
+            Quit
+        }
 
         ; Dispatch %Execute arity — TOP is always first, then SessionId,
         ; then Type cap, then optional MessageId.
@@ -237,7 +243,9 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
         Quit
     }
     Catch ex {
-        Set pResult = {"isError":(1), "content":[{"type":"text","text":(ex.DisplayString())}]}
+        ; Story 4.7 AC-7 — operator-friendly catch text (Story 4.5 R-4).
+        Set tErrText = ##class(SessionAgent.Tool.Base).FormatExceptionForOperator(ex)
+        Set pResult = {"isError":(1), "content":[{"type":"text","text":(tErrText)}]}
         Quit
     }
     Quit tSC

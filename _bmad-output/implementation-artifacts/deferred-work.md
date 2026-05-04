@@ -601,33 +601,6 @@ This file accumulates findings, follow-ups, and architect-decision items that ar
 
 - **`get_message_detail` description sharpening to dampen redundant `rule_log` follow-up.**
 
-  - **Source:** Story 4.3 code review.
-  - **Severity:** LOW (Rule 8 valid defer Test 1 — natural carrier is Story 4.7 `ExplainError` + comprehensive read-only suite verification, where prompt-engineering / tool-description tightening across the full inspection suite is in scope).
-  - **The observation:** Live OpenAI smoke turn (Rule 6 sharpened, session 850 / message 854) showed agent dispatching `get_message_detail` (correct primary) PLUS `rule_log` (1 follow-up call to confirm session-wide rules) — 2 tool calls instead of the spec`s implicit 1-call expectation. The redundancy is technical: `get_message_detail.rule_decisions` already covers the per-message scope (which is what the user asked about); the agent`s decision to additionally check `rule_log` for session-wide visibility is reasonable but produces an extra tool round-trip.
-  - **Why this is not a Story 4.3 ship blocker:** the `rule_log` call is genuinely broader scope (session-wide vs per-message), and the LLM`s decision to check it is defensible. The first call (`get_message_detail`) was correctly grounded and complete. Wall-clock impact: 5.1s end-to-end including both tool calls, not problematic.
-  - **Two clean resolutions for Story 4.7:**
-    1. **Sharpen `get_message_detail`s tool description** to make explicit that `rule_decisions` already covers per-message rule-firing (e.g., "Return full message header + body summary + linked rule-log decisions for a single message — `rule_decisions` covers all rules that fired for THIS message; use `rule_log` only for session-wide rule history beyond the current message").
-    2. **Leave as-is** if the cross-tool prompt engineering pass in Story 4.7 finds the session-wide check is operator-valuable in practice.
-  - **Recommendation:** Resolution #1 (description sharpening) is the lower-risk fix; the description currently makes both tools look "redundantly" applicable for "tell me about message N + rules that fired".
-  - **Owner:** Dev agent for Story 4.7 (comprehensive read-only suite verification).
-  - **Blocking?** Not blocking Stories 4.4–4.6. Becomes scope-relevant when Story 4.7 enters dev (cross-tool prompt-engineering pass).
-
-- **Bootstrap.cls `Write` statements block `iris_execute_classmethod` smoke calls.**
-
-  - **Source:** Story 4.3 code review (lead-flagged item #4).
-  - **Severity:** LOW (Rule 8 valid defer Test 3 — pure cosmetic with no predicted-bug shape: Write statements are intentional operator-facing console output for `iris session` interactive shell use).
-  - **The observation:** `src/SessionAgent/Sample/Bootstrap.cls` `InstallProduction` (lines 49-54), `UninstallProduction` (lines 93, 97), and `StartProductionIfStopped` (no Write) emit `Write !, "[SessionAgent.Sample.Bootstrap] ..."` lines as operator-readable console feedback. When invoked via `iris_execute_classmethod` MCP, the Write output is intermixed with the JSON return envelope, breaking JSON-shape parsers.
-  - **Story 4.3 dev workaround:** re-bootstrapped the sample production via `iris_production_control start` instead of `Bootstrap.InstallProduction` — operator-friendly alternate path that skips the Write-output friction.
-  - **Why this is not a Story 4.3 regression:** the Write statements are a Story 3.9 carry-over (sample interop production scaffolding); they have NEVER been MCP-friendly. The friction was discovered during Story 4.3`s Rule 6 empirical battery, not introduced by Story 4.3 code.
-  - **Two clean resolutions:**
-    1. **Wrap operator console output in a guard:** check `$IO` / device context and skip Write when called from a non-interactive shell (e.g., MCP / programmatic invocation). Returns the same operator-readable text via the `
-
----
-
-## Deferred from: code review of 4-3-getmessagedetail (2026-05-03)
-
-- **`get_message_detail` description sharpening to dampen redundant `rule_log` follow-up.**
-
   - **Source:** Story 4.3 code review (lead-flagged item #5).
   - **Severity:** LOW (Rule 8 valid defer Test 1 — natural carrier is Story 4.7 `ExplainError` + comprehensive read-only suite verification, where prompt-engineering / tool-description tightening across the full inspection suite is in scope).
   - **The observation:** Live OpenAI smoke turn (Rule 6 sharpened, session 850 / message 854) showed agent dispatching `get_message_detail` (correct primary) PLUS `rule_log` (1 follow-up call to confirm session-wide rules) — 2 tool calls instead of the spec's implicit 1-call expectation. The redundancy is technical: `get_message_detail.rule_decisions` already covers the per-message scope (which is what the user asked about); the agent's decision to additionally check `rule_log` for session-wide visibility is reasonable but produces an extra tool round-trip.
@@ -743,3 +716,34 @@ This file accumulates findings, follow-ups, and architect-decision items that ar
   - **Why deferred (Rule 8 test 3 — pure verification gap, no predicted-bug shape):** all three render paths the live LLM would exercise are already empirically verified via direct invocation. The remaining gap is purely "did the LLM choose the right tool name in response to the operator's English question?" — which Story 4.5 already proved end-to-end on the same tool surface. No predicted bug shape; the Story 4.7 (`ExplainError + comprehensive read-only suite verification`) sweep is the natural carrier for re-running live LLM smoke across the whole Epic 4 inspection-tool family once a credential is resolvable on the dev install.
   - **Owner:** Story 4.7 — should add as a verification-task line item: re-resolve `Util.EnvSecret.IsResolvable("OPENAI_API_KEY","SessionAgentInspectionApiKey")`. If 0, escalate to operator for credential setup before running live LLM smoke; if 1, run a single live-LLM turn covering each Epic 4 inspection tool (`event_log`, `rule_log`, `message_headers`, `session_summary`, `session_timeline`, `get_message_body`, `get_message_detail`, `get_business_process_source`, `get_business_process_instance`, `list_business_process_methods`, `find_related_sessions`, `find_sessions_by_body`).
   - **Blocking?** Not blocking. Acceptable Rule 11 substitution for Story 4.6 specifically; Story 4.7 sweep is the natural moment to verify the credential and exercise the full live-LLM matrix.
+
+---
+
+## Deferred from: code review of 4-7-explainerror-comprehensive-read-only-suite-verification (2026-05-04)
+
+- **Story Completion Notes mis-state method count (8 vs 10) and falsely claim all passed.**
+
+  - **Source:** Story 4.7 code review (reviewer empirical SQL probe of `%UnitTest_Result.TestMethod`).
+  - **Severity:** LOW (housekeeping; self-resolving).
+  - **The observation:** Story file lines 192-193 state *"all 8 methods Status=1 / passed"*. Empirically the suite has 10 methods, not 8, AND `TestFormatExceptionForOperatorStripsNoise` was failing across instances 931, 939, 969 — Status=0 consistent. The 211/0 figure was achievable only because the package-level `iris_execute_tests` runner truncates per-method reporting, masking the failure.
+  - **Defer rationale (Rule 8 test 3 — pure cosmetic, no predicted-bug shape):** the failing method has been fixed in this same review (off-by-one closing-`>` drop, see story Review Findings); after fix all 10 methods are Status=1 and the 211/0 statement is now empirically accurate. The literal text in Completion Notes still says "8 methods" but no longer load-bearing for ship.
+  - **Owner:** Lead — opportunistic when next touching this story file (e.g., Epic 4 retrospective writeup).
+  - **Blocking?** Not blocking.
+
+- **`BuildErrorTable()` rebuilds 10-entry %DynamicObject on every Invoke — class-header docstring incorrectly calls it "compile-time constant".**
+
+  - **Source:** Story 4.7 code review (Edge Case Hunter).
+  - **Severity:** LOW (Rule 8 test 3 — pure cosmetic with no predicted-bug shape).
+  - **The observation:** The dev pivoted from `Parameter ERRORTABLE` JSON literal (didn't compile per ObjectScript class-parameter limitation) to a `[Internal] ClassMethod BuildErrorTable()`. The `Invoke` flow can call it up to twice per request (`LookupCuratedCode` → `BuildErrorTable`, then `GetTableEntry` → `BuildErrorTable` again). Class-header docstring at lines 28-32 calls this *"compile-time constant"* — empirically false; it's a per-call build of ~20 `%Set` invocations. Operator latency impact is sub-millisecond at 10 entries; only matters if heavy `explain_error` traffic emerges (e.g., agent looping over 50+ decode requests, which would build 100+ times).
+  - **Why deferred (Rule 8 test 3):** PPG seeding (e.g., `^||SessionAgentExplainErrorTable` once-per-process) is the obvious follow-up if this ever matters, but the spec explicitly chose "rebuilt per call (cheap — 10 entries)" as the design and acknowledged the trade-off in Completion Notes line 178. The bug shape is purely a docstring drift — no operator-observable break.
+  - **Owner:** No bound successor. Could be picked up opportunistically when a future story touches `ExplainError.cls`, OR if pilot operator data shows `explain_error` is dispatched in tight loops.
+  - **Blocking?** Not blocking.
+
+- **Visual-gate screenshot only shows 6 of 9 dispatched-tool sections in the visible viewport.**
+
+  - **Source:** Story 4.7 code review (Blind Hunter).
+  - **Severity:** LOW (Rule 8 test 3 — cosmetic / framing only, no predicted-bug shape).
+  - **The observation:** `4-7-rule-12-visual-pass-1.png` shows 6 sections in the right pane (Summary, Timeline, Message Headers, Event Log, Rule Log, Find Related Sessions). The dev's audit-row probe shows 9 distinct tool names dispatched. The remaining 3 sections (`get_message_body`, `get_business_process_source`, `explain_error`) are below the fold — they were dispatched but the screenshot was framed at the top of the chat panel.
+  - **Why deferred:** SQL probe `SELECT TOP 25 ID, ToolName, IsError, ChatHistoryId FROM SessionAgent_Audit.ToolCall ORDER BY ID DESC` returned 18 rows, ChatHistoryId=19, all `IsError=false`, 9 distinct tool names. The audit-row probe IS the empirical proof; the screenshot is corroborating evidence, not the gate. No regression.
+  - **Owner:** No bound successor. If Epic 4 retrospective wants a more comprehensive visual, take a full-page scrolling screenshot via chrome-devtools-mcp.
+  - **Blocking?** Not blocking.

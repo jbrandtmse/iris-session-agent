@@ -183,4 +183,94 @@ ClassMethod IsoZToOdbc(pIsoZ As %String) As %String
     Quit $Translate($Extract(pIsoZ, 1, 19), "T", " ")
 }
 
+/// <p>Story 4.7 AC-7 helper (Story 4.5 R-4 closure) — strip IRIS-internal
+/// prefixes from <code>pEx.DisplayString()</code> and return an
+/// operator-friendly trailing message. Used uniformly by every concrete
+/// inspection-tool's outer Catch block so the operator-readable
+/// <code>content[0].text</code> never leaks raw stack-trace prefixes
+/// while still surfacing the actual cause.</p>
+///
+/// <p><b>What we strip.</b>
+/// <code>%Exception.AbstractException::DisplayString()</code> emits text
+/// of the form <code>"ERROR #5002: ObjectScript error: &lt;UNDEFINED&gt;zMyMethod+12^MyClass.1 ^xVar"</code>.
+/// The leading <code>"ERROR #&lt;num&gt;: ObjectScript error: "</code>
+/// is internal noise — operators want the trailing
+/// <code>&lt;UNDEFINED&gt; ^xVar</code> portion to feed into
+/// <code>explain_error</code>. We also strip the deepest source-frame
+/// suffix (<code>+&lt;line&gt;^&lt;routine&gt;.&lt;num&gt;</code>) which
+/// is debug detail not useful to a non-developer operator. The full
+/// <code>DisplayString()</code> still flows to
+/// <code>SessionAgent.Audit.ToolCall.ErrorText</code> via
+/// <CLASS>SessionAgent.Tool.Registry</CLASS> Dispatch — operator-text and
+/// audit-text deliberately diverge here per architecture line 476.</p>
+///
+/// <p><b>Defensive degradation.</b> If the input is the empty string
+/// (defensive — should never happen given the Catch contract) or the
+/// regex/extract logic fails, return the original
+/// <code>DisplayString()</code> unchanged. Better to leak a stack frame
+/// than to lose the cause.</p>
+ClassMethod FormatExceptionForOperator(pEx As %Exception.AbstractException) As %String
+{
+    Set tRaw = ""
+    Try {
+        If '$IsObject($Get(pEx)) Quit
+        Set tRaw = pEx.DisplayString()
+    }
+    Catch innerEx {
+        Set tRaw = ""
+    }
+    If tRaw = "" Quit ""
+    Set tStripped = tRaw
+
+    ; ---- Strip leading "ERROR #<num>: ObjectScript error: " noise. ----
+    Set tMarker = "ObjectScript error: "
+    Set tIdx = $Find(tStripped, tMarker)
+    If tIdx > 0 {
+        Set tStripped = $Extract(tStripped, tIdx, *)
+    } Else {
+        ; Some exceptions emit "ERROR #<num>: <message>" without the
+        ; "ObjectScript error:" infix — strip the leading "ERROR #<num>: "
+        ; tag in that case.
+        If $Extract(tStripped, 1, 7) = "ERROR #" {
+            Set tColon = $Find(tStripped, ": ")
+            If tColon > 0 {
+                Set tStripped = $Extract(tStripped, tColon, *)
+            }
+        }
+    }
+
+    ; ---- Strip trailing "+<line>^<routine>.<num> <hint>" frame suffix. ----
+    ; Pattern is the form "<UNDEFINED>zMyMethod+12^MyPackage.MyClass.1 ^xVar".
+    ; We want to keep the leading "<UNDEFINED>...zMyMethod" and the trailing
+    ; " ^xVar" hint, but drop the "+12^MyPackage.MyClass.1" debug suffix.
+    ; Find the FIRST "+" after the closing ">" of the error tag and remove
+    ; up to the next space (which separates the frame from the hint).
+    ; $Find returns the position immediately AFTER the closing ">", so
+    ; tCloseTag-1 is the position OF ">". To preserve the ">" in the
+    ; emitted operator text we slice [1..tCloseTag-1] (inclusive on the
+    ; ">"), then append everything-after-the-">" minus the frame suffix.
+    Set tCloseTag = $Find(tStripped, ">")
+    If tCloseTag > 0 {
+        Set tTail = $Extract(tStripped, tCloseTag, *)
+        Set tPlusIdx = $Find(tTail, "+")
+        If tPlusIdx > 0 {
+            Set tBeforePlus = $Extract(tTail, 1, tPlusIdx - 2)
+            Set tAfterPlus = $Extract(tTail, tPlusIdx - 1, *)
+            ; Find the first space terminating the frame suffix.
+            Set tSpaceIdx = $Find(tAfterPlus, " ")
+            If tSpaceIdx > 0 {
+                Set tHint = $Extract(tAfterPlus, tSpaceIdx - 1, *)
+                Set tStripped = $Extract(tStripped, 1, tCloseTag - 1) _ tBeforePlus _ tHint
+            } Else {
+                ; No trailing space — the frame suffix runs to end of string. Drop it entirely.
+                Set tStripped = $Extract(tStripped, 1, tCloseTag - 1) _ tBeforePlus
+            }
+        }
+    }
+
+    ; Defensive — if our stripping produced empty output, fall back to the raw text.
+    If $ZStrip(tStripped, "<>W") = "" Quit tRaw
+    Quit tStripped
+}
+
 }

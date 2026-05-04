@@ -359,8 +359,10 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
         Quit
     }
     Catch ex {
-        Set pResult = {"isError":(1), "content":[{"type":"text","text":(ex.DisplayString())}]}
-        Set pResult.structuredContent = {"render_strategy":"query_error", "error_text":(ex.DisplayString())}
+        ; Story 4.7 AC-7 — operator-friendly catch text (Story 4.5 R-4).
+        Set tErrText = ##class(SessionAgent.Tool.Base).FormatExceptionForOperator(ex)
+        Set pResult = {"isError":(1), "content":[{"type":"text","text":(tErrText)}]}
+        Set pResult.structuredContent = {"render_strategy":"query_error", "error_text":(tErrText)}
         Quit
     }
     Quit tSC

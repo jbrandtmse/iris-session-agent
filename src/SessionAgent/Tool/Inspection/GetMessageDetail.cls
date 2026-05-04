@@ -68,7 +68,7 @@ Class SessionAgent.Tool.Inspection.GetMessageDetail Extends SessionAgent.Tool.Ba
 
 Parameter ToolName As %String = "get_message_detail";
 
-Parameter Description As %String = "Return full message header + body summary + linked rule-log decisions for a single message.";
+Parameter Description As %String = "Return full message header + body summary + linked rule-log decisions for a single message — rule_decisions covers all rules that fired for THIS message; use rule_log only for session-wide rule history beyond the current message.";
 
 Parameter MutatesState As %Boolean = 0;
 
@@ -276,8 +276,9 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
     Catch ex {
         ; No-throw guarantee — convert any escaping exception to the
         ; standard envelope. Step name "composition_error" makes the
-        ; failure mode explicit.
-        Set tErrText = ex.DisplayString()
+        ; failure mode explicit. Story 4.7 AC-7 — operator-friendly catch
+        ; text via FormatExceptionForOperator (Story 4.5 R-4 fix).
+        Set tErrText = ##class(SessionAgent.Tool.Base).FormatExceptionForOperator(ex)
         Set pResult = {"isError":(1), "content":[{"type":"text","text":(tErrText)}], "structuredContent":{"render_strategy":"composition_error", "error_text":(tErrText)}}
     }
     Quit tSC

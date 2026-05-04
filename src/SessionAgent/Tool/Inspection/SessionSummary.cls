@@ -117,7 +117,13 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
         ; LLM can distinguish "missing" from "empty".
         Set tCountStmt = ##class(%SQL.Statement).%New()
         Set tCountSC = tCountStmt.%Prepare("SELECT COUNT(*) AS rc FROM Ens.MessageHeader WHERE SessionId = ?")
-        Quit:$$$ISERR(tCountSC)
+        ; Story 4.7 AC-7 — emit isError envelope on prepare failure rather
+        ; than silently quitting (Story 4.5 R-1 carry-forward fix).
+        If $$$ISERR(tCountSC) {
+            Set tErr = $System.Status.GetErrorText(tCountSC)
+            Set pResult = {"isError":(1), "content":[{"type":"text","text":(tErr)}], "structuredContent":{"render_strategy":"prepare_error", "error_text":(tErr)}}
+            Quit
+        }
         Set tCountRs = tCountStmt.%Execute(tSessionId)
         Set tRowCount = 0
         If tCountRs.%Next() {
@@ -137,7 +143,11 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
         ; columns; see Dev Notes in story file).
         Set tStmt = ##class(%SQL.Statement).%New()
         Set tSC = tStmt.%Prepare("SELECT COUNT(*) AS msg_count, SUM(CASE WHEN IsError=1 THEN 1 ELSE 0 END) AS err_count, DATEDIFF('ms', MIN(TimeCreated), MAX(TimeCreated)) AS duration_ms FROM Ens.MessageHeader WHERE SessionId = ?")
-        Quit:$$$ISERR(tSC)
+        If $$$ISERR(tSC) {
+            Set tErr = $System.Status.GetErrorText(tSC)
+            Set pResult = {"isError":(1), "content":[{"type":"text","text":(tErr)}], "structuredContent":{"render_strategy":"prepare_error", "error_text":(tErr)}}
+            Quit
+        }
         Set tRs = tStmt.%Execute(tSessionId)
         Set tMsgCount = 0
         Set tErrCount = 0
@@ -153,7 +163,11 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
         ; (e.g., "MyApp.Request" not "myapp.request").
         Set tStmt2 = ##class(%SQL.Statement).%New()
         Set tSC2 = tStmt2.%Prepare("SELECT TOP 1 %EXACT(MessageBodyClassName) AS root_class FROM Ens.MessageHeader WHERE SessionId = ? ORDER BY ID ASC")
-        Quit:$$$ISERR(tSC2)
+        If $$$ISERR(tSC2) {
+            Set tErr = $System.Status.GetErrorText(tSC2)
+            Set pResult = {"isError":(1), "content":[{"type":"text","text":(tErr)}], "structuredContent":{"render_strategy":"prepare_error", "error_text":(tErr)}}
+            Quit
+        }
         Set tRs2 = tStmt2.%Execute(tSessionId)
         Set tRootClass = ""
         If tRs2.%Next() {
@@ -170,7 +184,11 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
         Quit
     }
     Catch ex {
-        Set pResult = {"isError":(1), "content":[{"type":"text","text":(ex.DisplayString())}]}
+        ; Story 4.7 AC-7 — operator-friendly catch text (Story 4.5 R-4
+        ; carry-forward fix). Helper strips IRIS-internal prefixes from
+        ; ex.DisplayString().
+        Set tErrText = ##class(SessionAgent.Tool.Base).FormatExceptionForOperator(ex)
+        Set pResult = {"isError":(1), "content":[{"type":"text","text":(tErrText)}]}
         Quit
     }
     Quit tSC

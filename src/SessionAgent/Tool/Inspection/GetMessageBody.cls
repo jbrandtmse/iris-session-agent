@@ -302,9 +302,9 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
         ; No-throw guarantee — convert any escaping exception to the
         ; standard envelope. Step name "dispatch_error" makes the failure
         ; mode explicit in structuredContent for callers that key off
-        ; render_strategy. Use DisplayString in both surface fields so
-        ; programmatic readers and human readers see the same text.
-        Set tErrText = ex.DisplayString()
+        ; render_strategy. Story 4.7 AC-7 — operator-friendly catch text
+        ; via the FormatExceptionForOperator helper (Story 4.5 R-4 fix).
+        Set tErrText = ##class(SessionAgent.Tool.Base).FormatExceptionForOperator(ex)
         Set pResult = {"isError":(1), "content":[{"type":"text","text":(tErrText)}], "structuredContent":{"render_strategy":"dispatch_error", "error_text":(tErrText)}}
     }
     Quit tSC

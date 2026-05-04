@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-05-02
-last_updated: 2026-05-03 (Story 4.6 done — FindSessionsByBody via Ens.SearchTableBase pivot, code review clean)
+last_updated: 2026-05-04 (Epic 4 COMPLETE — all 8 stories done; reviewer caught HIGH off-by-one in FormatExceptionForOperator; epic-4-retrospective awaits user decision)
 project: iris-session-agent
 # Epic 1 complete (retro 2026-05-02); Epic 2 retrospective triage gate (Story 2.0) 2026-05-03
 project_key: NOKEY
@@ -82,7 +82,7 @@ development_status:
   3-9-sample-interoperability-production-and-walkthrough-rerun: done
   epic-3-retrospective: done
 
-  epic-4: in-progress
+  epic-4: done
   4-0-epic-3-deferred-cleanup: done
   4-1-eventlog-rulelog-tools: done
   4-2-getmessagebody-9-step-body-class-dispatch-ladder: done
@@ -90,7 +90,7 @@ development_status:
   4-4-bp-introspection-trio: done
   4-5-findrelatedsessions-ens-supersessionindex: done
   4-6-findsessionsbybody-ens-searchtablebase-pivot: done
-  4-7-explainerror-comprehensive-read-only-suite-verification: backlog
+  4-7-explainerror-comprehensive-read-only-suite-verification: done
   epic-4-retrospective: optional
 
   epic-5: backlog

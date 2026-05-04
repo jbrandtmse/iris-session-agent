@@ -652,3 +652,36 @@ This file accumulates findings, follow-ups, and architect-decision items that ar
   - **Recommendation:** Resolution #1 — fewer methods to maintain, single source of truth for the install instructions text. Either resolution is fine.
   - **Owner:** No bound successor. Could be picked up opportunistically when a future story touches `Bootstrap.cls` (Story 4.x deferred clean-up, Story 6.x multi-namespace install support).
   - **Blocking?** Not blocking. The `iris_production_control start` operator workaround is canonical and documented (Story 4.3 Tasks/Subtasks Task 4).
+
+---
+
+## Deferred from: code review of story-4-4-bp-introspection-trio (2026-05-04)
+
+- **Live-test only dispatched 2 of 3 new tools — `list_business_process_methods` was not invoked by the live OpenAI smoke turn.**
+
+  - **Source:** Story 4.4 code review.
+  - **Severity:** LOW (Rule 8 valid defer Test 3 — pure cosmetic with no predicted-bug shape: the tool unit tests prove dispatch + envelope shape work; the live turn just didn't exercise this particular tool because the agent answered the user's three-part question by combining `get_business_process_source` (which already returns method declarations) with `get_business_process_instance`. The agent made a reasonable cost/quality trade-off rather than dispatching all three.).
+  - **Empirical SQL probe:** `SELECT %EXACT(ToolName), IsError, ChatHistoryId FROM SessionAgent_Audit.ToolCall WHERE ToolName IN ('get_business_process_source','get_business_process_instance','list_business_process_methods') ORDER BY ID DESC` returns only `get_business_process_instance` + `get_business_process_source` (ChatHistoryId=7) — `list_business_process_methods` not present.
+  - **Story file overstatement:** Story 4.4 Task 6 (line 137) and Completion Notes (line 210) both claim *"All 3 new tools dispatched"*. Empirically only 2 dispatched. The visual-gate screenshot also shows only 2 tool cards rendered in the chat trace.
+  - **Why this is not a regression / not a fix-now:** (a) `BusinessProcessIntrospectionTest:TestRegistryListToolsIncludesAllThreeBpTools` proves the registry surfaces all 3 tools, and `TestMethodsReturnsBpMethodList` proves `list_business_process_methods.Invoke` produces a valid envelope. The wire-format-correct proof exists. (b) The agent's tool-selection behavior is non-deterministic by design — Rule 6 sharpened just requires *that the tool path runs end-to-end*, not that all N tools dispatch on a single turn. (c) Trying to force the third dispatch via prompt engineering would be a make-work item with no operator value.
+  - **Resolution:** No code change. Note for the Epic 4 retrospective: Rule 6 sharpened battery should distinguish "live test exercises each new tool *at least once across the battery*" from "single turn exercises every new tool" — the former is the operator-grounded standard, the latter is brittle prompt-engineering. Currently Rule 6 sharpened text is silent on the distinction.
+  - **Owner:** Lead — note in Epic 4 retrospective; consider Rule 6 sharpening clarification.
+  - **Blocking?** Not blocking. Story 4.4 ships with all three tools registered, unit-tested, and dispatch-ready.
+
+- **Filter docstring claim "44 rows for BP.OrderRouter" was stale (live: 141 rows) — corrected at code review time.**
+
+  - **Source:** Story 4.4 code review.
+  - **Severity:** LOW (cosmetic only — was a stale Task-0 estimate; live count is 141, not 44; class-header docstring updated in same commit as the review).
+  - **The discrepancy:** `ListBusinessProcessMethods.cls` line 46–50 (pre-edit) claimed *"The 44-row result for BP.OrderRouter after filtering is the operator-meaningful set."* Empirical probe at code-review time shows 141 rows post-filter. The 44 was a Task-0 hand-estimate that excluded inherited persistence/serializer/swizzle methods — those are legitimately operator-meaningful when introspecting a BP class.
+  - **Resolution applied at code review:** docstring updated to the live 141-row figure with "empirically confirmed at code review time, 2026-05-04" citation, and a sentence explaining why the original 44-row estimate was low. No filter-logic change — the live behavior is correct; only the doc was stale.
+  - **Owner:** Resolved (this commit).
+  - **Blocking?** Not blocking.
+
+- **AC-9 spec carries the wrong reflection-class name in the AC text — `%Dictionary.MethodDefinition` referenced in tool descriptions where `%Dictionary.CompiledMethod` is what the implementation actually uses.**
+
+  - **Source:** Story 4.4 code review.
+  - **Severity:** MEDIUM (resolved at code-review time as a fix-now: the tool's `Description` parameter — surfaced to the LLM via tool-list — claimed `%Dictionary.MethodDefinition` reflection, contradicting the actual `%Dictionary.CompiledMethod` implementation. An LLM reading the description could mis-route or skip the tool.).
+  - **The discrepancy chain:** epics.md AC-9 wording (line 70 of story spec) prescribed `%Dictionary.MethodDefinition`. Task-0 probe found the prescribed projection (`%Dictionary.CompiledMethod_PropertyDefinition`) didn't exist; dev redesigned to `SELECT FROM %Dictionary.CompiledMethod`. The class-level Description parameter was not updated to match the new reality, so it still claimed `%Dictionary.MethodDefinition`.
+  - **Resolution applied at code review:** rewrote the `Description` parameter on `ListBusinessProcessMethods.cls` and `GetBusinessProcessInstance.cls` to match the actual implementation. Both LLM-surfaced descriptions are now wire-truthful.
+  - **Owner:** Resolved (this commit).
+  - **Blocking?** Not blocking.

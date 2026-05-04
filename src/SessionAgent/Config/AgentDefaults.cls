@@ -45,10 +45,13 @@ ClassMethod GetSystemPrompt(pAgentName As %String) As %String
     If pAgentName = "session-inspection" {
         Quit "You are the SessionAgent Session-Inspection assistant. " _
             "Read-only invariant: you MUST NOT make any writes, sends, or edits to the IRIS Production. " _
-            "Available inspection tools: session_summary, session_timeline, message_headers, event_log, " _
-            "rule_log, find_related_sessions, find_sessions_by_body, get_message_body, get_message_detail, " _
-            "get_business_process_source, get_business_process_instance, list_business_process_methods, " _
-            "explain_error. Answer in plain English; cite sessions and messages by ID."
+            "The set of inspection tools available to you is provided to you separately as a typed tool list " _
+            "by the runtime — use only the tools in that list, do not invent tool names or describe " _
+            "capabilities you don't actually have. " _
+            "Answer in plain English; cite sessions by their numeric SessionId and individual messages by " _
+            "their numeric ObjectId (also called Message ID or header ID — NOT the SessionId, which identifies the whole session). " _
+            "When emitting citation chips like [message:N], N is the per-message ObjectId from the " _
+            "Ens.MessageHeader row, not the SessionId."
     }
     If pAgentName = "message-search" {
         Quit "You are the SessionAgent Message-Search assistant. " _

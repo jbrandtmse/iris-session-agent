@@ -237,29 +237,35 @@ Method TestGetSeedConfigUnknownAgentReturnsNull()
 }
 
 /// <p>AC-4 #7 — inspection-agent system prompt mentions tool names.
-/// Loose check: the prompt must contain at least 5 of the 13 inspection-
-/// tool names. Loose so prompt wording can evolve without breaking the
-/// test on every word change, but tight enough that a wholesale prompt
-/// reset would fail.</p>
-Method TestGetSystemPromptInspectionMentionsToolNames()
+/// Inspection prompt MUST NOT hardcode tool names — the runtime passes the
+/// actual loaded tool list separately as a typed `tools` parameter. Hardcoded
+/// names cause the LLM to hallucinate capabilities for tools that haven't shipped
+/// yet (Epic 3 manual-test finding 2026-05-03: agent claimed Epic 4/8 tools it
+/// didn't have). Updated assertion: prompt mentions read-only invariant + the
+/// "tools available" boilerplate, but does NOT enumerate tool names.</p>
+Method TestGetSystemPromptInspectionDescribesRoleAndConstraints()
 {
     Set tPrompt = ##class(SessionAgent.Config.AgentDefaults).GetSystemPrompt("session-inspection")
     Do $$$AssertNotEquals(tPrompt, "", "Inspection prompt must be non-empty")
+    Set tLower = $ZConvert(tPrompt, "L")
+    Do $$$AssertTrue(tLower [ "read-only", "Inspection prompt must mention the read-only invariant")
+    Do $$$AssertTrue(tLower [ "session-inspection assistant", "Inspection prompt must identify the assistant role")
+    Do $$$AssertTrue(tLower [ "do not invent tool names", "Inspection prompt must instruct the LLM not to invent tool names (defends against capability hallucination)")
+    Do $$$AssertTrue(tLower [ "objectid", "Inspection prompt must distinguish ObjectId/MessageId from SessionId for citation chips")
 
-    Set tTools = $ListBuild(
-        "session_summary", "session_timeline", "message_headers", "event_log",
-        "rule_log", "find_related_sessions", "find_sessions_by_body",
-        "get_message_body", "get_message_detail", "get_business_process_source",
-        "get_business_process_instance", "list_business_process_methods",
-        "explain_error")
-    Set tHits = 0
+    ; Negative invariant: the prompt MUST NOT enumerate Epic 4/8 tool names.
+    ; If it does, the LLM will claim those capabilities even when the registry
+    ; doesn't load them (the bug surfaced in Epic 3 manual testing).
+    Set tFutureTools = $ListBuild("event_log", "rule_log", "find_related_sessions",
+        "find_sessions_by_body", "get_message_body", "get_message_detail",
+        "get_business_process_source", "get_business_process_instance",
+        "list_business_process_methods", "explain_error")
     Set tPtr = 0
-    While $ListNext(tTools, tPtr, tName) {
+    While $ListNext(tFutureTools, tPtr, tName) {
         If tName '= "" {
-            If tPrompt [ tName Set tHits = tHits + 1
+            Do $$$AssertTrue('(tPrompt [ tName), "Inspection prompt MUST NOT name future tool '"_tName_"' (Epic 3 only loads 3 tools; the rest hallucinate)")
         }
     }
-    Do $$$AssertTrue(tHits >= 5, "Inspection prompt must mention at least 5 of the 13 tool names; got "_tHits)
     Quit
 }
 

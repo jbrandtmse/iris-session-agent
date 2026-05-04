@@ -141,6 +141,17 @@ ClassMethod EmitStyle() As %Status
     &html<.sa-msg-agent::before { content: "Agent — "; font-weight: bold; }>
     &html<.sa-msg-error { border-left: 3px solid var(--sa-error-text-color); }>
 
+    ; Story 3.7+ manual-test fix-now: tool-card body's <pre><code> blocks
+    ; (args + result JSON dumps) overflow horizontally when the content is
+    ; wider than the chat panel — operator can't read past the right edge.
+    ; Add overflow-x: auto so wide content scrolls horizontally within the
+    ; <pre> element instead of clipping. word-break and white-space ensure
+    ; long lines stay readable. Applies to nested code/pre inside the
+    ; sa-tool-call-card (so plain inline <code> in agent text still wraps
+    ; via parent block flow).
+    &html<.sa-tool-call-card pre { max-width: 100%; overflow-x: auto; white-space: pre; word-break: normal; }>
+    &html<.sa-tool-call-card pre code { display: block; }>
+
     ; --- Story 3.4 AC-4: tool-card highlight flash for citation-chip
     ; click target. Added to <details class="sa-tool-call-card"> by
     ; SessionAgent.EnsPortal.VisualTrace.onCitationClick(), removed

@@ -424,7 +424,24 @@ ClassMethod RunTurn(pAgentName As %String, pSessionKey As %String, pPortalUser A
                 Set tCrossList = tCrossList _ $Select(tCrossList="":"",1:", ") _ tSid
             }
             Set tNotice = "Note: this turn dispatched tools against session(s) " _ tCrossList _ " outside this chat's bound session " _ pSessionKey _ ". Audit ledger captured all dispatches."
+
+            ; Live response: prepend the notice to tFinalAssistantText (returned
+            ; in TurnResult.AssistantMarkdown). Operator sees the notice as the
+            ; FIRST paragraph of the agent's response.
             Set tFinalAssistantText = tNotice _ $Char(10) _ $Char(10) _ tFinalAssistantText
+
+            ; Persisted history (Epic 3 manual-test fix-now 2026-05-03): also
+            ; append the notice as a separate trailing assistant turn so the
+            ; reload path (Story 3.3 returning-conversation surfacing) preserves
+            ; the disclosure. Without this, the chat-history-stored tTurns
+            ; contained the LLM's original (non-prepended) text only — the
+            ; notice was visible live but vanished on reload. Trade-off: live
+            ; shows notice prepended (first paragraph); persisted shows it as a
+            ; trailing message. Both clearly disclose the cross-session reach;
+            ; the minor order difference is acceptable. A future story may sync
+            ; the orderings via a more invasive %DynamicArray rewrite of the
+            ; LLM's terminal turn.
+            Do ..AppendAssistantText(tTurns, tNotice)
         }
 
         ; ─────────────────────────────────────────────────────────────

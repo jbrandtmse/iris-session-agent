@@ -103,6 +103,14 @@ ClassMethod OnPage() As %Status
             Write "/* iris-session-agent: failed to link to " _ tPath _ ": " _ $System.Status.GetErrorText(tLinkSC) _ " */"
             Quit
         }
+        ; Tell IRIS to interpret the on-disk bytes as UTF-8 (chat-panel.js
+        ; contains literal Unicode characters like the U+00B7 middle dot in
+        ; the welcome-message separators). Without this, %Stream.FileCharacter
+        ; uses the default device translation (typically Latin-1) and the
+        ; UTF-8 byte sequences get split into mojibake (e.g. "·" → "Â·").
+        ; The OnPreHTTP-set %response.CharSet="UTF-8" then re-encodes the
+        ; decoded Unicode correctly on the wire.
+        Set tStream.TranslateTable = "UTF8"
 
         ; Stream chunks to %response. Default Read chunk size is 32KB —
         ; chat-panel.js fits in 1-2 reads.

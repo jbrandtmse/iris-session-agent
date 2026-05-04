@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-05-02
-last_updated: 2026-05-03 (Story 3.8 done — programmatic cross-session disclosure)
+last_updated: 2026-05-03 (Story 3.9 done — sample interop production reviewed + live-reverified)
 project: iris-session-agent
 # Epic 1 complete (retro 2026-05-02); Epic 2 retrospective triage gate (Story 2.0) 2026-05-03
 project_key: NOKEY
@@ -79,7 +79,7 @@ development_status:
   3-6-cross-browser-smoke-test-accessibility-inheritance-verification: done
   3-7-prd-mvp-exit-criteria-validation-pilot-operator-walkthrough: done
   3-8-programmatic-cross-session-disclosure: done
-  3-9-sample-interoperability-production-and-walkthrough-rerun: backlog
+  3-9-sample-interoperability-production-and-walkthrough-rerun: done
   epic-3-retrospective: optional
 
   epic-4: backlog

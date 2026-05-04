@@ -120,6 +120,54 @@ The authoritative MVP smoke runbook lives at [`docs/testing/chrome-devtools-smok
 
 Cross-browser sweeps (Firefox / Safari / Edge) are deferred to a post-MVP cross-browser hardening epic — see [`_bmad-output/implementation-artifacts/deferred-work.md`](_bmad-output/implementation-artifacts/deferred-work.md) entry "Deferred from: Story 3.6 (cross-browser scope reduction)" for the rationale and follow-up plan.
 
+## Sample interoperability production for testing
+
+Story 3.9 ships a purpose-built sample interop production (`SessionAgent.Sample.Production`) that gives the inspection agent richer data than the four-message-zero-error baseline most fresh dev installs start with. The production graph is:
+
+```
+SessionAgent.Sample.BS.OrderIngest   (adapterless BS)
+        │ async
+        ▼
+SessionAgent.Sample.BP.OrderRouter   (sync→Validator, async→Persist+Publish)
+        ├── sync  → SessionAgent.Sample.BP.OrderValidator
+        ├── async → SessionAgent.Sample.BO.SqlPersist     (writes Sample.Persist.OrderRow)
+        └── async → SessionAgent.Sample.BO.FilePublish    (writes mgr/Temp/sample-order-*.txt)
+```
+
+**Important — this production is a test fixture, not runtime.** The `SessionAgent.Sample.*` classes load on every `zpm install iris-session-agent` (they are part of the `SessionAgent.PKG` resource) but the production itself is **dormant** until an operator explicitly registers and starts it. Nothing auto-runs at install time; nothing connects to external systems; the file-publish BO writes only into the IRIS instance's own `mgr/Temp/` directory.
+
+### Operator workflow
+
+From a terminal session in the namespace where SessionAgent is mapped (typically `HSCUSTOM`):
+
+```objectscript
+; 1. Register the production (idempotent; re-run safely).
+Do ##class(SessionAgent.Sample.Bootstrap).InstallProduction()
+
+; 2. Start it (or use the Mgmt Portal Production Configuration page).
+Do ##class(Ens.Director).StartProduction("SessionAgent.Sample.Production")
+
+; 3. Run scenarios. Each call produces a fresh Ens session id.
+Do ##class(SessionAgent.Sample.BS.OrderIngest).RunScenario("none")
+Do ##class(SessionAgent.Sample.BS.OrderIngest).RunScenario("businessProcessFailure")
+Do ##class(SessionAgent.Sample.BS.OrderIngest).RunScenario("businessOperationFailure")
+Do ##class(SessionAgent.Sample.BS.OrderIngest).RunScenario("partialSuccess")
+
+; 4. (Optional) Tear down when done.
+Do ##class(SessionAgent.Sample.Bootstrap).UninstallProduction()
+```
+
+The four `pErrorMode` values produce different trace shapes for the inspection agent to diagnose:
+
+| Mode | Validator | SqlPersist | FilePublish | Final response |
+|---|---|---|---|---|
+| `none` | OK | OK (row written) | OK (file written) | Approved |
+| `businessProcessFailure` | injected reject | not invoked | not invoked | Rejected |
+| `businessOperationFailure` | OK | injected error | injected error | Rejected |
+| `partialSuccess` | OK | OK (row written) | injected error | PartialApproval |
+
+Use the `SessionId` returned by `RunScenario` (third output parameter) when navigating to the Visual Trace chat tab to ask the agent diagnostic questions like *"What happened in this session and what error occurred?"* — the rich line-item bodies + per-error rejection text give the agent's tools real shape to work with.
+
 ## What it does
 
 An Ensemble session leaves a trace across six disconnected data surfaces — `Ens.MessageHeader`, dynamically-typed message bodies, `Ens.SearchTableBase` subclass extents (e.g., `EnsLib.HL7.SearchTable`), `Ens.Util.Log`, `Ens.Rule.Log`, and BP runtime state in `Ens.BP.Context` / `Ens.BP.Thread`. Operators reconstruct the cross-surface picture in their heads on every incident, starting from scratch.

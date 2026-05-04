@@ -262,6 +262,75 @@ Method TestRunTurnOmitsSessionIdSentenceWhenSessionKeyEmpty()
     Quit
 }
 
+/// <p>Story 3.8 AC-2 — server-side cross-session notice prepend. Mock
+/// dispatches a tool with <code>args.session_id = "999"</code> against
+/// a bound <var>pSessionKey = "1"</var>. After the LLM's terminal text
+/// turn, <method>RunTurn</method> must prepend the deterministic notice
+/// to <property>AssistantMarkdown</property>:
+/// <code>"Note: this turn dispatched tools against session(s) 999
+/// outside this chat's bound session ..."</code>. The session-key for
+/// this test contains the <code>al-test-cross-bind</code> prefix; the
+/// notice references the FULL session-key (not stripped), so the
+/// assertion locks the literal substring up to the period before the
+/// "Audit ledger" sentence.</p>
+Method TestRunTurnAppendsCrossSessionNotice()
+{
+    Set tSessionKey = ..SessionKey("cross-bind")
+    Set tResponses = ##class(%DynamicArray).%New()
+    ; Turn 1 — tool_use against a different session_id.
+    Do tResponses.%Push(..BuildOpenAiResponse("", "session_summary", "{""session_id"":""999""}"))
+    ; Turn 2 — terminal text. The LLM in this mock does NOT disclose
+    ; cross-session — proving the server-side notice is the deterministic
+    ; enforcement mechanism (defense-in-depth with Story 3.7 system-prompt).
+    Do tResponses.%Push(..BuildOpenAiResponse("Here is what session 999 contains."))
+    Do ..InstallMockProvider(tResponses)
+
+    Set tResult = ##class(SessionAgent.Agent.AgentLoop).RunTurn("session-inspection", tSessionKey, "tester", "Show me what's in session 999")
+    Do $$$AssertTrue($IsObject(tResult), "RunTurn returns TurnResult OREF")
+
+    ; AC-2 substring lock — the notice MUST be prepended verbatim.
+    Set tExpectedPrefix = "Note: this turn dispatched tools against session(s) 999 outside this chat's bound session " _ tSessionKey _ ". Audit ledger captured all dispatches."
+    Do $$$AssertTrue(tResult.AssistantMarkdown [ tExpectedPrefix, "AssistantMarkdown contains the AC-2 cross-session notice (got: " _ $Extract(tResult.AssistantMarkdown, 1, 400) _ ")")
+    ; The original LLM text must STILL be present after the notice
+    ; (defense-in-depth — notice prepends, doesn't replace).
+    Do $$$AssertTrue(tResult.AssistantMarkdown [ "Here is what session 999 contains.", "AssistantMarkdown also contains the original LLM text (notice prepends, does not replace)")
+    ; Structural — the notice precedes the LLM text (notice is the
+    ; LEADING sentence per AC-2).
+    Set tNoticePos = $Find(tResult.AssistantMarkdown, "Note: this turn dispatched") - 1
+    Set tLlmPos = $Find(tResult.AssistantMarkdown, "Here is what session 999 contains.") - 1
+    Do $$$AssertTrue(tNoticePos > 0, "notice positioned in AssistantMarkdown (pos=" _ tNoticePos _ ")")
+    Do $$$AssertTrue(tLlmPos > 0, "LLM text positioned in AssistantMarkdown (pos=" _ tLlmPos _ ")")
+    Do $$$AssertTrue(tNoticePos < tLlmPos, "notice precedes LLM text (noticePos=" _ tNoticePos _ ", llmPos=" _ tLlmPos _ ")")
+    Quit
+}
+
+/// <p>Story 3.8 AC-2 — sibling assertion. When EVERY dispatched tool's
+/// <code>args.session_id</code> equals the bound <var>pSessionKey</var>
+/// (no cross-session reach), the notice MUST be omitted — existing
+/// behavior is preserved. Mocks a turn whose tool_use uses
+/// <code>session_id = pSessionKey</code>, then a terminal text turn.
+/// Asserts <property>AssistantMarkdown</property> does NOT begin with
+/// the notice template.</p>
+Method TestRunTurnSkipsNoticeWhenNoCrossSession()
+{
+    Set tSessionKey = ..SessionKey("no-cross")
+    Set tResponses = ##class(%DynamicArray).%New()
+    ; Turn 1 — tool_use against the BOUND session_id (no cross-session).
+    Do tResponses.%Push(..BuildOpenAiResponse("", "session_summary", "{""session_id"":""" _ tSessionKey _ """}"))
+    ; Turn 2 — terminal text.
+    Do tResponses.%Push(..BuildOpenAiResponse("Here is the bound session summary."))
+    Do ..InstallMockProvider(tResponses)
+
+    Set tResult = ##class(SessionAgent.Agent.AgentLoop).RunTurn("session-inspection", tSessionKey, "tester", "Summarize the bound session")
+    Do $$$AssertTrue($IsObject(tResult), "RunTurn returns TurnResult OREF")
+
+    ; AC-2 negative — the notice substring MUST NOT appear when no
+    ; cross-session was dispatched.
+    Do $$$AssertTrue(tResult.AssistantMarkdown '[ "Note: this turn dispatched tools against session(s)", "AssistantMarkdown does NOT contain the cross-session notice (no cross-session was dispatched) — got: " _ $Extract(tResult.AssistantMarkdown, 1, 400))
+    Do $$$AssertTrue(tResult.AssistantMarkdown [ "Here is the bound session summary.", "AssistantMarkdown carries the original LLM text intact")
+    Quit
+}
+
 /// <p>Helper — build an OpenAI-shape response with a malformed tool_call:
 /// the <code>id</code> field is empty (provider violation we want to
 /// defend against). <code>finish_reason</code> = <code>tool_calls</code>

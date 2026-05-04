@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-05-02
-last_updated: 2026-05-03 (Sprint Change Proposal 2026-05-03 applied — Stories 3.8 + 3.9 added to Epic 3; Story 6.4 added to Epic 6)
+last_updated: 2026-05-03 (Story 3.8 done — programmatic cross-session disclosure)
 project: iris-session-agent
 # Epic 1 complete (retro 2026-05-02); Epic 2 retrospective triage gate (Story 2.0) 2026-05-03
 project_key: NOKEY
@@ -78,7 +78,7 @@ development_status:
   3-5-empty-states-config-empty-prompt-provider-error-envelopes: done
   3-6-cross-browser-smoke-test-accessibility-inheritance-verification: done
   3-7-prd-mvp-exit-criteria-validation-pilot-operator-walkthrough: done
-  3-8-programmatic-cross-session-disclosure: backlog
+  3-8-programmatic-cross-session-disclosure: done
   3-9-sample-interoperability-production-and-walkthrough-rerun: backlog
   epic-3-retrospective: optional
 

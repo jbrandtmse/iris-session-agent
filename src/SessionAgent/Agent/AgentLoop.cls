@@ -217,6 +217,18 @@ ClassMethod RunTurn(pAgentName As %String, pSessionKey As %String, pPortalUser A
         Set tHitMaxIter = 0
         Set tFinalAssistantText = ""
 
+        ; Story 3.8 AC-1 — programmatic cross-session detection. Per-turn
+        ; collection of distinct session-ids that were dispatched against
+        ; outside the bound pSessionKey. Story 3.7's system-prompt-only
+        ; enforcement proved unreliable (the LLM ignored the "MUST disclose"
+        ; instruction in the lead-driven walkthrough). This list is built
+        ; during tool dispatch (Step 7d) and consumed after the loop ends
+        ; to prepend a deterministic operator-facing notice to
+        ; tFinalAssistantText (AC-2). $listbuild is used as the dedup
+        ; primitive — $listfind gives O(N) lookup; the list rarely grows
+        ; beyond 2-3 entries per turn so the cost is negligible.
+        Set tCrossSessionList = ""
+
         While (tIter < ..#MaxIterationsPerTurn) && (tStop = 0) {
             Set tIter = tIter + 1
 
@@ -310,6 +322,29 @@ ClassMethod RunTurn(pAgentName As %String, pSessionKey As %String, pPortalUser A
                             Continue
                         }
 
+                        ; Story 3.8 AC-1 — cross-session detection. Inspect
+                        ; the dispatched args (tBlockInput is the canonical
+                        ; %DynamicObject input from the tool_use block) for a
+                        ; session_id property. If present AND it differs from
+                        ; the bound pSessionKey, append to the per-turn dedup
+                        ; list. Edge cases handled silently: tBlockInput not
+                        ; an object (already validated by the AC-7 guard
+                        ; above), session_id missing (most tools that don't
+                        ; carry session_id are unaffected), session_id equals
+                        ; pSessionKey (the normal in-scope case — no notice).
+                        If $IsObject(tBlockInput), tBlockInput.%IsDefined("session_id") {
+                            Set tBlockSessionId = tBlockInput.%Get("session_id")
+                            If (tBlockSessionId '= "") && (tBlockSessionId '= pSessionKey) {
+                                ; Dedup via $listfind — append only if not
+                                ; already in the list. Order is dispatch
+                                ; order; the notice renders the comma-
+                                ; separated list in that order.
+                                If $listfind(tCrossSessionList, tBlockSessionId) = 0 {
+                                    Set tCrossSessionList = tCrossSessionList _ $listbuild(tBlockSessionId)
+                                }
+                            }
+                        }
+
                         ; Dispatch via the trust-boundary registry.
                         Set tToolResult = ##class(%DynamicObject).%New()
                         Do ##class(SessionAgent.Tool.Registry).Dispatch(tBlockToolName, tCtx, tBlockInput, .tToolResult)
@@ -368,6 +403,28 @@ ClassMethod RunTurn(pAgentName As %String, pSessionKey As %String, pPortalUser A
         If tHitMaxIter {
             Set tFinalAssistantText = "Max iterations reached. Please summarize."
             Do ..AppendAssistantText(tTurns, tFinalAssistantText)
+        }
+
+        ; Story 3.8 AC-2 — server-side notice prepend. If the iteration
+        ; loop dispatched at least one tool against a session_id that
+        ; differs from the bound pSessionKey, prepend a deterministic
+        ; operator-facing notice to tFinalAssistantText. Defense-in-depth
+        ; with Story 3.7 system-prompt language: the LLM may also disclose
+        ; (defense-in-depth — the operator sees BOTH; that's acceptable).
+        ; The notice is server-side-rendered so the LLM cannot omit it.
+        ; Format per AC-2: "Note: this turn dispatched tools against
+        ; session(s) X (and Y, etc.) outside this chat's bound session N.
+        ; Audit ledger captured all dispatches." then two $Char(10) then
+        ; the original tFinalAssistantText (the chat-panel.js Markdown
+        ; fallback splits on \n\n to render the notice as its own paragraph).
+        If $listlength(tCrossSessionList) > 0 {
+            Set tCrossList = ""
+            Set tPtr = 0
+            While $ListNext(tCrossSessionList, tPtr, tSid) {
+                Set tCrossList = tCrossList _ $Select(tCrossList="":"",1:", ") _ tSid
+            }
+            Set tNotice = "Note: this turn dispatched tools against session(s) " _ tCrossList _ " outside this chat's bound session " _ pSessionKey _ ". Audit ledger captured all dispatches."
+            Set tFinalAssistantText = tNotice _ $Char(10) _ $Char(10) _ tFinalAssistantText
         }
 
         ; ─────────────────────────────────────────────────────────────

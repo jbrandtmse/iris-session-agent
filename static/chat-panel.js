@@ -226,9 +226,8 @@
     function renderWelcomeMessage() {
         var block = document.createElement('div');
         block.setAttribute('class', 'sa-message-block sa-msg-agent');
-        block.textContent = "I can read this session's message headers, get a session summary, and show the chronological event timeline. " +
-            "I can't change anything; I only read. " +
-            "Try: what happened in this session? · which messages had errors? · what was the timing?";
+        block.textContent = "I'm an inspection agent for this session — I can read message headers, bodies, event and rule logs, BP source and runtime state, related sessions, and explain IRIS error codes. Read-only; I can't change anything. " +
+            "Try: what happened in this session? · which messages had errors? · why did this BP wait?";
         state.transcriptEl.appendChild(block);
     }
 

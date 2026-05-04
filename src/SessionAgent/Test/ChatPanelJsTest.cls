@@ -250,15 +250,19 @@ Method TestPriorTranscriptRenderingPresent()
 
 /// <p>Story 3.3 AC-4 — first-time welcome message rendered. Asserts the
 /// JS source contains the <code>renderWelcomeMessage</code> helper AND
-/// a load-bearing fragment of the welcome-message text (the
-/// "I can read this session's headers" capability-summary opener that
-/// the AC-4 spec text mandates). The fragment is unique enough that a
-/// regression which deletes the welcome message will trip the test.</p>
+/// a load-bearing fragment of the welcome-message text. Wording last
+/// refreshed in the Epic 4 user-led empirical battery (2026-05-04) to
+/// describe the now-13-tool catalog at category level rather than
+/// enumerating only the 3 Epic 3 tools — same fix-class as the Story 3.0
+/// system-prompt enumeration anti-pattern, applied to the operator-facing
+/// welcome string. Anchor substring is the opener
+/// <code>"I'm an inspection agent for this session"</code>, which is less
+/// likely to drift than the capability list.</p>
 Method TestWelcomeMessagePresent()
 {
     Do $$$AssertStatusOK(..LoadFile(), "LoadFile resolved chat-panel.js at " _ ..FilePath)
     Do $$$AssertTrue(..FileContents [ "renderWelcomeMessage", "renderWelcomeMessage helper present (Story 3.3 AC-4)")
-    Do $$$AssertTrue(..FileContents [ "I can read this session's message headers", "welcome message capability-summary fragment present (Story 3.3 AC-4 / Story 3.10 commit d7ebf80 wording)")
+    Do $$$AssertTrue(..FileContents [ "I'm an inspection agent for this session", "welcome message opener present (Epic 4 closing-battery refresh — describes 13-tool catalog at category level, not enumeration)")
 }
 
 /// <p>Story 3.4 AC-6 — citation-chip click delegation listener

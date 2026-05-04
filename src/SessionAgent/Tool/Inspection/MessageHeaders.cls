@@ -11,7 +11,9 @@
 /// the result set to rows with <code>IsError = 1</code>; <code>info</code>
 /// and <code>warning</code> are accepted but currently no-op (Ens has no
 /// distinct warning-vs-info column at the header level — that distinction
-/// lives in <code>Ens.Util.Log</code>, scope of Story 4.1).</p>
+/// lives in <code>Ens.Util.Log</code>, surfaced by the
+/// <code>event_log</code> tool shipped in Story 4.1
+/// — see <CLASS>SessionAgent.Tool.Inspection.EventLog</CLASS>).</p>
 ///
 /// <p><b>Output (structuredContent):</b>
 /// <code>{headers:[{id, source_config_name, target_config_name,

@@ -537,7 +537,11 @@ This file accumulates findings, follow-ups, and architect-decision items that ar
 
 ---
 
-## Deferred from: Story 4.0 code review (2026-05-03) — Rule 12 visual-check substitution + Node-harness brittleness
+## **[CLOSED 2026-05-03 by Story 4.1 review — three chrome-devtools-mcp captures filed + reviewer-inspected]** Deferred from: Story 4.0 code review (2026-05-03) — Rule 12 visual-check substitution + Node-harness brittleness
+
+**CLOSURE:** Story 4.1's lead-driven empirical battery completed the binding visual-gate after the chrome-devtools-mcp browser lock was cleared (lead closed the conflicting browser session). Three captures filed: `4-1-rule-12-visual-pass-1.png` (event_log success render with severity counts + no mojibake), `4-1-rule-12-visual-pass-2.png` (AC-5 collapsed-card error preview via `min_severity:'critical'` enum-rejection — substituted from spec's `DOES_NOT_EXIST_!@#` example because that produces a clean empty result rather than an isError envelope; same render path), `4-1-rule-12-visual-pass-3.png` (AC-6 inline notice next to `[message:abc]` malformed citation chip). Story 4.1 reviewer opened all three PNGs and visually verified AC-5 collapsed disclosure triangle, error badge, validation-message preview, and AC-6 verbatim notice wording. The Node DOM-mock harness (`rule-12-empirical-pass-4-0.js`) and the byte-level UTF-8 scan from Story 4.0 remain in place as residual evidence; the chrome-devtools-mcp captures supersede the substitution requirement.
+
+**ORIGINAL ENTRY (kept for audit trail):**
 
 - **The Story 4.0 Rule 12 empirical pass was satisfied via a Node DOM-mock harness rather than a chrome-devtools-mcp visual screenshot.**
 
@@ -554,4 +558,17 @@ This file accumulates findings, follow-ups, and architect-decision items that ar
   - **Severity:** LOW. The harness is committed as evidence (the `_bmad-output/implementation-artifacts/` location signals one-off proof, not standing CI), and the actual standing static-grep tests are in `SessionAgent.Test.ChatPanelJsTest` (`TestExtractToolErrorPreviewPresent` + `TestCitationDefensiveGuardsPresent` — added by code review 2026-05-03). The harness fragility is acceptable because its purpose is single-snapshot Rule-12 evidence, not regression prevention.
   - **The deferral:** none — the harness is intentionally one-shot. If a future story re-uses the harness pattern (Rule 12 + browser unavailable again), the next dev should either (a) re-run the harness and accept the rename-fragility, or (b) port the helper-extraction to a more durable mechanism (e.g., extract via a stable export marker comment like `/* @export */`). NOT carrying this forward as a binding successor entry — this is documented for future harness reuse only.
   - **Blocking?** Not blocking.
+
+---
+
+## Deferred from: Story 4.1 code review (2026-05-03) — AC-5 visual-gate spec example mismatch
+
+- **Story 4.1 spec AC-8 sub-item (2) cited `event_log` with bogus `session_id: "DOES_NOT_EXIST_!@#"` as the trigger for the AC-5 collapsed-card error preview — but EventLog correctly returns a clean empty result (`event_count=0`) for non-matching session_ids, NOT an isError envelope. Future Story X.0-style cleanup specs should use a different example.**
+
+  - **Source:** Story 4.1 review F-5 (2026-05-03). The dev caught this empirically during the visual-gate execution and substituted `min_severity:'critical'` enum-rejection (which DOES produce isError) to exercise the same render path. The substitution is honest evidence (the chat-panel render path verified is identical for any isError envelope; AC-5's contract is the rendered output shape, not the specific trigger). But the spec's example, if quoted into a future cleanup story without re-thinking, would block dev with the same "this doesn't trip isError" finding.
+  - **Severity:** LOW (no operator-observable impact — the code is correct; the spec example is the bug. No predicted-bug shape against shipped code.)
+  - **Why this is a Rule 8 valid defer (Test 3: pure cosmetic with no predicted-bug shape):** The spec author's intent was clearly *"any deliberately-failing call that exercises the AC-5 render path"* — the specific `DOES_NOT_EXIST_!@#` example was a guess at what would fail. EventLog's design (tolerates non-matching session_ids; session-existence is `SessionSummary`'s domain) is correct. The fix is a one-line spec-hygiene update, not a code change.
+  - **The deferral:** any future Story X.0-style cleanup spec that touches the inspection-tool visual-gate language should substitute a deliberately-failing call that DOES trip isError, e.g.: *"`event_log` with `min_severity: 'critical'` (an enum-rejection — EventLog's input validation produces the canonical structured error envelope `{isError:1, content:[{type:"text", text:"min_severity must be one of: info, warning, error, assert (got: critical)"}]}`)"*. This is precise, deterministic, and matches the same render path AC-5 was meant to verify.
+  - **Owner:** No bound successor. Pick up at the next epic-end retrospective or any future story that touches `_bmad-output/planning-artifacts/epics.md` Story 4.1 / Story 4.0 visual-gate language.
+  - **Blocking?** Not blocking. Story 4.1 ships clean; the visual gate was satisfied via the substitution; the F-1 fix locks the more important contract (`severity_counts` semantics).
 

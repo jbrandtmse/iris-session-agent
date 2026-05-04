@@ -1110,6 +1110,8 @@ So that the maintainer can verify the full backend works before staking pilot op
 5. **Story 3.5**: Empty states + config-empty prompt (admin variant) + provider-error envelopes
 6. **Story 3.6**: Cross-Browser Smoke Test + Accessibility Inheritance Verification
 7. **Story 3.7**: PRD MVP Exit Criteria Validation — Pilot Operator Walkthrough on a Real Failed Session
+8. **Story 3.8**: Programmatic Cross-Session Disclosure — server-side `AgentLoop` notice when tool args contain `session_id` ≠ `pSessionKey` (closes Story 3.7 deferred-work binding entry per Rule 9)
+9. **Story 3.9**: Sample Interoperability Production + Walkthrough Re-Run on Rich Data (`SessionAgent.Sample.*` package — adapterless BS + ≥2 BPs + ≥2 BOs + scenario method with success/error injection; rich message bodies; not installed via IPM `<Resource>`; closes the partial portion of PRD MVP Exit Criterion #2)
 
 ### Story 3.1: Chat Panel HTML Draw Helper + Minimum CSS Tokens
 
@@ -1350,6 +1352,83 @@ So that we explicitly satisfy the [PRD §"Product Scope MVP exit criteria"](prd.
 **Then** the maintainer updates `docs/operator-quickstart.md` (Story 1.6) with any feedback that warrants addition (e.g., "operator was confused about X — added clarifying step Y")
 **And** the maintainer files any defects as separate issues (NOT blocking this story unless they invalidate the MVP exit criteria)
 **And** the **PRD §Product Scope MVP exit criterion is formally met** — release tag `v0.1.0-mvp-demo` is created OR the maintainer's milestone tracker is updated to mark "MVP demo-able" reached
+
+### Story 3.8: Programmatic Cross-Session Disclosure
+
+As an **Operator who may legitimately ask the agent to compare details between sessions**,
+I want any cross-session tool dispatch (where `tool_args.session_id` ≠ `chat_tab.bound_session_id`) to produce a deterministic operator-facing notice in the agent's final response — even when the LLM forgets to disclose the cross-session reach itself,
+So that I always see when the agent has reached outside the bound session, and the audit ledger + the in-turn UI agree on the scope of the dispatch.
+
+This closes the Story 3.7 lead-driven walkthrough's deferred-work entry binding cross-session-disclosure programmatic enforcement to a future story (Rule 9 — see `deferred-work.md` §"Deferred from: Story 3.7 lead-driven walkthrough (2026-05-03) — system-prompt-only cross-session disclosure unreliable"). Added to Epic 3 via Sprint Change Proposal 2026-05-03 after the Story 3.7 walkthrough Turn 5 empirically demonstrated that system-prompt-only enforcement is unreliable when conversation context is dominated by same-session prior turns.
+
+**Acceptance Criteria:**
+
+**Given** the developer is implementing the cross-session detection in `Agent.AgentLoop.RunTurn`
+**When** the iteration loop processes a tool's `args` after dispatch
+**Then** the loop inspects `args` for a `session_id` value (when present)
+**And** if the value differs from `pSessionKey`, the loop appends to a per-turn `tCrossSessionList` ($listbuild of distinct session-ids reached outside scope)
+**And** the inspection handles missing-`session_id` gracefully (most tool calls carry a `session_id` arg; tools that don't are unaffected)
+
+**Given** the iteration loop completes
+**When** `tCrossSessionList` is non-empty
+**Then** the final assistant text emitted by `RunTurn` is server-side-prepended with: *"Note: this turn dispatched tools against session(s) X (and Y, etc.) outside this chat's bound session N. Audit ledger captured all dispatches."* — followed by a paragraph break + the original assistant text
+**And** the notice substring is locked by a unit test in `Test/AgentLoopGuardsTest.cls` named `TestRunTurnAppendsCrossSessionNotice`
+
+**Given** the audit ledger semantics from Story 2.5
+**When** the cross-session notice is appended
+**Then** `Audit.LlmCall` and `Audit.ToolCall` rows still contain the bound `pSessionKey` as `ChatHistoryId` linkage (no audit-row schema change)
+**And** the cross-session reach is detectable post-hoc via `SELECT %EXACT(Args) FROM SessionAgent_Audit.ToolCall WHERE ChatHistoryId = N AND %EXACT(Args) [ '"session_id":"M"'` for any `M ≠ N`
+
+**Given** the Story 3.5 system-prompt language already encourages the LLM to disclose cross-session reaches
+**When** the LLM does disclose AND the server-side notice is also appended
+**Then** the operator sees both — duplicate disclosure is acceptable (defense-in-depth). The LLM's prose disclosure is conversational; the server-side notice is deterministic. They reinforce each other; they don't conflict.
+
+**Given** the existing 5+ Epic 3 walkthrough turns
+**When** an integration test re-runs Story 3.7 Turn 5 (*"Show me what's in session 2"*) against the updated AgentLoop
+**Then** the final assistant text begins with the *"Note: this turn dispatched..."* sentence
+**And** the cross-session reach is operator-visible regardless of LLM compliance with the system-prompt instruction
+
+### Story 3.9: Sample Interoperability Production + Walkthrough Re-Run on Rich Data
+
+As **the maintainer + pilot operator validating the agent against richer data than the dev install's 4-message-zero-error baseline**,
+I want a purpose-built `SessionAgent.Sample.*` interoperability solution — adapterless Business Service callable via a public ClassMethod, ≥2 Business Processes, ≥2 Business Operations, configurable error injection, rich enough message bodies for the agent to answer multi-step diagnostic questions — installed separately from the IPM `<Resource>` so it's clearly a test fixture not runtime,
+So that PRD MVP Exit Criterion #2's "real diagnosis through the agent" portion is empirically reproducible AND Epic 4's Story 4.7 ("comprehensive read-only suite verification") has rich data to inspect against.
+
+Added to Epic 3 via Sprint Change Proposal 2026-05-03 after the Story 3.7 walkthrough exposed the dev install's data-thinness (4 sessions / 0 errors) as a structural blocker for richer empirical validation.
+
+**Acceptance Criteria:**
+
+**Given** the developer is implementing the sample-production scaffolding
+**When** they ship the `SessionAgent.Sample.*` package
+**Then** the package contains an adapterless Business Service (e.g., `SessionAgent.Sample.BS.OrderIngest`) with a public `ClassMethod RunScenario(pErrorMode As %String = "none") As %Status` where `pErrorMode ∈ {none, businessProcessFailure, businessOperationFailure, providerError, partialSuccess}` (or similar — actual list to be finalized in dev). Each scenario produces a multi-step trace ending in the corresponding outcome.
+**And** the package contains ≥ 2 Business Processes (e.g., `Sample.BP.OrderRouter`, `Sample.BP.OrderValidator`) with realistic step sequences (3–5 steps each)
+**And** the package contains ≥ 2 Business Operations (e.g., `Sample.BO.SqlPersist`, `Sample.BO.FilePublish`) with adapter-less or stub-adapter implementations
+**And** message bodies are rich — at minimum `Sample.Msg.Order` with patient-id-style identifier, line items, totals, status, audit notes (5–10 fields), enough field richness that the three Story 2.11 tools (`session_summary` / `session_timeline` / `message_headers`) produce interesting + distinctive output across scenarios
+
+**Given** the developer is implementing the operator-invoked install path
+**When** the operator runs `Do ##class(SessionAgent.Sample.Bootstrap).InstallProduction()`
+**Then** the helper creates the production + enables it + logs operator instructions for invoking scenarios
+**And** the helper is idempotent — re-running on an existing install does not duplicate or break anything
+**And** the README operator section documents the install + scenario invocation
+
+**Given** the developer is wiring the package into module.xml
+**When** they edit module.xml
+**Then** the `Sample.*` classes are NOT included in `<Resource Name="SessionAgent.PKG"/>` — the package is excluded from the IPM install path so it's clearly a test fixture, not runtime
+**And** the README explains the rationale + the operator-invoked install path
+
+**Given** the maintainer re-runs the Story 3.7 chrome-devtools-mcp walkthrough against the sample production
+**When** they exercise at least one scenario WITH errors (e.g., `pErrorMode="businessOperationFailure"`)
+**Then** the agent dispatches multiple tools across the multi-step trace
+**And** the agent's final answer references real error context (status codes, error text, source/target config names)
+**And** the walkthrough closes the partial portion of PRD MVP Exit Criterion #2 ("≥1 operator self-reports a real diagnosis happening through the agent" — capability demonstrated against real-shape data)
+
+**Given** the developer adds tests
+**When** they ship the test class(es)
+**Then** at least 3 unit tests are added: `TestSampleProductionStarts`, `TestScenariosProduceExpectedMessageCounts`, `TestErrorInjectionProducesExpectedIsErrorCounts`
+**And** per-class compile sweep is clean
+**And** the regression-suite count grows by ≥ 3
+
+**Sample-production scope CAP:** Story 3.9 ships ENOUGH richness for the agent demo — not a full healthcare-interop reference implementation. Realistic but minimal: 3–4 message types, 4–6 distinct scenarios. Future Growth-tier work may expand.
 
 ---
 
@@ -1731,6 +1810,7 @@ So that every release ships only after the dispatch contract is verified end-to-
 1. **Story 6.1**: `SessionAgent.UI.AgentConfig.zen` — form layout with agent-selector + provider/model dropdowns + credential-ref dropdown + temperature/max-tokens/system-prompt-override fields
 2. **Story 6.2**: Save handler + validation + hot config change verification (NFR-O2 — next agent turn picks up changes without IRIS restart)
 3. **Story 6.3**: Replace placeholder admin-link in `sa-config-empty-prompt` (Story 3.5) with real link to `AgentConfig.zen` + end-to-end "configure → ask question" workflow validation
+4. **Story 6.4**: Multi-namespace install support — `Installer.InstallIntoNamespace(pNamespace)` for operators with multiple interop namespaces; per-namespace `Config.Agent` semantics; README operator-walkthrough
 
 ### Story 6.1: `AgentConfig.zen` Form Layout
 
@@ -1838,6 +1918,51 @@ So that the end-to-end configure-and-ask workflow is one navigation hop, validat
 **Then** the question is dispatched + answered correctly using the just-configured provider
 **And** the elapsed time from step (1) to step (4) success is within the 30-minute Aishah-walkthrough target (NFR-O1; informally validated by a maintainer or pilot operator dry-run)
 **And** the **Epic 6 acceptance gate is met**: per-agent config UI is end-to-end usable; no SQL editing required; Aishah Journey 3 enacted on a real install
+
+### Story 6.4: Multi-Namespace Install Support
+
+As an **Operator-Admin running iris-session-agent in an environment with multiple interop namespaces** (e.g., HSCUSTOM + a dedicated test namespace + a per-tenant namespace),
+I want a documented + tested install path that scopes the agent install to one namespace at a time — `Do ##class(SessionAgent.Installer).InstallIntoNamespace("OTHERNS")` — and a clear architectural decision about whether `Config.Agent` rows are per-namespace or shared,
+So that I can deploy the agent across multiple operational contexts without overwriting per-namespace configuration or violating the read-only invariant on cross-namespace `Ens.*` data.
+
+Added to Epic 6 via Sprint Change Proposal 2026-05-03 after the Story 3.7 walkthrough surfaced the gap (single-namespace install is documented but multi-namespace is not).
+
+**Acceptance Criteria:**
+
+**Given** the developer is implementing the multi-namespace install path
+**When** they add `ClassMethod InstallIntoNamespace(pNamespace As %String) As %Status` to `SessionAgent.Installer`
+**Then** the method validates `pNamespace` exists + is not `%SYS`
+**And** the method save-and-restores `$NAMESPACE` around delegating to the existing `Install()` work scoped to `pNamespace`
+**And** the method is idempotent — re-running on a previously-installed namespace returns `$$$OK` without duplicating Task Manager entries, Config.Agent rows, or audit-event registrations
+**And** the existing single-namespace `Install()` path is unchanged — `InstallIntoNamespace` is purely additive
+
+**Given** the developer is documenting the architectural decision about Config.Agent semantics
+**When** they update `architecture.md` (or this spec's Dev Notes)
+**Then** the decision is recorded: `Config.Agent` rows are PER-NAMESPACE (default) — each namespace's `SessionAgent_Config.Agent` table is independent. Operators with cross-namespace identical config use a documented copy script (`Do ##class(SessionAgent.Installer).CopyConfigBetweenNamespaces(pSrc, pDst)` or similar — finalized in dev).
+**And** the rationale: per-namespace is the safer default (no cross-namespace coupling, no risk of one namespace's enable-state affecting another's RBAC scope)
+**And** if a future story adds shared-config semantics, it does so additively (e.g., a namespace-column on Config.Agent) rather than retroactively
+
+**Given** the developer is implementing the package-mapping pre-check
+**When** `InstallIntoNamespace(pNamespace)` runs
+**Then** the method first verifies `SessionAgent.PKG` is mapped to `pNamespace` (via `Config.MapPackages` or equivalent)
+**And** if not mapped, the method returns `$$$ERROR(...)` with a clear operator message: *"SessionAgent.PKG is not mapped to namespace 'OTHERNS'. Run: Do ##class(Config.MapPackages).Create(\"OTHERNS\", \"SessionAgent\", \"HSCUSTOM\") (or equivalent for your install topology) before retrying InstallIntoNamespace."*
+**And** the operator-error path NEVER throws — always returns a structured `%Status`
+
+**Given** the developer is updating README operator docs
+**When** they add the multi-namespace install walkthrough section
+**Then** the README documents the full operator workflow: (1) create or identify the target namespace, (2) map `SessionAgent.PKG` to it, (3) run `InstallIntoNamespace`, (4) verify via `iris_role_list` + `iris_credential_list` + `Config.Agent` SQL probe
+**And** the README explicitly notes `SessionAgent.UI.ChatPanelAsset.cls` is automatically available at `/csp/<lower-namespace>/SessionAgent.UI.ChatPanelAsset.cls` for any namespace where the package is mapped (no separate static-asset deployment per Story 3.6 asset-class pivot)
+
+**Given** the developer adds an integration test
+**When** they ship `Test/MultiNamespaceInstallTest.cls`
+**Then** the test creates a temporary test namespace (or skips with a clear message if create-namespace requires permissions the test runner doesn't have)
+**And** the test runs `InstallIntoNamespace(pTempNS)` + verifies Config.Agent rows + RBAC role grants + audit-event registration are all per-namespace (not leaked into HSCUSTOM)
+**And** the test cleans up the temporary namespace at the end
+
+**Given** the maintainer commits Story 6.4
+**When** a future operator with a multi-namespace deployment installs iris-session-agent
+**Then** the operator can scope the install per-namespace cleanly + verify each namespace independently
+**And** the **Epic 6 acceptance gate is met**: per-agent config UI is end-to-end usable AND multi-namespace deployments are first-class supported
 
 ---
 

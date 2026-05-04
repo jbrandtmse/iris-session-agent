@@ -112,6 +112,14 @@ The Search Agent path is for the operator's "find the session I care about" entr
 
 The installer schedules `SessionAgent.Task.PurgeOrphanedChatHistory` to run daily at 02:00 UTC (this task ships in [Epic 7 Story 7.2](_bmad-output/planning-artifacts/epics.md)). Verify it's enabled in **Task Manager** after install. The task removes chat-history rows whose linked `Ens.MessageHeader` session has been purged, so no orphaned conversations accumulate.
 
+## Browser support (MVP)
+
+For the MVP scope (Epics 1–4), the supported and actively-tested browser is **Google Chrome (latest two stable versions)**. The Inspection Agent chat panel is built on the InterSystems Management Portal's Zen framework + standards-compliant DOM and ARIA, so Firefox, Safari, and Edge are *expected* to work via Mgmt Portal inheritance — but they are **not actively smoke-tested** at MVP.
+
+The authoritative MVP smoke runbook lives at [`docs/testing/chrome-devtools-smoke.md`](docs/testing/chrome-devtools-smoke.md) and is executed via the [`chrome-devtools-mcp`](https://github.com/ChromeDevTools/chrome-devtools-mcp) server at every Story 3.6+ commit and at every Epic 3+ epic-end empirical battery. The runbook covers the 10 integration steps Operators rely on (panel render, ARIA shape, input → submit → tool cards → citation chips → Lighthouse a11y audit ≥ 90).
+
+Cross-browser sweeps (Firefox / Safari / Edge) are deferred to a post-MVP cross-browser hardening epic — see [`_bmad-output/implementation-artifacts/deferred-work.md`](_bmad-output/implementation-artifacts/deferred-work.md) entry "Deferred from: Story 3.6 (cross-browser scope reduction)" for the rationale and follow-up plan.
+
 ## What it does
 
 An Ensemble session leaves a trace across six disconnected data surfaces — `Ens.MessageHeader`, dynamically-typed message bodies, `Ens.SearchTableBase` subclass extents (e.g., `EnsLib.HL7.SearchTable`), `Ens.Util.Log`, `Ens.Rule.Log`, and BP runtime state in `Ens.BP.Context` / `Ens.BP.Thread`. Operators reconstruct the cross-surface picture in their heads on every incident, starting from scratch.

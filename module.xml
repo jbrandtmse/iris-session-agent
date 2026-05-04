@@ -8,19 +8,15 @@
       <Packaging>module</Packaging>
       <SourcesRoot>src</SourcesRoot>
 
-      <!-- Class packages compiled into HSCUSTOM (the namespace's code database) -->
+      <!-- Class packages compiled into HSCUSTOM (the namespace's code database).
+           Includes SessionAgent.UI.ChatPanelAsset (the CSP page that serves
+           static/chat-panel.js at /csp/<ns>/SessionAgent.UI.ChatPanelAsset.cls)
+           — eliminates the need for a separate static-asset CSPApplication
+           + FileCopy. Story 3.6 fix-now (2026-05-03): dropped the broken
+           ${cspdir}-template-based dedicated CSP application after the
+           lead-driven AC-5 smoke proved the template variable does not
+           expand at install time. -->
       <Resource Name="SessionAgent.PKG"/>
-
-      <!-- Static UI assets vendored locally (no CDN dependency per PRD NFR-C5) -->
-      <FileCopy Name="static/" Target="${cspdir}static/iris-session-agent/"/>
-
-      <!-- Dedicated CSP application for static assets (unauthenticated read) -->
-      <CSPApplication Url="/csp/static/iris-session-agent"
-                      Path="${cspdir}static/iris-session-agent"
-                      Resource=""
-                      Recurse="1"
-                      UseCookies="0"
-                      AuthenticationMethods="64"/>
 
       <!-- Install-time hooks (activated in Story 1.5 — orchestrator + audit + RBAC). -->
       <Invoke Method="Install" Class="SessionAgent.Installer"/>

@@ -341,14 +341,18 @@ ClassMethod FlattenTurnsForBootstrap(pHist As SessionAgent.Chat.History) As %Str
 /// callback. Calls <code>##super()</code> first (preserves parent's
 /// EventInfo style), then emits (a) the chat-panel CSS via
 /// <CLASS>SessionAgent.UI.ChatPanel</CLASS>.<METHOD>EmitStyle</METHOD>
-/// and (b) the vendored chat-panel.js script tag.</p>
+/// and (b) the chat-panel.js include — served via the
+/// <CLASS>SessionAgent.UI.ChatPanelAsset</CLASS> CSP page (Story 3.6 fix:
+/// replaces the broken <code>/csp/static/iris-session-agent/chat-panel.js</code>
+/// dedicated-static-CSPApplication approach that hit a ZPM
+/// <code>${cspdir}</code>-not-expanded bug; pivots to a class-served
+/// asset routed via the per-namespace <code>/csp/&lt;ns&gt;</code>
+/// auto-CSP-application that IRIS creates for every namespace).</p>
 ///
-/// <p>The script src points to the static CSP application
-/// <code>/csp/static/iris-session-agent/chat-panel.js</code> declared in
-/// <code>module.xml</code>. The <code>chat-panel.js</code> file ships
-/// in the repo at <code>static/chat-panel.js</code> and is copied to
-/// <code>${cspdir}static/iris-session-agent/</code> at install time per
-/// the <code>&lt;FileCopy&gt;</code> directive (Story 3.0).</p>
+/// <p>The URL is built dynamically from <code>$NAMESPACE</code> so the same
+/// page works on any namespace where the <code>SessionAgent.PKG</code>
+/// resource is mapped — zero install-time configuration needed for
+/// multi-namespace deployments.</p>
 Method %OnDrawHTMLHead() As %Status
 {
     Set tSC = ##super()
@@ -358,9 +362,13 @@ Method %OnDrawHTMLHead() As %Status
     Set tStyleSC = ##class(SessionAgent.UI.ChatPanel).EmitStyle()
     If $$$ISERR(tStyleSC) Quit tStyleSC
 
-    ; Emit the chat-panel.js include. Directly Write the script tag —
-    ; the parent's head-contribution device is what's open here.
-    Write "<script type=""text/javascript"" src=""/csp/static/iris-session-agent/chat-panel.js""></script>", !
+    ; Emit the chat-panel.js include. URL derives from $NAMESPACE so the
+    ; same script tag works on every namespace mapped to SessionAgent.PKG.
+    ; Story 3.6 fix-now: replaces the broken
+    ; /csp/static/iris-session-agent/chat-panel.js dedicated-static path
+    ; with the class-served /csp/<ns>/SessionAgent.UI.ChatPanelAsset.cls.
+    Set tNSLower = $ZCONVERT($NAMESPACE, "L")
+    Write "<script type=""text/javascript"" src=""/csp/" _ tNSLower _ "/SessionAgent.UI.ChatPanelAsset.cls""></script>", !
 
     Quit $$$OK
 }

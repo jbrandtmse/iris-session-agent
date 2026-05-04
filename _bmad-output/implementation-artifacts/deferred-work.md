@@ -458,3 +458,61 @@ This file accumulates findings, follow-ups, and architect-decision items that ar
   - **Owner reassigned to Story 3.5** (empty-states + provider-error envelopes — natural home for prompt-engineering pass that touches the inspection-agent system prompt). Per Rule 9, Story 3.5's spec author MUST grep `deferred-work.md` for "Story 3.5" mentions and incorporate this carry-forward into the ACs.
   - **Why this is a Rule 8 valid defer (Test 1: genuine future-epic scope):** The fix touches Story 2.4's `AgentDefaults` or Story 2.12's `AgentLoop.RunTurn` (or both — depending on whether the binding is added to the static prompt or injected per-turn). Both are out-of-scope for Story 3.3's "wire the ZenMethod boundary + bootstrap context" charter. Story 3.5 is the next logical home; if Story 3.5 ships before this is fixed, the lead must re-defer with a new named successor (Rule 9 binding chain).
   - **Blocking?** Not blocking Story 3.3 ship — the wire-format integration (AC-7) is verified end-to-end and tools DO dispatch + return real data. The bug surfaces only when the operator omits the session id from the prompt; in MVP usage where the operator IS the session-context originator (they navigated to Visual Trace on session N), they will frequently omit the id assuming the agent knows it. Worth fixing in Story 3.5.
+
+---
+
+## Deferred from: Story 3.6 (cross-browser scope reduction) (2026-05-03)
+
+- **Firefox / Safari / Edge cross-browser smoke deferred. Per project-lead direction 2026-05-03 — MVP scope reduced to Chrome via `chrome-devtools-mcp`.**
+
+  - **Source:** Story 3.6 spec (Status section + AC-3); project-lead direction recorded 2026-05-03 alongside the spec re-shaping.
+  - **Severity:** LOW (MVP-acceptable; Mgmt Portal Zen inheritance + standards-compliant DOM + ARIA — verified via Chrome smoke at every Story 3.6+ commit — provide best-effort cross-browser confidence in the absence of dedicated sweeps).
+  - **The deferral:** The original Epic 3 spec (`epics.md` §"Story 3.6", lines 1282–1319) called for a full cross-browser sweep across "the latest two versions of Chrome, Firefox, Safari, and Edge" plus screen-reader and WCAG contrast checks. Story 3.6 ships the **Chrome-only** smoke runbook ([`docs/testing/chrome-devtools-smoke.md`](../../docs/testing/chrome-devtools-smoke.md)) executed via the [`chrome-devtools-mcp`](https://github.com/ChromeDevTools/chrome-devtools-mcp) server. Firefox / Safari / Edge sweeps are out of MVP scope.
+  - **Deferral test (per [discipline rule 8](../../.claude/rules/epic-cycle-discipline.md)):** **Test 1 — genuine future-epic scope.** Full cross-browser parity needs CI infrastructure (Playwright or Selenium grid), per-OS browser pools (macOS for Safari, Windows for Edge, Linux for Firefox CI runners), and manual operator time at every release cut. None of those are in scope for the MVP demo-able milestone (Epics 1–4); all of them belong to a discrete future-epic concern.
+  - **What still ships in MVP:** The chat panel is built on standards-compliant DOM (`<section>` / `<form>` / `<textarea>` / `<details>` / `<a>`), standards ARIA attributes (`role="region"`, `aria-label`, `aria-live="polite"`, `aria-disabled`), and inherits the Mgmt Portal Zen wrapper's tab chrome / focus management / color contrast. The Story 3.6 Chrome runbook's Lighthouse step (`mcp__chrome-devtools-mcp__lighthouse_audit` with category `accessibility`) asserts a ≥ 0.9 score against the parent shell — the same standards-compliant primitives that score in Chrome score equivalently in Firefox / Safari / Edge in the absence of browser-specific bugs.
+  - **Owner:** Post-MVP cross-browser hardening epic (epic number TBD — likely a new Epic between current Epic 10 and the v1.x growth tier, OR a tag-along scope addition to a future UI-focused epic). The owning epic's spec author MUST:
+    - Translate the 10-step Chrome runbook in [`docs/testing/chrome-devtools-smoke.md`](../../docs/testing/chrome-devtools-smoke.md) into a Playwright (or Selenium) cross-browser equivalent.
+    - Add a per-OS browser-matrix CI job (parallel to `.github/workflows/ci.yml`) that runs the matrix.
+    - Capture screen-reader transcripts (NVDA on Firefox/Windows, VoiceOver on Safari/macOS) for the agent-turn flow.
+    - Decide whether to keep the Chrome `chrome-devtools-mcp` runbook as the dev-host smoke surface OR retire it in favor of the unified cross-browser runner.
+  - **Blocking?** No. The Chrome smoke is the MVP integration-test surface; the deferred cross-browser sweep does not gate any current epic. If a Firefox / Safari / Edge regression is reported by an early adopter before the post-MVP epic ships, the lead handles it as a one-off fix-now per Rule 8 rather than waiting for the dedicated epic.
+  - **Triage note:** When the post-MVP cross-browser epic is created, this entry is its binding-deferral handoff per [discipline rule 9](../../.claude/rules/epic-cycle-discipline.md). The spec author for that epic MUST grep `deferred-work.md` for "post-MVP cross-browser" and incorporate the work into the epic's ACs.
+
+---
+
+## **[CLOSED 2026-05-03 by Story 3.6 — module.xml fix-now via class-served-asset pivot]** Deferred from: Story 3.6 lead-driven smoke (2026-05-03) — module.xml `${cspdir}` template not expanded by ZPM
+
+**CLOSURE:** Replaced the dedicated static-asset `<CSPApplication>` + `<FileCopy>` machinery with a `%CSP.Page` subclass `SessionAgent.UI.ChatPanelAsset` that streams `static/chat-panel.js` from the IPM module's `Root` directory at runtime. Class is shipped via the existing `SessionAgent.PKG` resource — no separate CSPApplication, no FileCopy, no `${cspdir}` template variable, no install-time deployment step. URL changed from `/csp/static/iris-session-agent/chat-panel.js` to `/csp/<ns>/SessionAgent.UI.ChatPanelAsset.cls`. Per-namespace deployment is automatic for any namespace mapped to `SessionAgent.PKG`. Empirically verified end-to-end via the AC-5 lead-driven smoke (the same one that originally surfaced the bug): chat panel JS now loads, init fires, prior 9-turn transcript renders, ZenMethod hyperevent succeeds, real OpenAI gpt-4.1-mini response appears in the transcript.
+
+**ORIGINAL ENTRY (kept for audit trail):**
+
+- **`module.xml` `<FileCopy Target="${cspdir}static/iris-session-agent/"/>` and `<CSPApplication Path="${cspdir}static/iris-session-agent">` produce literal-string Path resolution, breaking static-asset serving on a fresh `zpm install iris-session-agent`.**
+
+  - **Source:** Story 3.6 lead-driven AC-5 smoke execution 2026-05-03. Discovered when chat-panel.js returned 404 from `http://localhost:52773/csp/static/iris-session-agent/chat-panel.js` after a clean dev install.
+  - **Severity:** MEDIUM (predicted operator-visible bug — every `zpm install iris-session-agent` on a fresh IRIS install produces a non-functional chat panel because chat-panel.js is unreachable; the chat tab renders the HTML shell but the JS init never fires, so the input field is wired to nothing).
+  - **Evidence (verbatim):**
+    - Resolved CSP application Path on this dev install: `C:\git\iris-session-agent\.${CSPDIR}STATIC\IRIS-SESSION-AGENT\` — literal `${CSPDIR}` substring, not expanded.
+    - Workaround applied during smoke: manually set `Path = "C:\InterSystems\IRISHealth\CSP\static\iris-session-agent\"` via `Security.Applications.%OpenId(...).Path = ...; %Save()`. After this and a manual file copy `C:/git/iris-session-agent/static/chat-panel.js → C:/InterSystems/IRISHealth/CSP/static/iris-session-agent/chat-panel.js`, IRIS-side `$System.CSP.GetFileName(...)` resolves correctly — but the Apache Web Gateway has its own in-process config cache that does NOT pick up the new Path without a gateway-side reload (see next entry).
+  - **Root cause:** ZPM template variable `${cspdir}` is not the correct IPM/ZPM variable syntax for the CSP install directory. Common alternatives that may work: `{cspdir}` (no `$`), `${csp.dir}`, an `<InvokeScript>` that resolves `$System.CSP.GetFileName("/")` at install time, or an `<Invoke Method="..."/>` hook that runs after FileCopy to fix the Path.
+  - **Recommended fix paths:**
+    1. **Verify correct ZPM variable syntax** via the IPM source (https://github.com/intersystems/ipm) and update `module.xml` accordingly. Test by reinstalling on a clean namespace.
+    2. **Add an `<Invoke>` hook to `Installer.Install`** that runs after FileCopy + CSPApplication creation, opens the application, and rewrites the Path using `$System.CSP.GetFileName("/")` resolution.
+    3. **Stop using the `${cspdir}` template entirely** — declare the FileCopy + CSPApplication with explicit relative paths under the module's source root (ZPM supports this) and let ZPM compute the install location.
+  - **Owner reassigned to Story 3.7** (PRD MVP exit-criteria validation — pilot operator walkthrough). The pilot operator's clean `zpm install` is the empirical-test gate that this fix unblocks. Per Rule 9, Story 3.7's spec author MUST grep `deferred-work.md` for "Story 3.7" mentions and incorporate this carry-forward.
+  - **Blocking?** **YES for the pilot walkthrough (Story 3.7).** The Story 3.6 commit ships the runbook + README + this deferral entry; the chat panel works on the current dev install via the manual workaround. But Story 3.7's "pilot operator on a clean install" is unreachable until this fix lands — therefore Story 3.7 cannot be empirically validated until module.xml is fixed.
+
+---
+
+## **[CLOSED 2026-05-03 by Story 3.6 — class-served-asset pivot eliminates the CSP-application-Path concern entirely]** Deferred from: Story 3.6 lead-driven smoke (2026-05-03) — Web Gateway in-process config cache requires reload after CSP application Path change
+
+**CLOSURE:** The asset-class pivot (see entry above) routes the JS through the namespace's auto-CSP-application (`/csp/<ns>/`), which has no operator-mutable Path. The Web Gateway's in-process cache concern was specific to the dedicated `/csp/static/iris-session-agent` application's Path field — eliminated by removing that application altogether. Class-based dispatch goes directly to IRIS's `%CSP.Page.OnPage` handler with no Path lookup at all.
+
+**ORIGINAL ENTRY (kept for audit trail):**
+
+- **The IRIS Web Gateway (Apache module) caches CSP application Path mappings in-process and does NOT pick up changes from `Security.Applications.%Save()` calls without a gateway-side reload.**
+
+  - **Source:** Story 3.6 lead-driven AC-5 smoke execution 2026-05-03. After the workaround for the `${cspdir}` bug (above) was applied, IRIS-side `$System.CSP.GetFileName(...)` returned the correct file path — but the Apache Web Gateway continued serving 404 for the chat-panel.js URL. Even cache-busting query strings did not help.
+  - **Severity:** LOW for MVP (operator-visible only on first install AND after any Path-change to the static-asset CSP application; once the gateway reloads — typically on next IRIS service restart or via the Web Gateway management portal "Apply Settings" action — the path resolves correctly).
+  - **The deferral:** Document this in operator-quickstart README. After `zpm install iris-session-agent`, the operator may need to perform one of: (a) restart IRIS, (b) restart the Web Gateway via the Web Gateway management UI (`http://<host>:<port>/csp/bin/Systems/Module.cxw` → "Apply Settings"), (c) add an `<Invoke>` hook to `Installer.Install` that programmatically nudges the gateway via a recognized API. Investigate (c) before falling back to (a) or (b) in operator docs.
+  - **Owner reassigned to Story 3.7** (PRD MVP exit-criteria validation — pilot operator walkthrough). Pair with the `${cspdir}` fix above; both block the same pilot-operator-on-clean-install scenario.
+  - **Blocking?** Same as above — blocks Story 3.7's clean-install validation. Not blocking Story 3.6's commit (the runbook + README + smoke evidence are the deliverables; the integration bug is documented for the next story to close).

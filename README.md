@@ -75,14 +75,44 @@ Management Portal
   → <target NS> → Package Mappings → Add: SessionAgent.*  ←  HSCUSTOM
 ```
 
-### 6. API key for the LLM provider
+### 6. LLM provider API keys
 
-Pick **one** of the two delivery mechanisms:
+The runtime supports four bundled providers — **OpenAI** (Epic 2), **Anthropic** (Epic 5 Story 5.1), **Google Gemini** (Epic 5 Story 5.2), and **OpenAI-compatible** (Epic 5 Story 5.3 — for local Ollama / vLLM / LM Studio / any compatible endpoint). MVP (Epics 1–4) requires only OpenAI; the other three are operator-optional until you configure an agent to use them via [`SessionAgent.Config.Agent`](src/SessionAgent/Config/Agent.cls).
 
-- **Environment variable (preferred for container deployments):** Set `OPENAI_API_KEY` (or `ANTHROPIC_API_KEY` / `GOOGLE_API_KEY`) as a process environment variable visible to the IRIS process. Container deployments typically inject these via Docker / Kubernetes secrets.
-- **`Ens.Config.Credentials` row (traditional on-prem installs):** Create a credentials row with `SystemName='openai-prod'` (or any name you prefer), `Username='apikey'`, `Password='<your-key>'`. Then point `SessionAgent.Config.Agent.CredentialName` at that name.
+For each cloud provider you intend to use, wire **one** of the two delivery mechanisms:
 
-API keys are **never** stored inside `SessionAgent.Config.Agent` itself.
+- **Environment variable (preferred for container deployments)** — set the variable visible to the IRIS process. Container deployments typically inject these via Docker / Kubernetes secrets:
+
+  | Provider | Env-var name |
+  |---|---|
+  | OpenAI | `OPENAI_API_KEY` |
+  | Anthropic | `ANTHROPIC_API_KEY` |
+  | Google Gemini | `GEMINI_API_KEY` |
+
+- **`Ens.Config.Credentials` row (traditional on-prem installs)** — create a credentials row with the canonical `SystemName` the runtime expects, then no further configuration is needed:
+
+  | Provider | `SystemName` (canonical) | `Username` (any non-empty marker) |
+  |---|---|---|
+  | OpenAI | `SessionAgentOpenAI` | `openai-bearer` |
+  | Anthropic | `SessionAgentAnthropic` | `anthropic-bearer` |
+  | Google Gemini | `SessionAgentGemini` | `gemini-key` |
+
+  Set the `Password` field to your API key. Resolution falls back from env-var → `Ens.Config.Credentials` row → fail-fast if neither is present (per [`SessionAgent.Util.EnvSecret`](src/SessionAgent/Util/EnvSecret.cls)).
+
+**OpenAI-compatible / Ollama (Epic 5 Story 5.3):** the endpoint URL goes in [`SessionAgent.Config.Agent`](src/SessionAgent/Config/Agent.cls) (e.g., `http://192.168.0.123:11434/v1` for a network-hosted Ollama). For default Ollama deployments **no API key is required**; for hosted OpenAI-compatible endpoints that require auth, wire a credential under `SystemName='SessionAgentOpenAICompat'` (or any name configured in your `Config.Agent` row).
+
+**API keys are never stored inside `SessionAgent.Config.Agent` itself.**
+
+**Cost-effective default models** (per Rule 10 spec-time research, May 2026):
+
+| Provider | Default model id | Input $/MTok | Output $/MTok | Notes |
+|---|---|---|---|---|
+| OpenAI | `gpt-4.1-mini` | $0.40 | $1.60 | Story 2.4 default; tool-use reliable |
+| Anthropic | `claude-haiku-4-5-20251001` | $1.00 | $5.00 | Pricing page recommends Haiku for "simple tasks"; sized for tool-dispatch agents |
+| Google Gemini | `gemini-2.5-flash` | $0.30 | $2.50 | Pricing page recommends Flash for agentic reasoning balance |
+| Ollama / OpenAI-compatible | `qwen3:14b` | local | local | Per `ollama pull qwen3:14b`; quantized 14B param chat model with tool use |
+
+A dev install can keep its `OPENAI_API_KEY` env-var for local testing AND wire the matching `Ens.Config.Credentials` row — env-var wins; row is the operator-friendly fallback. Production deployments typically pick exactly one mechanism per provider.
 
 ### 7. SSL/TLS configuration for outbound HTTPS to the LLM provider
 

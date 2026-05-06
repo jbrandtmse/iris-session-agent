@@ -208,4 +208,439 @@ Method TestLoadAgentConfigJsonHasNoNulBytes()
     Do $$$AssertEquals(tHasNul2, 0, "Empty-defaults envelope contains no NUL bytes")
 }
 
+/// <p><b>Story 6.2 AC-5 + AC-6 — hot-config-change verification (NFR-O2)
+/// + audit-row provider attribution.</b> Drives
+/// <method>SessionAgent.UI.AgentConfig.SaveAgentConfig</method> twice in
+/// a single test method, with a
+/// <method>SessionAgent.Agent.AgentLoop.RunTurn</method> call between
+/// each save. Asserts:</p>
+/// <ol>
+/// <li>The chat-history rows persist across the config change (FR12 —
+/// in-progress conversation continues seamlessly).</li>
+/// <li>The audit row written for the second turn carries the NEW
+/// provider name — proving the AgentLoop re-read
+/// <CLASS>SessionAgent.Config.Agent</CLASS> live (NFR-O2 invariant).</li>
+/// <li>No IRIS restart is needed between turns (the test runs in a
+/// single <code>%UnitTest</code> invocation against a single IRIS
+/// process).</li>
+/// </ol>
+/// <p><b>Mock used:</b>
+/// <CLASS>SessionAgent.Test.AgentConfigMultiProviderMock</CLASS> — overrides
+/// <method>GetProviderName</method> so the audit row's Provider column
+/// tracks the live <code>Config.Agent.Provider</code> instead of the
+/// static <code>"openai"</code> the parent
+/// <CLASS>SessionAgent.Test.AgentLoopMockProvider</CLASS> would
+/// otherwise emit.</p>
+/// <p><b>Self-cleaning:</b> the test captures the original
+/// <code>session-inspection</code> Config.Agent state in the OnBefore
+/// fixture, mutates via <method>SaveAgentConfig</method> during the
+/// test, restores in the OnAfter fixture by writing a final
+/// <method>SaveAgentConfig</method> with the captured original
+/// values.</p>
+Method TestHotConfigChangeAcrossRunTurnInvocations()
+{
+    Set tSessionKey = "ac6-hot-config-" _ $Job
+    Set tAgentName = "session-inspection"
+
+    ; ─────────────────────────────────────────────────────────────
+    ; Step 1 — Capture pre-state baseline.
+    ; ─────────────────────────────────────────────────────────────
+    Set tCfgBefore = ##class(SessionAgent.Config.Agent).AgentNameIdxOpen(tAgentName)
+    Do $$$AssertTrue($IsObject(tCfgBefore), "Pre-state — session-inspection row exists")
+    Set tOrigProvider = tCfgBefore.Provider
+    Set tOrigModel = tCfgBefore.Model
+    Set tOrigEnvVar = tCfgBefore.EnvVarName
+    Set tOrigCredName = tCfgBefore.CredentialName
+    Set tOrigEnabled = tCfgBefore.Enabled
+    Set tOrigEndpoint = tCfgBefore.EndpointUrl
+    Set tOrigMaxTokens = tCfgBefore.MaxTokens
+    Set tOrigTemp = tCfgBefore.Temperature
+    Set tOrigSpo = tCfgBefore.SystemPromptOverride
+    Do tCfgBefore.%Close()
+
+    ; ─────────────────────────────────────────────────────────────
+    ; Step 2 — Switch via SaveAgentConfig to Provider=openai.
+    ; ─────────────────────────────────────────────────────────────
+    Set tSaveJson = ##class(SessionAgent.UI.AgentConfig).SaveAgentConfig(
+        tAgentName, "openai", "gpt-4.1-mini", "", "env",
+        "PATH", "", "4000", "0.1", "", "1")
+    Set tSaveObj = ##class(%DynamicObject).%FromJSON(tSaveJson)
+    Do $$$AssertEquals(tSaveObj.%Get("success"), 1, "SaveAgentConfig success — switched to openai")
+
+    ; ─────────────────────────────────────────────────────────────
+    ; Step 3 — Install multi-provider mock + run RunTurn.
+    ; ─────────────────────────────────────────────────────────────
+    Set tResponses1 = ##class(%DynamicArray).%New()
+    Do tResponses1.%Push(##class(SessionAgent.Test.AgentLoopTestBase).BuildOpenAiResponse("first turn — openai provider"))
+    Set tCfg = ##class(%DynamicObject).%New()
+    Do tCfg.%Set("responses", tResponses1)
+    Do ##class(SessionAgent.Agent.ProviderOverride).SetOverride("SessionAgent.Test.AgentConfigMultiProviderMock", tCfg.%ToJSON())
+
+    Set tResult1 = ##class(SessionAgent.Agent.AgentLoop).RunTurn(tAgentName, tSessionKey, "tester", "first turn")
+    Do $$$AssertTrue($IsObject(tResult1), "Turn 1 returned TurnResult OREF")
+
+    ; ─────────────────────────────────────────────────────────────
+    ; Step 4 — AC-6 probe — most-recent audit row Provider = openai.
+    ; ─────────────────────────────────────────────────────────────
+    Set tHist1 = ##class(SessionAgent.Chat.History).ConvKeyIdxOpen(tAgentName, tSessionKey, "tester")
+    Do $$$AssertTrue($IsObject(tHist1), "Chat.History row persisted after turn 1")
+    Set tHistId = tHist1.%Id()
+    Do tHist1.%Close()
+
+    Set tStmt = ##class(%SQL.Statement).%New()
+    Do tStmt.%Prepare("SELECT TOP 1 %EXACT(Provider) AS Prov FROM SessionAgent_Audit.LlmCall WHERE %EXACT(ChatHistoryId) = ? ORDER BY ID DESC")
+    Set tRs = tStmt.%Execute(tHistId)
+    Set tProv1 = "<no-row>"
+    If tRs.%Next() Set tProv1 = tRs.%Get("Prov")
+    Do tRs.%Close()
+    Do $$$AssertEquals(tProv1, "openai", "AC-6 turn-1 audit row Provider = openai (got: " _ tProv1 _ ")")
+
+    ; ─────────────────────────────────────────────────────────────
+    ; Step 5 — Switch via SaveAgentConfig to Provider=anthropic.
+    ; The radio-aware credential clearing must NOT corrupt the test
+    ; setup — the EnvSecret resolver still reads PATH on the fast path
+    ; (the env-var "PATH" is always defined on Windows + POSIX).
+    ; ─────────────────────────────────────────────────────────────
+    Set tSaveJson2 = ##class(SessionAgent.UI.AgentConfig).SaveAgentConfig(
+        tAgentName, "anthropic", "claude-sonnet-4-5", "", "env",
+        "PATH", "", "4000", "0.1", "", "1")
+    Set tSaveObj2 = ##class(%DynamicObject).%FromJSON(tSaveJson2)
+    Do $$$AssertEquals(tSaveObj2.%Get("success"), 1, "SaveAgentConfig success — switched to anthropic")
+
+    ; ─────────────────────────────────────────────────────────────
+    ; Step 6 — Run RunTurn again with the same mock — same chat
+    ; session key so chat history is preserved (FR12).
+    ; ─────────────────────────────────────────────────────────────
+    Set tResponses2 = ##class(%DynamicArray).%New()
+    Do tResponses2.%Push(##class(SessionAgent.Test.AgentLoopTestBase).BuildOpenAiResponse("second turn — anthropic provider"))
+    Set tCfg2 = ##class(%DynamicObject).%New()
+    Do tCfg2.%Set("responses", tResponses2)
+    Do ##class(SessionAgent.Agent.ProviderOverride).SetOverride("SessionAgent.Test.AgentConfigMultiProviderMock", tCfg2.%ToJSON())
+
+    Set tResult2 = ##class(SessionAgent.Agent.AgentLoop).RunTurn(tAgentName, tSessionKey, "tester", "second turn")
+    Do $$$AssertTrue($IsObject(tResult2), "Turn 2 returned TurnResult OREF")
+
+    ; ─────────────────────────────────────────────────────────────
+    ; Step 7 — AC-5 chat-history preservation + AC-6 turn-2 audit row.
+    ; ─────────────────────────────────────────────────────────────
+    Set tHist2 = ##class(SessionAgent.Chat.History).ConvKeyIdxOpen(tAgentName, tSessionKey, "tester")
+    Do $$$AssertTrue($IsObject(tHist2), "AC-5 — chat history row PRESERVED across config change")
+    Do $$$AssertEquals(tHist2.%Id(), tHistId, "AC-5 — same chat-history row ID across turns (in-progress conversation continues)")
+    Do tHist2.%Close()
+
+    Set tRs2 = tStmt.%Execute(tHistId)
+    Set tProv2 = "<no-row>"
+    If tRs2.%Next() Set tProv2 = tRs2.%Get("Prov")
+    Do tRs2.%Close()
+    Do $$$AssertEquals(tProv2, "anthropic", "AC-6 turn-2 audit row Provider = anthropic (got: " _ tProv2 _ ") — proves NFR-O2 hot-config-change took effect")
+
+    ; ─────────────────────────────────────────────────────────────
+    ; Step 8 — Assert ≥ 2 audit rows (one per turn) — proves both
+    ; turns wrote audit telemetry without IRIS restart.
+    ; ─────────────────────────────────────────────────────────────
+    Set tStmtCt = ##class(%SQL.Statement).%New()
+    Do tStmtCt.%Prepare("SELECT COUNT(*) AS cnt FROM SessionAgent_Audit.LlmCall WHERE %EXACT(ChatHistoryId) = ?")
+    Set tRsCt = tStmtCt.%Execute(tHistId)
+    Set tCount = -1
+    If tRsCt.%Next() Set tCount = +tRsCt.%Get("cnt")
+    Do tRsCt.%Close()
+    Do $$$AssertTrue(tCount >= 2, "AC-5 — ≥ 2 audit rows for the same chat-history (one per turn) — got: " _ tCount)
+
+    ; ─────────────────────────────────────────────────────────────
+    ; Step 9 — Self-cleaning: restore pre-state baseline.
+    ; ─────────────────────────────────────────────────────────────
+    Do ##class(SessionAgent.Agent.ProviderOverride).ClearOverride()
+    Set tCredType = $Select(tOrigCredName '= "" : "creds", 1 : "env")
+    ; Restore via SaveAgentConfig — exercises the same code path the
+    ; UI uses, ensuring restoration is round-trip-safe.
+    Set tEnabledStr = $Select(tOrigEnabled = 1 : "1", 1 : "0")
+    Set tRestoreJson = ##class(SessionAgent.UI.AgentConfig).SaveAgentConfig(
+        tAgentName, tOrigProvider, tOrigModel, tOrigEndpoint, tCredType,
+        tOrigEnvVar, tOrigCredName, tOrigMaxTokens, tOrigTemp, tOrigSpo, tEnabledStr)
+    Set tRestoreObj = ##class(%DynamicObject).%FromJSON(tRestoreJson)
+    Do $$$AssertEquals(tRestoreObj.%Get("success"), 1, "Pre-state restored via SaveAgentConfig")
+
+    ; Sweep the test chat-history row.
+    Set tStmtDel = ##class(%SQL.Statement).%New()
+    Do tStmtDel.%Prepare("DELETE FROM SessionAgent_Chat.History WHERE %EXACT(SessionKey) = ?")
+    Do tStmtDel.%Execute(tSessionKey)
+}
+
+/// <p><b>Story 6.2 AC-7 case 1 — unknown agent.</b> SaveAgentConfig with
+/// pAgentName="nonexistent-agent" must reject with errors[0].field =
+/// "agentSelect".</p>
+Method TestSaveAgentConfigRejectsUnknownAgent()
+{
+    Set tJson = ##class(SessionAgent.UI.AgentConfig).SaveAgentConfig(
+        "nonexistent-agent", "openai", "gpt-4.1-mini", "", "env",
+        "PATH", "", "4000", "0.1", "", "1")
+    Set tObj = ##class(%DynamicObject).%FromJSON(tJson)
+    Do $$$AssertEquals(tObj.%Get("success"), 0, "Unknown agent rejected (success=false)")
+    Set tErrors = tObj.%Get("errors")
+    Do $$$AssertTrue($IsObject(tErrors), "errors[] is an array")
+    Do $$$AssertTrue(tErrors.%Size() > 0, "At least one error reported")
+    Set tErr0 = tErrors.%Get(0)
+    Do $$$AssertEquals(tErr0.%Get("field"), "agentSelect", "errors[0].field=agentSelect")
+}
+
+/// <p><b>Story 6.2 AC-7 case 2 — unknown provider.</b></p>
+Method TestSaveAgentConfigRejectsUnknownProvider()
+{
+    Set tJson = ##class(SessionAgent.UI.AgentConfig).SaveAgentConfig(
+        "session-inspection", "grok", "gpt-4.1-mini", "", "env",
+        "PATH", "", "4000", "0.1", "", "1")
+    Set tObj = ##class(%DynamicObject).%FromJSON(tJson)
+    Do $$$AssertEquals(tObj.%Get("success"), 0, "Unknown provider rejected")
+    Set tErrors = tObj.%Get("errors")
+    Set tErr0 = tErrors.%Get(0)
+    Do $$$AssertEquals(tErr0.%Get("field"), "providerSelect", "errors[0].field=providerSelect")
+}
+
+/// <p><b>Story 6.2 AC-7 case 3 — bad max tokens (negative + over-cap).</b></p>
+Method TestSaveAgentConfigRejectsBadMaxTokens()
+{
+    ; Negative — but pMaxTokens is %String, validator requires non-negative numeric.
+    Set tJson1 = ##class(SessionAgent.UI.AgentConfig).SaveAgentConfig(
+        "session-inspection", "openai", "gpt-4.1-mini", "", "env",
+        "PATH", "", "-50", "0.1", "", "1")
+    Set tObj1 = ##class(%DynamicObject).%FromJSON(tJson1)
+    Do $$$AssertEquals(tObj1.%Get("success"), 0, "Negative max tokens rejected")
+    Set tErr1 = tObj1.%Get("errors").%Get(0)
+    Do $$$AssertEquals(tErr1.%Get("field"), "maxTokensText", "errors[0].field=maxTokensText for negative max-tokens")
+
+    ; Over-cap.
+    Set tJson2 = ##class(SessionAgent.UI.AgentConfig).SaveAgentConfig(
+        "session-inspection", "openai", "gpt-4.1-mini", "", "env",
+        "PATH", "", "99999", "0.1", "", "1")
+    Set tObj2 = ##class(%DynamicObject).%FromJSON(tJson2)
+    Do $$$AssertEquals(tObj2.%Get("success"), 0, "Over-cap max tokens rejected")
+    Set tErr2 = tObj2.%Get("errors").%Get(0)
+    Do $$$AssertEquals(tErr2.%Get("field"), "maxTokensText", "errors[0].field=maxTokensText for over-cap max-tokens")
+}
+
+/// <p><b>Story 6.2 AC-7 case 4 — bad temperature (negative + over-2).</b></p>
+Method TestSaveAgentConfigRejectsBadTemperature()
+{
+    Set tJson1 = ##class(SessionAgent.UI.AgentConfig).SaveAgentConfig(
+        "session-inspection", "openai", "gpt-4.1-mini", "", "env",
+        "PATH", "", "4000", "-0.5", "", "1")
+    Set tObj1 = ##class(%DynamicObject).%FromJSON(tJson1)
+    Do $$$AssertEquals(tObj1.%Get("success"), 0, "Negative temperature rejected")
+    Set tErrors1 = tObj1.%Get("errors")
+    Set tFoundTemp1 = 0
+    For tI = 0:1:tErrors1.%Size()-1 {
+        If tErrors1.%Get(tI).%Get("field") = "temperatureText" Set tFoundTemp1 = 1
+    }
+    Do $$$AssertEquals(tFoundTemp1, 1, "errors[] contains temperatureText for negative temp")
+
+    Set tJson2 = ##class(SessionAgent.UI.AgentConfig).SaveAgentConfig(
+        "session-inspection", "openai", "gpt-4.1-mini", "", "env",
+        "PATH", "", "4000", "3", "", "1")
+    Set tObj2 = ##class(%DynamicObject).%FromJSON(tJson2)
+    Do $$$AssertEquals(tObj2.%Get("success"), 0, "Over-2 temperature rejected")
+    Set tErrors2 = tObj2.%Get("errors")
+    Set tFoundTemp2 = 0
+    For tI = 0:1:tErrors2.%Size()-1 {
+        If tErrors2.%Get(tI).%Get("field") = "temperatureText" Set tFoundTemp2 = 1
+    }
+    Do $$$AssertEquals(tFoundTemp2, 1, "errors[] contains temperatureText for over-2 temp")
+}
+
+/// <p><b>Story 6.2 AC-7 reviewer addition — invalid credTypeRadio rejected.</b>
+/// The original Story 6.2 dev shipped without a domain guard on
+/// <var>pCredTypeRadio</var> — anything that wasn't <code>"env"</code> fell
+/// through to the Else branch of the persistence radio dispatch and was
+/// silently treated as <code>"creds"</code>, clearing
+/// <code>EnvVarName</code> and overwriting <code>CredentialName</code>.
+/// The reviewer caught this in the empirical pass with
+/// <code>pCredTypeRadio="banana"</code> — it returned
+/// <code>{"success":true,"message":"Saved"}</code> and corrupted the row.
+/// The fix adds a domain guard (Rule 4b) that rejects anything other
+/// than the two valid radio values; this test enforces it.</p>
+Method TestSaveAgentConfigRejectsInvalidCredTypeRadio()
+{
+    Set tJson = ##class(SessionAgent.UI.AgentConfig).SaveAgentConfig(
+        "session-inspection", "openai", "gpt-4.1-mini", "", "banana",
+        "PATH", "", "4000", "0.1", "", "1")
+    Set tObj = ##class(%DynamicObject).%FromJSON(tJson)
+    Do $$$AssertEquals(tObj.%Get("success"), 0, "Invalid credTypeRadio 'banana' rejected")
+    Set tErrors = tObj.%Get("errors")
+    Set tFound = 0
+    For tI = 0:1:tErrors.%Size()-1 {
+        If tErrors.%Get(tI).%Get("field") = "credTypeRadio" Set tFound = 1
+    }
+    Do $$$AssertEquals(tFound, 1, "errors[] contains credTypeRadio domain failure for unexpected value")
+
+    ; Also reject empty credTypeRadio.
+    Set tJson2 = ##class(SessionAgent.UI.AgentConfig).SaveAgentConfig(
+        "session-inspection", "openai", "gpt-4.1-mini", "", "",
+        "PATH", "", "4000", "0.1", "", "1")
+    Set tObj2 = ##class(%DynamicObject).%FromJSON(tJson2)
+    Do $$$AssertEquals(tObj2.%Get("success"), 0, "Empty credTypeRadio rejected")
+}
+
+/// <p><b>Story 6.2 AC-7 case 5 — env requires EnvVarName.</b></p>
+Method TestSaveAgentConfigEnvRequiresEnvVarName()
+{
+    Set tJson = ##class(SessionAgent.UI.AgentConfig).SaveAgentConfig(
+        "session-inspection", "openai", "gpt-4.1-mini", "", "env",
+        "", "", "4000", "0.1", "", "1")
+    Set tObj = ##class(%DynamicObject).%FromJSON(tJson)
+    Do $$$AssertEquals(tObj.%Get("success"), 0, "env with empty EnvVarName rejected")
+    Set tErrors = tObj.%Get("errors")
+    Set tFound = 0
+    For tI = 0:1:tErrors.%Size()-1 {
+        If tErrors.%Get(tI).%Get("field") = "envVarText" Set tFound = 1
+    }
+    Do $$$AssertEquals(tFound, 1, "errors[] contains envVarText")
+}
+
+/// <p><b>Story 6.2 AC-7 case 6 — creds requires CredentialName.</b></p>
+Method TestSaveAgentConfigCredsRequiresCredentialName()
+{
+    Set tJson = ##class(SessionAgent.UI.AgentConfig).SaveAgentConfig(
+        "session-inspection", "openai", "gpt-4.1-mini", "", "creds",
+        "", "", "4000", "0.1", "", "1")
+    Set tObj = ##class(%DynamicObject).%FromJSON(tJson)
+    Do $$$AssertEquals(tObj.%Get("success"), 0, "creds with empty CredentialName rejected")
+    Set tErrors = tObj.%Get("errors")
+    Set tFound = 0
+    For tI = 0:1:tErrors.%Size()-1 {
+        If tErrors.%Get(tI).%Get("field") = "credCombo" Set tFound = 1
+    }
+    Do $$$AssertEquals(tFound, 1, "errors[] contains credCombo")
+}
+
+/// <p><b>Story 6.2 AC-7 case 7 — openai-compatible requires EndpointUrl.</b></p>
+Method TestSaveAgentConfigOpenAICompatRequiresEndpointUrl()
+{
+    Set tJson = ##class(SessionAgent.UI.AgentConfig).SaveAgentConfig(
+        "session-inspection", "openai-compatible", "qwen2.5:32b", "", "env",
+        "PATH", "", "4000", "0.1", "", "1")
+    Set tObj = ##class(%DynamicObject).%FromJSON(tJson)
+    Do $$$AssertEquals(tObj.%Get("success"), 0, "openai-compatible without endpoint rejected")
+    Set tErrors = tObj.%Get("errors")
+    Set tFound = 0
+    For tI = 0:1:tErrors.%Size()-1 {
+        If tErrors.%Get(tI).%Get("field") = "endpointUrlText" Set tFound = 1
+    }
+    Do $$$AssertEquals(tFound, 1, "errors[] contains endpointUrlText")
+}
+
+/// <p><b>Story 6.2 AC-7 case 8 — radio-aware clearing rule.</b> First save
+/// with credTypeRadio="env" and EnvVarName="OPENAI_API_KEY". Second save
+/// with credTypeRadio="creds" and CredentialName="OtherCred". After the
+/// second save, EnvVarName MUST be cleared to "" — the OPPOSITE field is
+/// always cleared (NFR-S2 schema discipline).</p>
+Method TestSaveAgentConfigClearsUnusedCredentialField()
+{
+    Set tAgentName = "session-inspection"
+    ; Capture original to restore after the test.
+    Set tCfg0 = ##class(SessionAgent.Config.Agent).AgentNameIdxOpen(tAgentName)
+    Set tOrigEnv = tCfg0.EnvVarName
+    Set tOrigCred = tCfg0.CredentialName
+    Do tCfg0.%Close()
+
+    ; Save with env path.
+    Set tJson1 = ##class(SessionAgent.UI.AgentConfig).SaveAgentConfig(
+        tAgentName, "openai", "gpt-4.1-mini", "", "env",
+        "OPENAI_API_KEY", "", "4000", "0.1", "", "1")
+    Set tObj1 = ##class(%DynamicObject).%FromJSON(tJson1)
+    Do $$$AssertEquals(tObj1.%Get("success"), 1, "First save (env) succeeded")
+    Set tCfg1 = ##class(SessionAgent.Config.Agent).AgentNameIdxOpen(tAgentName)
+    Do $$$AssertEquals(tCfg1.EnvVarName, "OPENAI_API_KEY", "EnvVarName set on env-path save")
+    Do $$$AssertEquals(tCfg1.CredentialName, "", "CredentialName cleared on env-path save")
+    Do tCfg1.%Close()
+
+    ; Save with creds path — EnvVarName MUST be cleared.
+    Set tJson2 = ##class(SessionAgent.UI.AgentConfig).SaveAgentConfig(
+        tAgentName, "openai", "gpt-4.1-mini", "", "creds",
+        "", "SessionAgentOpenAI", "4000", "0.1", "", "1")
+    Set tObj2 = ##class(%DynamicObject).%FromJSON(tJson2)
+    Do $$$AssertEquals(tObj2.%Get("success"), 1, "Second save (creds) succeeded")
+    Set tCfg2 = ##class(SessionAgent.Config.Agent).AgentNameIdxOpen(tAgentName)
+    Do $$$AssertEquals(tCfg2.EnvVarName, "", "EnvVarName CLEARED after switching to creds (NFR-S2)")
+    Do $$$AssertEquals(tCfg2.CredentialName, "SessionAgentOpenAI", "CredentialName set on creds-path save")
+    Do tCfg2.%Close()
+
+    ; Restore.
+    Set tRestoreType = $Select(tOrigCred '= "" : "creds", 1 : "env")
+    Do ##class(SessionAgent.UI.AgentConfig).SaveAgentConfig(
+        tAgentName, "openai", "gpt-4.1-mini", "", tRestoreType,
+        tOrigEnv, tOrigCred, "4000", "0.1", "", "1")
+}
+
+/// <p><b>Story 6.2 AC-7 case 9 — system prompt over 8192 chars rejected.</b></p>
+Method TestSaveAgentConfigSystemPromptOver8192Rejected()
+{
+    Set tBigPrompt = $Justify("", 9000)
+    Set tBigPrompt = $Translate(tBigPrompt, " ", "X")
+    Set tJson = ##class(SessionAgent.UI.AgentConfig).SaveAgentConfig(
+        "session-inspection", "openai", "gpt-4.1-mini", "", "env",
+        "PATH", "", "4000", "0.1", tBigPrompt, "1")
+    Set tObj = ##class(%DynamicObject).%FromJSON(tJson)
+    Do $$$AssertEquals(tObj.%Get("success"), 0, "9000-char prompt rejected")
+    Set tErrors = tObj.%Get("errors")
+    Set tFound = 0
+    For tI = 0:1:tErrors.%Size()-1 {
+        If tErrors.%Get(tI).%Get("field") = "systemPromptText" Set tFound = 1
+    }
+    Do $$$AssertEquals(tFound, 1, "errors[] contains systemPromptText for over-cap prompt")
+}
+
+/// <p><b>Story 6.2 AC-7 case 10 — creates row if missing.</b> Deletes the
+/// row, then saves with valid inputs, asserts a new row was created.</p>
+Method TestSaveAgentConfigCreatesRowIfMissing()
+{
+    Set tAgentName = "message-search"
+    ; Capture original for restoration.
+    Set tCfg0 = ##class(SessionAgent.Config.Agent).AgentNameIdxOpen(tAgentName)
+    Set tOrigProvider = ""
+    Set tOrigModel = ""
+    Set tOrigEnvVar = ""
+    Set tOrigCredName = ""
+    Set tOrigEnabled = 0
+    If $IsObject(tCfg0) {
+        Set tOrigProvider = tCfg0.Provider
+        Set tOrigModel = tCfg0.Model
+        Set tOrigEnvVar = tCfg0.EnvVarName
+        Set tOrigCredName = tCfg0.CredentialName
+        Set tOrigEnabled = tCfg0.Enabled
+        Do tCfg0.%Close()
+
+        ; Delete the existing row.
+        Set tStmt = ##class(%SQL.Statement).%New()
+        Do tStmt.%Prepare("DELETE FROM SessionAgent_Config.Agent WHERE %EXACT(AgentName) = ?")
+        Do tStmt.%Execute(tAgentName)
+    }
+
+    ; Confirm row is gone.
+    Set tCfgGone = ##class(SessionAgent.Config.Agent).AgentNameIdxOpen(tAgentName)
+    Do $$$AssertTrue('$IsObject(tCfgGone), "Pre-condition — row absent before save")
+
+    ; Save with valid inputs.
+    Set tJson = ##class(SessionAgent.UI.AgentConfig).SaveAgentConfig(
+        tAgentName, "openai", "gpt-4.1-mini", "", "env",
+        "OPENAI_API_KEY", "", "4000", "0.1", "", "0")
+    Set tObj = ##class(%DynamicObject).%FromJSON(tJson)
+    Do $$$AssertEquals(tObj.%Get("success"), 1, "Save creates new row when missing")
+
+    ; Confirm row was created.
+    Set tCfgNew = ##class(SessionAgent.Config.Agent).AgentNameIdxOpen(tAgentName)
+    Do $$$AssertTrue($IsObject(tCfgNew), "New row created (open-or-create path)")
+    Do $$$AssertEquals(tCfgNew.AgentName, tAgentName, "AgentName persisted on create")
+    Do $$$AssertEquals(tCfgNew.Provider, "openai", "Provider persisted on create")
+    Do tCfgNew.%Close()
+
+    ; Restore original — if we captured one, write it back; if not, leave the
+    ; new row in place (the message-search seed row is idempotent re-seedable).
+    If tOrigProvider '= "" {
+        Set tRestoreType = $Select(tOrigCredName '= "" : "creds", 1 : "env")
+        Set tEnabledStr = $Select(tOrigEnabled = 1 : "1", 1 : "0")
+        Do ##class(SessionAgent.UI.AgentConfig).SaveAgentConfig(
+            tAgentName, tOrigProvider, tOrigModel, "", tRestoreType,
+            tOrigEnvVar, tOrigCredName, "4000", "0.1", "", tEnabledStr)
+    }
+}
+
 }

@@ -592,18 +592,365 @@ ClientMethod spoChanged() [ Language = javascript ]
     }
 }
 
-/// <p>Client-side handler — Save button. Story 6.1 stub: surfaces an
-/// inline message that the persistence path ships in Story 6.2. The
-/// form's dirty state is preserved so the operator can re-test once
-/// 6.2 lands. No JS alert / no modal — UX-DR28 / Mgmt-Portal-style.</p>
+/// <p>Story 6.2 — server-side Save handler. Validates the 11 form-field
+/// inputs against the 8 validation rules in AC-1, persists the row via
+/// open-or-create on the unique <code>AgentNameIdx</code>, applies the
+/// radio-aware credential clearing rule (NFR-S2 schema discipline —
+/// EnvVarName XOR CredentialName, never both), and returns a structured
+/// JSON envelope.</p>
+///
+/// <p><b>Validation accumulation.</b> Every rule failure appends to
+/// <code>errors[]</code>; the operator sees ALL failures in a single
+/// round-trip rather than fix-one-at-a-time. The order of rules in the
+/// AC table is preserved so the UI can render errors in field-natural
+/// order.</p>
+///
+/// <p><b>NFR-S2 invariant.</b> The signature has NO <code>pApiKey</code>
+/// parameter; the underlying <CLASS>SessionAgent.Config.Agent</CLASS>
+/// class has no <code>ApiKey</code> property (Story 2.4
+/// <code>TestSchemaHasNoApiKey</code> enforces this). Credential refs
+/// only — <code>EnvVarName</code> for the env-var rung and
+/// <code>CredentialName</code> for the <code>Ens.Config.Credentials</code>
+/// rung. The radio choice (<var>pCredTypeRadio</var>) selects which
+/// field is set; the OTHER is always cleared to "" so the EnvSecret
+/// resolver's three-rung ladder behaves deterministically.</p>
+///
+/// <p><b>Hot-config-change (NFR-O2) — implementation-side.</b> This
+/// method only writes the row; the read-side invariant (AgentLoop
+/// re-reads <code>Config.Agent</code> via <code>AgentNameIdxOpen</code>
+/// on every <method>RunTurn</method> invocation per
+/// <CLASS>SessionAgent.Agent.AgentLoop</CLASS> line 152) means a saved
+/// row affects the very next turn — no IRIS restart required. The
+/// integration test
+/// <method>SessionAgent.Test.AgentConfigTest.TestHotConfigChangeAcrossRunTurnInvocations</method>
+/// is the empirical proof of the contract.</p>
+///
+/// <p><b>Returned shape on success:</b>
+/// <code>{"success":true,"message":"Saved"}</code></p>
+/// <p><b>Returned shape on failure:</b>
+/// <code>{"success":false,"errors":[{"field":"&lt;id&gt;","message":"&lt;text&gt;"}, ...]}</code></p>
+ClassMethod SaveAgentConfig(pAgentName As %String, pProvider As %String, pModel As %String, pEndpointUrl As %String, pCredTypeRadio As %String, pEnvVarName As %String, pCredentialName As %String, pMaxTokens As %String, pTemperature As %String, pSystemPrompt As %String, pEnabled As %String) As %String [ ZenMethod ]
+{
+    Set tEnvelope = ""
+    Try {
+        Set tErrors = ##class(%DynamicArray).%New()
+
+        ; ─────────────────────────────────────────────────────────────
+        ; Rule 1 — pAgentName must be one of the known agents.
+        ; ─────────────────────────────────────────────────────────────
+        If (pAgentName '= "session-inspection") && (pAgentName '= "message-search") {
+            Set tErr = ##class(%DynamicObject).%New()
+            Do tErr.%Set("field", "agentSelect")
+            Do tErr.%Set("message", "Unknown agent")
+            Do tErrors.%Push(tErr)
+        }
+
+        ; ─────────────────────────────────────────────────────────────
+        ; Rule 2 — pProvider must be one of the supported providers.
+        ; ─────────────────────────────────────────────────────────────
+        If (pProvider '= "openai") && (pProvider '= "anthropic") && (pProvider '= "gemini") && (pProvider '= "openai-compatible") {
+            Set tErr = ##class(%DynamicObject).%New()
+            Do tErr.%Set("field", "providerSelect")
+            Do tErr.%Set("message", "Unknown provider")
+            Do tErrors.%Push(tErr)
+        }
+
+        ; ─────────────────────────────────────────────────────────────
+        ; Rule 3 — pMaxTokens must be a positive integer ≤ 32000.
+        ; ─────────────────────────────────────────────────────────────
+        Set tMaxTokensNum = +pMaxTokens
+        If (tMaxTokensNum '> 0) || (tMaxTokensNum > 32000) || ('$Match(pMaxTokens, "^[0-9]+$")) {
+            Set tErr = ##class(%DynamicObject).%New()
+            Do tErr.%Set("field", "maxTokensText")
+            Do tErr.%Set("message", "Max tokens must be 1–32000")
+            Do tErrors.%Push(tErr)
+        }
+
+        ; ─────────────────────────────────────────────────────────────
+        ; Rule 4 — pTemperature must be in [0, 2].
+        ; ─────────────────────────────────────────────────────────────
+        ; Accept canonical numeric forms: "0", "0.1", ".1", "-0.5", "1",
+        ; "1.5". The regex permits an optional leading minus, an optional
+        ; integer part, an optional dot, and an optional fractional part —
+        ; but at least one digit must be present overall. IRIS stringifies
+        ; stored %Numeric values as ".1" (no leading zero), so the leading
+        ; integer part must be optional.
+        Set tTempNum = +pTemperature
+        If (tTempNum < 0) || (tTempNum > 2) || ('$Match(pTemperature, "^-?(([0-9]+)(\.[0-9]+)?|(\.[0-9]+))$")) {
+            Set tErr = ##class(%DynamicObject).%New()
+            Do tErr.%Set("field", "temperatureText")
+            Do tErr.%Set("message", "Temperature must be 0–2")
+            Do tErrors.%Push(tErr)
+        }
+
+        ; ─────────────────────────────────────────────────────────────
+        ; Rule 4b — pCredTypeRadio domain guard. The persistence branch
+        ; below (env vs creds) treats anything that isn't "env" as
+        ; "creds", which silently corrupts the row when an unexpected
+        ; value is supplied (e.g., a malformed JS post that sends an
+        ; empty string or a typo'd radio value). Reject early so the
+        ; persistence Else branch invariant — "the OPPOSITE field is
+        ; cleared" — only fires for the two valid radio choices.
+        ; (Predicted-bug fix-now per Rule 8 — caught by reviewer's
+        ; manual probe with pCredTypeRadio="banana"; without this
+        ; guard, EnvVarName was cleared and CredentialName was set to
+        ; the supplied value with no operator-visible feedback.)
+        ; ─────────────────────────────────────────────────────────────
+        If (pCredTypeRadio '= "env") && (pCredTypeRadio '= "creds") {
+            Set tErr = ##class(%DynamicObject).%New()
+            Do tErr.%Set("field", "credTypeRadio")
+            Do tErr.%Set("message", "Credential type must be 'env' or 'creds'")
+            Do tErrors.%Push(tErr)
+        }
+
+        ; ─────────────────────────────────────────────────────────────
+        ; Rule 5 — credTypeRadio="env" requires non-empty EnvVarName.
+        ; ─────────────────────────────────────────────────────────────
+        If (pCredTypeRadio = "env") && (pEnvVarName = "") {
+            Set tErr = ##class(%DynamicObject).%New()
+            Do tErr.%Set("field", "envVarText")
+            Do tErr.%Set("message", "Environment variable name required")
+            Do tErrors.%Push(tErr)
+        }
+
+        ; ─────────────────────────────────────────────────────────────
+        ; Rule 6 — credTypeRadio="creds" requires non-empty CredentialName.
+        ; ─────────────────────────────────────────────────────────────
+        If (pCredTypeRadio = "creds") && (pCredentialName = "") {
+            Set tErr = ##class(%DynamicObject).%New()
+            Do tErr.%Set("field", "credCombo")
+            Do tErr.%Set("message", "Credential name required")
+            Do tErrors.%Push(tErr)
+        }
+
+        ; ─────────────────────────────────────────────────────────────
+        ; Rule 7 — provider="openai-compatible" requires EndpointUrl.
+        ; ─────────────────────────────────────────────────────────────
+        If (pProvider = "openai-compatible") && (pEndpointUrl = "") {
+            Set tErr = ##class(%DynamicObject).%New()
+            Do tErr.%Set("field", "endpointUrlText")
+            Do tErr.%Set("message", "Endpoint URL required for OpenAI-Compatible")
+            Do tErrors.%Push(tErr)
+        }
+
+        ; ─────────────────────────────────────────────────────────────
+        ; Rule 8 — system prompt length cap (Item G binding from
+        ; Story 6.0 / 6.1 — soft-validate at form, hard-block at save).
+        ; ─────────────────────────────────────────────────────────────
+        If $Length(pSystemPrompt) > 8192 {
+            Set tErr = ##class(%DynamicObject).%New()
+            Do tErr.%Set("field", "systemPromptText")
+            Do tErr.%Set("message", "System prompt exceeds 8192 chars; please trim")
+            Do tErrors.%Push(tErr)
+        }
+
+        ; If any errors, build the failure envelope and return.
+        If tErrors.%Size() > 0 {
+            Set tFail = ##class(%DynamicObject).%New()
+            Do tFail.%Set("success", 0, "boolean")
+            Do tFail.%Set("errors", tErrors)
+            Set tEnvelope = tFail.%ToJSON()
+            Quit
+        }
+
+        ; ─────────────────────────────────────────────────────────────
+        ; Persistence — open-or-create.
+        ; ─────────────────────────────────────────────────────────────
+        Set tConfig = ##class(SessionAgent.Config.Agent).AgentNameIdxOpen(pAgentName)
+        If '$IsObject(tConfig) {
+            Set tConfig = ##class(SessionAgent.Config.Agent).%New()
+            Set tConfig.AgentName = pAgentName
+        }
+
+        Set tConfig.Provider = pProvider
+        Set tConfig.Model = pModel
+        Set tConfig.EndpointUrl = pEndpointUrl
+        Set tConfig.MaxTokens = tMaxTokensNum
+        Set tConfig.Temperature = tTempNum
+        Set tConfig.SystemPromptOverride = pSystemPrompt
+        Set tConfig.Enabled = $Select(+pEnabled = 1 : 1, 1 : 0)
+
+        ; Radio-aware credential clearing — NFR-S2 schema discipline:
+        ; EnvVarName XOR CredentialName, never both populated. The
+        ; OPPOSITE field is unconditionally cleared so the EnvSecret
+        ; three-rung resolver behaves deterministically.
+        If pCredTypeRadio = "env" {
+            Set tConfig.EnvVarName = pEnvVarName
+            Set tConfig.CredentialName = ""
+        } Else {
+            ; pCredTypeRadio = "creds" (validated above).
+            Set tConfig.EnvVarName = ""
+            Set tConfig.CredentialName = pCredentialName
+        }
+
+        Set tSC = tConfig.%Save()
+        Do tConfig.%Close()
+
+        If $$$ISERR(tSC) {
+            Set tErr = ##class(%DynamicObject).%New()
+            Do tErr.%Set("field", "_form")
+            Do tErr.%Set("message", "Save failed: " _ $System.Status.GetErrorText(tSC))
+            Set tFail = ##class(%DynamicObject).%New()
+            Do tFail.%Set("success", 0, "boolean")
+            Set tFailErrors = ##class(%DynamicArray).%New()
+            Do tFailErrors.%Push(tErr)
+            Do tFail.%Set("errors", tFailErrors)
+            Set tEnvelope = tFail.%ToJSON()
+            Quit
+        }
+
+        ; Success envelope.
+        Set tOk = ##class(%DynamicObject).%New()
+        Do tOk.%Set("success", 1, "boolean")
+        Do tOk.%Set("message", "Saved")
+        Set tEnvelope = tOk.%ToJSON()
+    }
+    Catch ex {
+        ; Defense-in-depth — never throw out of the ZenMethod (the
+        ; client cannot recover from a Zen TypeError envelope). Surface
+        ; the exception text in the structured error envelope so the
+        ; operator sees an actionable message.
+        Set tErr = ##class(%DynamicObject).%New()
+        Do tErr.%Set("field", "_form")
+        Do tErr.%Set("message", "Save handler exception: " _ ex.DisplayString())
+        Set tFail = ##class(%DynamicObject).%New()
+        Do tFail.%Set("success", 0, "boolean")
+        Set tFailErrors = ##class(%DynamicArray).%New()
+        Do tFailErrors.%Push(tErr)
+        Do tFail.%Set("errors", tFailErrors)
+        Set tEnvelope = tFail.%ToJSON()
+    }
+    Quit tEnvelope
+}
+
+/// <p>Story 6.2 — client-side Save handler. Replaces the Story 6.1 stub.
+/// Reads the 11 form fields, calls
+/// <method>SaveAgentConfig</method> via Zen hyperevent, parses the
+/// returned JSON envelope, and renders an inline message — Mgmt-Portal-
+/// style per UX-DR28 (no <code>alert()</code>, no modal).</p>
+///
+/// <p><b>On success:</b> writes "Saved" into the
+/// <code>saveStatus</code> label, then auto-clears it after ~3 seconds
+/// via <code>setTimeout</code> so the form returns to a clean idle
+/// state. Any prior per-field error labels are also cleared.</p>
+///
+/// <p><b>On error:</b> writes each accumulated error into a per-field
+/// inline label. Field IDs match those in the
+/// <method>SaveAgentConfig</method> error envelope's <code>field</code>
+/// values: <code>agentSelect</code>, <code>providerSelect</code>,
+/// <code>maxTokensText</code>, <code>temperatureText</code>,
+/// <code>envVarText</code>, <code>credCombo</code>,
+/// <code>endpointUrlText</code>, <code>systemPromptText</code>.
+/// The pseudo-field <code>_form</code> (used for save-failure /
+/// exception envelopes) is rendered into the
+/// <code>saveStatus</code> label.</p>
 ClientMethod saveConfig() [ Language = javascript ]
 {
-    var status = zen('saveStatus');
-    if (status) {
-        status.setValue('Save handler ships in Story 6.2 — your changes are not yet persisted.');
-        status.setProperty('controlClass', 'saveStatusInfo');
-        if (typeof status.refreshContents === 'function') {
-            status.refreshContents();
+    // Clear any prior status/error labels before issuing the save.
+    var statusLabel = zen('saveStatus');
+    if (statusLabel) statusLabel.setValue('');
+
+    var errorFieldIds = [
+        'agentSelect', 'providerSelect', 'maxTokensText', 'temperatureText',
+        'credTypeRadio', 'envVarText', 'credCombo', 'endpointUrlText',
+        'systemPromptText'
+    ];
+    for (var i = 0; i < errorFieldIds.length; i++) {
+        var lbl = self.document.getElementById(errorFieldIds[i] + 'ErrorMessage');
+        if (lbl) {
+            lbl.innerHTML = '';
+            lbl.style.display = 'none';
+        }
+    }
+
+    // Read form values.
+    var agentName     = zen('agentSelect').getValue();
+    var provider      = zen('providerSelect').getValue();
+    var model         = zen('modelCombo').getValue();
+    var endpointUrl   = zen('endpointUrlText').getValue() || '';
+    var credTypeRadio = zen('credTypeRadio').getValue();
+    var envVarName    = zen('envVarText').getValue() || '';
+    var credName      = zen('credCombo').getValue() || '';
+    var maxTokens     = String(zen('maxTokensText').getValue() || '');
+    var temperature   = String(zen('temperatureText').getValue() || '');
+    var systemPrompt  = zen('systemPromptText').getValue() || '';
+    // Zen checkbox returns "true"/"false" or 1/0 depending on build —
+    // coerce to 1/0 string for the ZenMethod %String parameter.
+    var enabledRaw = zen('enabledCheck').getValue();
+    var enabled = (enabledRaw === true || enabledRaw === 1 || enabledRaw === '1' || enabledRaw === 'true') ? '1' : '0';
+
+    // Hyperevent — ZenMethod returns %String JSON envelope.
+    var json = zenPage.SaveAgentConfig(
+        agentName, provider, model, endpointUrl, credTypeRadio,
+        envVarName, credName, maxTokens, temperature, systemPrompt, enabled
+    );
+
+    var data;
+    try {
+        data = JSON.parse(json);
+    } catch (e) {
+        if (statusLabel) {
+            statusLabel.setValue('Save failed: response parse error');
+            statusLabel.setProperty('controlClass', 'saveStatusInfo');
+            if (typeof statusLabel.refreshContents === 'function') statusLabel.refreshContents();
+        }
+        return;
+    }
+
+    if (data && data.success) {
+        if (statusLabel) {
+            statusLabel.setValue('Saved');
+            statusLabel.setProperty('controlClass', 'saveStatusInfo');
+            if (typeof statusLabel.refreshContents === 'function') statusLabel.refreshContents();
+        }
+        // Auto-clear after ~3 seconds — UX-DR28 ephemeral confirmation.
+        setTimeout(function() {
+            var s = zen('saveStatus');
+            if (s) {
+                s.setValue('');
+                if (typeof s.refreshContents === 'function') s.refreshContents();
+            }
+        }, 3000);
+        return;
+    }
+
+    // Error path — render each error inline near its field.
+    var errors = (data && data.errors) ? data.errors : [];
+    for (var j = 0; j < errors.length; j++) {
+        var err = errors[j];
+        var fld = err.field || '_form';
+        if (fld === '_form') {
+            // Form-level error (save-status text).
+            if (statusLabel) {
+                statusLabel.setValue(err.message || 'Save failed');
+                statusLabel.setProperty('controlClass', 'saveStatusInfo');
+                if (typeof statusLabel.refreshContents === 'function') statusLabel.refreshContents();
+            }
+            continue;
+        }
+        // Per-field error label. Insert (or update) a sibling
+        // <label id="<field>ErrorMessage"> element in the DOM after the
+        // form field. The Zen-rendered control IDs match the XData id
+        // attribute, so document.getElementById(fld) finds the input.
+        var lblId = fld + 'ErrorMessage';
+        var lbl = self.document.getElementById(lblId);
+        if (!lbl) {
+            // Lazy-create the label element next to the field.
+            var fieldEl = self.document.getElementById(fld);
+            if (fieldEl && fieldEl.parentNode) {
+                lbl = self.document.createElement('label');
+                lbl.id = lblId;
+                lbl.style.color = '#C03030';
+                lbl.style.fontStyle = 'italic';
+                lbl.style.fontSize = '9pt';
+                lbl.style.display = 'block';
+                lbl.style.paddingTop = '2px';
+                fieldEl.parentNode.appendChild(lbl);
+            }
+        }
+        if (lbl) {
+            lbl.innerHTML = err.message || '';
+            lbl.style.display = 'block';
         }
     }
 }

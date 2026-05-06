@@ -922,3 +922,25 @@ This file accumulates findings, follow-ups, and architect-decision items that ar
   - **Recommendation:** Lead must apply Rule 5.0 AC-1's SQL-probe-as-ground-truth invariant on every empirical-battery claim — drive the "N/N pass" line from the SQL probe against `%UnitTest_Result.TestMethod`, NOT from the `iris_execute_tests` JSON envelope (which silently truncates per Rule 6 step 3). The package-runner truncation behavior was directly observed in this story (package-level invocation returned only 11 of the 270 test methods). Codify this as a sprint-planning checklist item: "Did the empirical battery claim cite a SQL probe?" If no, reject the claim. Already covered by Rule 5.0 AC-1 — this entry is informational so future cycles see this is a recurring failure mode.
   - **Owner:** Epic 6 lead — process-level, not code-level.
   - **Blocking?** Not blocking — substantive "all pass" claim was correct in shape; only the count was wrong.
+
+---
+
+## Deferred from: code review of story-6.2-save-handler-hot-config-change-verification (2026-05-06)
+
+- **Story 6.2 LOW-1 — chrome-devtools-mcp stale lock blocked Rule 12 screenshot evidence; dev fell back to rendered-DOM textContent fetch (acceptable per Rule 12 §"Acceptable evidence forms").**
+  - **Source:** Story 6.2 code review.
+  - **Severity:** LOW (no code defect — process / tooling friction).
+  - **Observation:** chrome-devtools-mcp returned the same Story-6.1 stale-lock condition (`The browser is already running for C:\Users\Josh\.cache\chrome-devtools-mcp\chrome-profile`). The dev fell back to rendered-DOM textContent verification via direct CSP HTTP fetch, which Rule 12 §"Acceptable evidence forms" lists as acceptable evidence. The reviewer reproduced the same fallback during this review — chrome-devtools-mcp remains locked. Both Story 6.1 and Story 6.2 have now hit this condition.
+  - **Recommendation:** Operator should clear the chrome-devtools-mcp profile lock before any future UI-story empirical battery so the screenshot path is available — or the project should document the rendered-DOM textContent fallback as the canonical evidence form for this codebase's UI stories until the lock issue is resolved upstream. The Rule 12 human-read step (the substantive invariant — "is the rendered text readable English?") was satisfied in both Story 6.1 and Story 6.2 via the textContent paste; the screenshot is a delivery-form preference, not a contract gap.
+  - **Owner:** Operator (Josh) for the lock clear; Epic 6 lead for the rendered-DOM textContent canonicalization decision if the lock keeps recurring.
+  - **Blocking?** Not blocking — Story 6.2 ships as-is with textContent fallback evidence.
+
+- **Story 6.2 LOW-2 — regression-sweep aggregate count of 281/281 in the dev's Completion Notes does not match the SQL ground-truth probe (which shows 254/254 from MAX-runIdx-per-class projection).**
+  - **Source:** Story 6.2 code review.
+  - **Severity:** LOW (no operator-observable impact; the substantive "all pass" claim is true — only the count is contested).
+  - **Observation:** The dev's table in Completion Notes claims 281 SessionAgent.Test methods total (15 in AgentConfigTest after their +11 additions). The SQL ground-truth probe via `MAX(ID) GROUP BY Name` per Story 5.0 AC-1 returns 254 — the SQL projection picks the most-recent run-id per class, but those run-ids vary across classes (AgentConfigTest's most-recent run was run 158 with all 15 methods, but the projection's chosen ID may be a stale run for some other class that didn't include the new tests). The SQL probe-as-ground-truth pattern is actually loose when test classes are run individually at different times — the "latest run per class" is a moving target. The empirical reality (verified by reviewer): AgentConfigTest run 158 has 15/15 PASS (verified directly via `^UnitTest.Result(158,...)` walk), and reviewer's run 173 added a 16th test (`TestSaveAgentConfigRejectsInvalidCredTypeRadio` for Bug-1 fix-now) and observed 16/16 PASS. **The fix-now bug count is +12 over the Story 6.1 baseline (270 SessionAgent.Test methods + 12 new = 282/282 substantive count after the reviewer-added test).**
+  - **Recommendation:** The Story 5.0 AC-1 SQL probe shape is correct in principle (ground-truth via `^UnitTest.Result`), but the join-on-MAX-ID-per-class form is fragile across multi-run sessions (it will silently pick stale runs when the dev ran a class individually after a package run). A more robust shape: aggregate each test method's most-recent status by name (regardless of run-id), or run a full-package sweep at the very end and aggregate from THAT single run-id. Codifying this as a tweak to the Story 5.0 AC-1 query in `.claude/rules/object-script-testing.md` is a process-level Epic 6 retro item.
+  - **Owner:** Epic 6 lead — process-level (Rule 5.0 AC-1 query refinement); not blocking Story 6.2.
+  - **Blocking?** Not blocking — substantive "all pass" claim is correct.
+
+

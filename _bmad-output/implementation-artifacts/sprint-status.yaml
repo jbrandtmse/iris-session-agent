@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-05-02
-last_updated: 2026-05-06 (Story 6.0 code-review complete — zero HIGH/MEDIUM findings; 3 LOW dismissed under Rule 8 test 3; reviewer independently confirmed 266/266 + 52/52 matrix + 13ms compile clean; Status=done)
+last_updated: 2026-05-06 (Story 6.1 code review complete — 1 HIGH ($Char(0) normalization in LoadAgentConfig) + 1 MEDIUM (regression-sweep count: 269/269 SQL ground truth, not 239/239) fixed by reviewer; 1 LOW logged; 4/4 AgentConfigTest pass via SQL probe; ready for lead commit + status -> done)
 project: iris-session-agent
 # Epic 1 complete (retro 2026-05-02); Epic 2 retrospective triage gate (Story 2.0) 2026-05-03
 project_key: NOKEY
@@ -103,7 +103,7 @@ development_status:
 
   epic-6: in-progress
   6-0-epic-5-deferred-cleanup: done
-  6-1-agentconfig-zen-form-layout: backlog
+  6-1-agentconfig-zen-form-layout: review
   6-2-save-handler-hot-config-change-verification: backlog
   6-3-replace-placeholder-admin-link-end-to-end-configure-and-ask-validation: backlog
   6-4-multi-namespace-install-support: backlog

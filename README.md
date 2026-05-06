@@ -134,6 +134,10 @@ If `DefaultSSL` does not already exist on your IRIS install, create a client-sid
 
 **How to verify:** from `%SYS`, query `SELECT Name FROM Security.SSLConfigs` — `DefaultSSL` must appear. Without this configuration, every outbound LLM call fails fast with `"OpenAI mid-flight failure (request may have been processed)"` in `Audit.LlmCall.ErrorText` — the symptom is a sub-second turn that returns no answer (no real network call ever happened). The Story 2.12 retro empirical battery surfaced this as a missing operator-prereq documentation gap; this section closes it.
 
+### 7a. System Prompt Override length cap (Story 6.1)
+
+The `System Prompt Override` field (in [`SessionAgent.Config.Agent.SystemPromptOverride`](src/SessionAgent/Config/Agent.cls)) stores up to **8192 characters**; longer prompts are silently truncated by the persistence layer. The Story 6.1 [`SessionAgent.UI.AgentConfig.zen`](src/SessionAgent/UI/AgentConfig.cls) form's char counter warns at 7500 chars (amber) and flags exceedance at 8192 chars (red), so operators see the cap they're approaching instead of silently hitting truncation. A future Story 6.x sibling backend tweak will raise the cap (`MAXLEN=8192` → `MAXLEN=32767`) or convert the property to a stream backing — see the [deferred-work.md "SystemPromptOverride MAXLEN=8192 silent truncation" entry](_bmad-output/implementation-artifacts/deferred-work.md) for the rationale and roadmap.
+
 ### 8. Bookmark URLs
 
 After install, both Management Portal entry points are bookmarkable. **Use the URL pattern that matches your IRIS deployment style** — HealthShare-based deployments include the `/healthshare/` segment; plain IRIS deployments do not:

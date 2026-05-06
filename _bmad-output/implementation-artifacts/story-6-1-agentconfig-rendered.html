@@ -1,0 +1,1185 @@
+<html  >
+<head>
+<title>Agent Configuration</title>
+	
+<link rel="stylesheet" type="text/css" href="ZEN_SVGComponent.css"/>
+<link rel="stylesheet" type="text/css" href="ZEN_Component__core.css"/>
+<link rel="stylesheet" type="text/css" href="ZEN_Component__form.css"/>
+<style id="zenStyleSection" type="text/css"></style>
+<!-- Style: EnsPortal.Application -->
+<!-- Style: EnsPortal.Application -->
+<style type="text/css">
+body {
+font-family: Futura,Arial,sans-serif;
+}
+.formTitle {
+color:#000000;
+font-family: Futura,Arial,sans-serif;
+font-size: 18px;
+font-weight: bold;
+letter-spacing: 0.75px;
+margin: 20px;
+}
+/* overrider locator bar style */
+.locatorBarTable td {
+background: rgb(53,107,141);
+background-image: none;
+background-repeat: repeat-x;
+border-bottom: 1px darkblue solid;
+padding-bottom: 1px;
+color: white;
+}
+.locatorBarLinks {
+color: white;
+}
+.locatorBarLinks a {
+color: white;
+}
+.locatorBarLinks a:visited {
+color: white;
+}
+.locatorBarLinks a:hover {
+color: darkred;
+background: #FFFAE7;
+}
+.locatorBarSelect {
+color: white;
+}
+.portalPropertyPanelTitle {
+color: white;
+font-size: 12pt;
+padding: 5px;
+}
+.portalPropertyPanelCommands {
+color: white;
+background: rgb(53,107,141);
+width: 100px;
+text-align: center;
+font-size: 9pt;
+border: 1px solid #CBCBCB;
+}
+.portalTitle {
+width: 100%;
+height: 100px;
+position: relative;
+box-shadow:0 2px 8px 0 rgba(0,0,0,0.12);
+box-sizing: border-box;
+}
+.portalTitleInfoBox {
+position: absolute;
+bottom: 0px;
+left: 350px;
+box-shadow:0 2px 8px 0 rgba(0,0,0,0.12);
+}
+.portalTitleInfoLabel {
+padding-left: 10px;
+font-size: 9pt;
+color: #606060;
+text-align: left;
+}
+.portalTitleInfoVal {
+font-size: 9pt;
+color: black;
+text-align: left;
+font-weight: bold;
+}
+.portalLostConnectivityWarn {
+font-family: Futura,Arial,sans-serif;
+font-size: 13px;
+font-weight: bold;
+letter-spacing: 0.75px;
+text-align: center;
+background: #aa4040;
+color:#ffffff;
+border-radius: 4px;
+padding: 6px 20px;
+margin-left: 20px;
+}
+.portalTitleListBox {
+position: absolute;
+top: 5px;
+left: 20px;
+font-size: 9pt;
+}
+.portalTitleMenuBox {
+position: absolute;
+top: 20px;
+left: 900px;
+font-size: 14px;
+}
+.portalTitleLink {
+color: #000000;
+font-family: Futura,Arial,sans-serif;
+font-size: 14px;
+font-weight: 600;
+padding: 2px;
+text-decoration: none;
+}
+.pageTitleText {
+color: #333695;
+font-family: Futura,Arial,sans-serif;
+font-size: 12px;
+font-weight: 550;
+text-decoration: none;
+}
+.portalServerLink {
+color: #333695;
+font-family: Futura,Arial,sans-serif;
+font-size: 12px;
+font-weight: 550;
+text-decoration: underline;
+}
+.portalLocatorLink {
+text-decoration: none;
+}
+.portalTitleLink:hover,.portalServerLink:hover,.portalLocatorLink:hover {
+color: #00A09A;
+transition: color 0.03 ease;
+}
+.portalTitleTabBox {
+position: absolute;
+color: white;
+font-size: 16px;
+bottom: 0px;
+left: 20px;
+width: 300px;
+height: 25px;
+padding-left: 15px;
+padding-right: 15px;
+padding: 5px;
+border-top-right-radius: 5px;
+border-top-left-radius: 5px;
+overflow: hidden;
+}
+.portalLogoBox {
+position: absolute;
+top: 0px;
+padding: 3px;
+padding-bottom: 4px;
+padding-right: 15px;
+left: 10px;
+width:210px;
+z-index: 3;
+}
+.topLine {
+border-top: 2px solid #333695;
+}
+.portalLogo {
+position: relative;
+top: 0px;
+left: 10px;
+padding: 2px;
+padding-left: 5px;
+padding-right: 5px;
+width:210px;
+height:50px;
+font-weight: bold;
+font-size: 12pt;
+}
+/* overrides of Finder styles */
+.finderItemSelected {
+background: #bfe4e3;
+border: 1px solid #cbcbcb;
+color: #303030;
+}
+.finderItemSelected a {
+color: #303030;
+}
+.finderListRowSelected {
+background: #bfe4e3;  /*#2F6280;*/
+}
+.finderItem, .finderItemOdd,.finderItemSelected, .finderItemDisabled {
+border-bottom: 1px solid #CBCBCB;
+}
+.finderItem a, .finderItemOdd a {
+color: #303030;
+}
+/* command button styles */
+.commandButton {
+background: #FFFFFF;
+color: #333695;
+text-decoration: none;
+padding: 3px;
+padding-left: 10px;
+padding-right: 10px;
+border-radius: 4px;
+border: 1px solid #333695;
+}
+.commandButton,.commandButtonRemove,.commandButtonDisabled {
+color: #333695;
+cursor: pointer;
+background: #ffffff;
+border: 2px solid #333695;
+border-radius: 4px;
+font-size: 12px;
+font-weight: 600;
+letter-spacing: 0.75px;
+text-align: center;
+text-decoration: none;
+padding: 6px 20px;
+}
+.commandButtonRemove {
+background: #333695;
+color: white;
+}
+.commandButtonDisabled {
+background: #ffffff;
+color: #979797;
+cursor: none;
+border: 2px solid #979797;
+}
+.commandButton:hover {
+border: 2px solid #00A09A;
+color: #00A09A;
+transition: color 0.03 ease;
+}
+.commandButtonRemove:hover {
+border: 4px solid white;
+}
+img {
+border: none;
+}
+/* overrides of tablePane */
+table.tpTable {
+font-family: Futura,Arial,sans-serif;	font-size: 12px;
+border: 2px solid #CBCBCB;
+padding: 2px;
+}
+/* @doc="Column header." */
+table.tpTable th {
+color: #3b84bc;
+border: none;
+background: white;
+font-weight: bold;
+text-align: left;
+padding: 2px;
+overflow: hidden;
+}
+/* @doc="Selected column header." */
+table.tpTable th.tpHdrSelected {
+color: #3b84bc;
+background: white;
+}
+table.tpTable td {
+border: none;
+padding: 2px;
+overflow: hidden;
+}
+table.tpTable tr.tpSelected td {
+font-weight: normal;
+border: none;
+padding-top: 2px;
+padding-bottom: 2px;
+}
+table.tpTable tr.tpSelected {
+color: black;
+border: none;
+background: #F3E799;
+background-image: none;
+}
+/* @doc="Style for rows when not using zebra styling." */
+.tpRow {
+color: black;
+background: white;
+}
+/* @doc="Style for odd-rows when using zebra styling." */
+.tpOdd {
+color: black;
+background: #F1F0E7;
+}
+/* @doc="Style for even-rows when using zebra styling." */
+.tpEven {
+color: black;
+background: white;
+}
+/* @doc="Cell containing a link." */
+.tpAction {
+font-size: 0.9em;
+}
+.tpAction a {
+white-space: nowrap;
+color: #3b84bc;
+}
+.tpAction a:hover {
+color: #98923a;
+}
+.tpAction a:link {
+color: #3b84bc;
+}
+.tpAction a:active {
+color: #3b84bc;
+}
+/* @doc="Table around navigator bar." */
+.tnbrTable {
+border: 1px solid #CBCBCB;
+background: #DCE7F1;
+padding: 1px;
+}
+/* @doc="Buttons within navigator bar." */
+.tnbrPagingButtons {
+border: 1px solid #CBCBCB;
+}
+/* combo boxes and dateText */
+.comboboxInput {
+border-top: 1px solid #cbcbcb;
+border-bottom: 1px solid #cbcbcb;
+border-left: 1px solid #cbcbcb;
+border-right: none;
+}
+.comboboxDropDown {
+border: 1px solid #cbcbcb;
+}
+.comboboxImgButton {
+border-top: 1px solid #cbcbcb;
+border-bottom: 1px solid #cbcbcb;
+border-left: none;
+border-right: 1px solid #cbcbcb;
+}
+.comboboxTextButton {
+border: 1px solid #cbcbcb;
+}
+/* override the default green/blue color with ISC blue */
+.modalGroup.modalGroupDialog {
+background: #333695;
+}
+.modalGroupTitle {
+border-bottom: 1px #333695 solid;
+}
+.modalGroupTitle td {
+color: #333695;
+}
+/* the effect of the following is to not show text in the top edge in modal dialog */
+.modalGroupIframe {
+background: #333695;
+}
+</style>
+<!-- Style: EnsPortal.Application -->
+<style type="text/css">
+/* @doc="Combobox and dataCombo box drop-down style for this application." */
+.comboboxDropDown {
+padding: 4px;
+}
+.comboboxItem {
+font-size: 0.9em;
+}
+.comboboxItemSelected {
+font-size: 0.9em;
+}
+/* LocatorBar Links Style */
+DIV.locatorBarLinks {
+font-size: 0.8em;
+font-weight: bold;
+color: #333695;
+text-decoration: none;
+}
+DIV.locatorBarLinks A {
+color: #333695;
+text-decoration: none;
+padding-right: 1px;
+padding-left: 1px;
+}
+DIV.locatorBarLinks A:visited {
+color: #333695;
+}
+DIV.locatorBarLinks A:hover {
+color: #da4848;
+background: #FFFAE7;
+}
+.fieldSet {
+background: #F0F0F0;
+padding: 4px;
+}
+/* @doc="Default style for labels for disabled components." */
+.zenLabelDisabled {
+color: #979797;
+font-size: 12px;
+font-weight: normal;
+padding-right: 5px;
+}
+.helpText {
+color:#979797;
+font-size:12px;
+}
+.redText {
+color:#da4848;
+font-size:12px;
+font-weight: bold;
+}
+/* @doc="Item within listBox. Added font-size." */
+.listBoxItem {
+white-space: nowrap;
+width: 100%;
+color: black;
+/* ie does not handle transparent */
+border: 1px solid white;
+cursor: pointer;
+font-size:0.8em;
+}
+/* @doc="Selected item within listBox." */
+.listBoxItemSelected {
+white-space: nowrap;
+width: 100%;
+color: black;
+background: #E0E0E0;
+font-weight: bold;
+border: 1px dotted #202060;
+cursor: pointer;
+font-size:0.8em;
+}
+/* This is the style similar to intersystems.css's DetailCommand.*/
+.DetailCommand {
+font-size: 0.8em;
+font-weight: bold;
+border-top: 1px #979797 solid;
+border-bottom: 1px #979797 solid;
+background: rgb(53,107,141);
+margin-left: 0px;
+margin-right: 0px;
+margin-top: 0px;
+margin-bottom: 5px;
+width: 100%;
+}
+/* @doc="Default style for label/caption." */
+.caption {
+color: #404040;
+font-size: 12px;
+font-weight: bold;
+padding-right: 5px;
+}
+.normal {
+color: black;
+font-size: 12px;
+padding-right: 5px;
+}
+.disablednormal {
+color: #979797;
+font-size: 12px;
+padding-right: 5px;
+}
+.radioSetSpan {
+color: black;
+font-size: 12px;
+font-weight: normal;
+padding-left: 5px;
+}
+/* descriptive text for page title */
+#Text1 {
+color: #000000;
+font-size: 12pt;
+font-weight: bold;
+}
+/* Generic style for messages */
+.rednote {
+font-size: 11px;
+color: #da4848;
+text-align: left;
+font-weight: bold;
+}
+.greennote {
+font-size: 11px;
+color: #52b012;
+text-align: left;
+font-weight: bold;
+}
+</style>
+<!-- Style: EnsPortal.Application -->
+<style type="text/css">
+.fieldBoxIndent {
+background: #D7DBDD;
+width: 100%;
+overflow: auto;
+}
+/* used by side search menupane */
+.hrline {
+background: #C6930A;
+height:4px;
+}
+.expandoNode {
+margin-top: 10px;
+padding-bottom: 10px;
+border-top: 1px solid #D0D0D0;
+}
+.expandoNode a {
+font-size: 10pt;
+font-weight: bold;
+color: #606060;
+border: none;
+text-decoration: none;
+}
+/* @doc="Mouse over expando caption." */
+.expandoNode a:hover {
+color: #404040;
+background: #FFEEAA;
+}
+</style>
+<!-- Style: SessionAgent.UI.AgentConfig -->
+<style type="text/css">
+.spoCounterNormal {
+color: #404040;
+font-size: 9pt;
+}
+.spoCounterWarn {
+color: #B07000;
+font-size: 9pt;
+font-weight: bold;
+}
+.spoCounterDanger {
+color: #C03030;
+font-size: 9pt;
+font-weight: bold;
+}
+.saveStatusInfo {
+color: #404040;
+font-style: italic;
+font-size: 9pt;
+padding-top: 4px;
+}
+</style>
+<script type="text/javascript" src="zenutils.js"></script>
+<script type="text/javascript">var zenIsHTML5=false;</script>
+</head>
+<body id="zenBody">
+<xml id="zenWorkspace"></xml>
+<div id="zenMouseTrap" ></div>
+<div id="zenModalDiv" style="display: none;"></div>
+<div id="zenFloatingDiv" style="display: none;"></div>
+<div class="zendiv" id="zen1" zen="1"  >
+<table id="group_1" class="page" style="width:100%;height:100%;" border="0" cellspacing="0" cellpadding="0">
+<tr style="vertical-align:top;">
+<td id="zenLayoutTableCell_2"  >
+<div class="zendiv" id="zen2" zen="2"  >
+<table id="group_2" class="group"  border="0" cellspacing="0" cellpadding="0">
+<tr style="vertical-align:top;">
+<td id="zenLayoutTableCell_3"  style="padding:6px;">
+<span id="zenlbl_3" class="zenLabel"  >Agent</span><div class="zendiv" id="agentSelect" zen="3"  ><select class="select" id="control_3"        onchange="zenPage.getComponent(3).onchangeHandler();">
+<option ></option>
+<option selected="1" value="session-inspection">Session Inspection</option>
+<option  value="message-search">Message Search</option>
+</select>
+</div>
+</td>
+</tr>
+<tr style="vertical-align:top;">
+<td id="zenLayoutTableCell_4"  style="padding:6px;">
+<span id="zenlbl_4" class="zenLabel"  >Provider</span><div class="zendiv" id="providerSelect" zen="4"  ><select class="select" id="control_4"        onchange="zenPage.getComponent(4).onchangeHandler();">
+<option selected="1"></option>
+<option  value="openai">OpenAI</option>
+<option  value="anthropic">Anthropic</option>
+<option  value="gemini">Google Gemini</option>
+<option  value="openai-compatible">OpenAI-Compatible (Ollama/vLLM)</option>
+</select>
+</div>
+</td>
+</tr>
+<tr style="vertical-align:top;">
+<td id="zenLayoutTableCell_5"  style="padding:6px;">
+<span id="zenlbl_5" class="zenLabel"  >Model</span><div class="zendiv" id="modelCombo" zen="5"  ><input type="hidden" id="hidden_5"  />
+<table border="0" cellspacing="0" cellpadding="0">
+<tr><td style="white-space: nowrap"><input class="comboboxInput"  type="text"     id="input_5"     onkeydown="zenPage.getComponent(5).inputKeyHandler(event);" onblur="zenPage.getComponent(5).inputBlurHandler(event);" onchange="zenPage.getComponent(5).inputChangeHandler();"/><img src="images/combobox.png" id="btn_5" onmousedown="zenPage.getComponent(5).comboboxButtonDown(event);" onmouseup="zenPage.getComponent(5).comboboxButtonUp();" onmouseover="zenPage.getComponent(5).comboboxMouseOver();" onmouseout="zenPage.getComponent(5).comboboxMouseOut();"  class="comboboxImgButton" onclick="zenPage.getComponent(5).showDropdown();"/></td></tr>
+</table>
+</div>
+</td>
+</tr>
+<tr style="vertical-align:top;">
+<td id="zenLayoutTableCell_6"  style="padding:6px;">
+<span id="zenlbl_6" class="zenLabel" style="display:none;" >Endpoint URL (OpenAI-Compatible only)</span><div class="zendiv" id="endpointUrlText" zen="6" style="display: none;" ><input type="text" class="text"  id="control_6"     size="60"     spellcheck="true" autocomplete="on"  onchange="zenPage.getComponent(6).onchangeHandler();"/>
+</div>
+</td>
+</tr>
+<tr style="vertical-align:top;">
+<td id="zenLayoutTableCell_7"  style="padding:6px;">
+<span id="zenlbl_7" class="zenLabel"  >Credential Source</span><div class="zendiv" id="credTypeRadio" zen="7"  ><input type="hidden" id="hidden_7"  value="env"/>
+<span class="radioSetSpan"><input  type="radio"  id="textRadio_1_7" checked="1" name="r7"  value="env" onclick="return zenPage.getComponent(7).clickItem(1);"/><a class="radioSetCaption" id="caption_1_7"  href=""  onclick="zenPage.getComponent(7).clickItem(1);return false;">Environment Variable</a></span>
+<span class="radioSetSpan"><input  type="radio"  id="textRadio_2_7"  name="r7"  value="creds" onclick="return zenPage.getComponent(7).clickItem(2);"/><a class="radioSetCaption" id="caption_2_7"  href=""  onclick="zenPage.getComponent(7).clickItem(2);return false;">Ens.Config.Credentials</a></span>
+</div>
+</td>
+</tr>
+<tr style="vertical-align:top;">
+<td id="zenLayoutTableCell_8"  style="padding:6px;">
+<span id="zenlbl_8" class="zenLabel"  >Environment Variable Name</span><div class="zendiv" id="envVarText" zen="8"  ><input type="text" class="text"  id="control_8"     size="40"     spellcheck="true" autocomplete="on"  onchange="zenPage.getComponent(8).onchangeHandler();"/>
+</div>
+</td>
+</tr>
+<tr style="vertical-align:top;">
+<td id="zenLayoutTableCell_9"  style="padding:6px;">
+<span id="zenlbl_9" class="zenLabel" style="display:none;" >Ens.Config.Credentials Entry</span><div class="zendiv" id="credCombo" zen="9" style="display: none;" ><input type="hidden" id="hidden_9"  />
+<table border="0" cellspacing="0" cellpadding="0">
+<tr><td style="white-space: nowrap"><input class="comboboxInput"  type="text"     id="input_9"     onkeydown="zenPage.getComponent(9).inputKeyHandler(event);" onblur="zenPage.getComponent(9).inputBlurHandler(event);" onchange="zenPage.getComponent(9).inputChangeHandler();"/><img src="images/combobox.png" id="btn_9" onmousedown="zenPage.getComponent(9).comboboxButtonDown(event);" onmouseup="zenPage.getComponent(9).comboboxButtonUp();" onmouseover="zenPage.getComponent(9).comboboxMouseOver();" onmouseout="zenPage.getComponent(9).comboboxMouseOut();"  class="comboboxImgButton" onclick="zenPage.getComponent(9).showDropdown();"/></td></tr>
+</table>
+</div>
+</td>
+</tr>
+<tr style="vertical-align:top;">
+<td id="zenLayoutTableCell_10"  style="padding:6px;">
+<span id="zenlbl_10" class="zenLabel"  >Max Tokens</span><div class="zendiv" id="maxTokensText" zen="10"  ><input type="text" class="text"  id="control_10"     size="8"     spellcheck="true" autocomplete="on"  onchange="zenPage.getComponent(10).onchangeHandler();"/>
+</div>
+</td>
+</tr>
+<tr style="vertical-align:top;">
+<td id="zenLayoutTableCell_11"  style="padding:6px;">
+<span id="zenlbl_11" class="zenLabel"  >Temperature</span><div class="zendiv" id="temperatureText" zen="11"  ><input type="text" class="text"  id="control_11"     size="8"     spellcheck="true" autocomplete="on"  onchange="zenPage.getComponent(11).onchangeHandler();"/>
+</div>
+</td>
+</tr>
+<tr style="vertical-align:top;">
+<td id="zenLayoutTableCell_12"  style="padding:6px;">
+<span id="zenlbl_12" class="zenLabel"  >System Prompt Override (optional)</span><div class="zendiv" id="systemPromptText" zen="12"  ><textarea id="control_12" class="textarea"   cols="80" rows="6"   spellcheck="true"    onchange="zenPage.getComponent(12).onchangeHandler();" onkeyup="return zenFireEvent('12','zenPage.spoChanged();','onkeyup',event);"></textarea>
+</div>
+</td>
+</tr>
+<tr style="vertical-align:top;">
+<td id="zenLayoutTableCell_13"  style="padding:6px;">
+<div class="zendiv" id="spoCharCounter" zen="13"  ><input type="hidden" id="label_13"  value="0 / 8192 characters"/>
+<span id="control_13"  class="labelText" style=""  onchange="zenPage.getComponent(13).onchangeHandler();">0 / 8192 characters</span>
+</div>
+</td>
+</tr>
+<tr style="vertical-align:top;">
+<td id="zenLayoutTableCell_14"  style="padding:6px;">
+<div class="zendiv" id="enabledCheck" zen="14"  ><input type="hidden" id="hidden_14"  value="0"/>
+<span style="white-space: nowrap;"><input type="checkbox" class="checkbox"  id="control_14"   onclick="return zenPage.getComponent(14).clickCheckbox();"  /><span class="checkboxCaption" id="caption_14"   onclick="zenPage.getComponent(14).clickCaption();">Enable this agent&nbsp;</span></span>
+</div>
+</td>
+</tr>
+<tr style="vertical-align:top;">
+<td id="zenLayoutTableCell_15"  style="padding:6px;">
+<div class="zendiv" id="saveStatus" zen="15"  ><input type="hidden" id="label_15"  />
+<span id="control_15"  class="labelText" style=""  onchange="zenPage.getComponent(15).onchangeHandler();"></span>
+</div>
+</td>
+</tr>
+<tr style="vertical-align:top;">
+<td id="zenLayoutTableCell_16"  style="padding:6px;">
+<div class="zendiv" id="zen16" zen="16"  >
+<table id="group_16" class="group"  border="0" cellspacing="0" cellpadding="0"><tr style="height:100%;">
+<td id="zenLayoutTableCell_17"  >
+<div class="zendiv" id="saveButton" zen="17"  ><input type="button" class="button" id="control_17"   value="Save"     onclick="return zenFireEvent('17','zenPage.saveConfig();','onclick',event);"/>
+</div>
+</td>
+<td id="zenLayoutTableCell_18"  style="width:6px;">
+<div class="zendiv" id="zen18" zen="18"  ><div class="spacer" id="spacer_18" style="width:6px;"></div>
+</div>
+</td>
+<td id="zenLayoutTableCell_19"  >
+<div class="zendiv" id="cancelButton" zen="19"  ><input type="button" class="button" id="control_19"   value="Cancel"     onclick="return zenFireEvent('19','zenPage.cancelEdit();','onclick',event);"/>
+</div>
+</td>
+</tr></table>
+</div>
+</td>
+</tr>
+</table>
+</div>
+</td>
+</tr>
+<tr style="height:99%;"><td ></td></tr>
+</table>
+</div>
+<script type="text/javascript" src="cspxmlhttp.js"></script>
+<script type="text/javascript" src="cspbroker.js"></script>
+<script type="text/javascript" src="ZEN_Component__core.js"></script>
+<script type="text/javascript" src="ZEN_Component__form.js"></script>
+<script type="text/javascript">
+//<![CDATA[
+
+var zenAutoLogoutTime = 915000;
+var zenAutoLogoutTimerID = null;
+var zenAutoLogoutWarnTime = zenAutoLogoutTime-45000;
+var zenAutoLogoutWarnTimerID = null;
+	
+
+zenAutoLogoutTimerID = self.setTimeout("zenAutoLogout()",zenAutoLogoutTime);
+function zenAutoLogout()
+{
+	var ok = true;
+	if (zenPage.onlogoutHandler) {
+		ok = zenPage.onlogoutHandler();
+	}
+	if (ok) {
+		top.document.location.reload();
+	}
+}
+		
+//]]>
+</script>
+<script type="text/javascript">
+//<![CDATA[
+var _zenPageError = 'ZEN ERROR:\nzenPage object is missing or invalid for this page.';
+cspMultipleCall = true;
+function zenClassMethod(object,method,spec,rettype,args)
+{
+	if (zenAutoLogoutTimerID) {
+		self.clearTimeout(zenAutoLogoutTimerID);
+		zenAutoLogoutTimerID = self.setTimeout("zenAutoLogout()",zenAutoLogoutTime);
+	}
+	if (zenPage.onServerMethodCall) { zenPage.onServerMethodCall(method); }
+	var state = new zenSerialState();
+	var arglist = zenBuildArgumentList(state,spec,args);
+	if (zenDEBUGTraceEvents) { zenTRACE('Server Class Method',method,arglist);}
+	var header = state.getHeader();
+	var body = state.getBody();
+	var ns = 'HSCUSTOM';
+	if (''!=rettype) {
+		var ret = cspHttpServerMethod("zLi9bMjnQSEEKZ3aSWpv30cwax5Vi30__s91FsV2HiDUppKgEVE4p5w$5OYs4ewu$zyTCsH5DSKd2s0g$jpK85vI$O3p$YkhWlWUHxQ2KDY",object._serverClass,method,rettype,zenSyncFlag,header,body,spec,arglist,ns,zenGetThreadId());
+		return zenConvertType(rettype,ret);
+	} else {
+		if (!zenSynchronousMode) {
+			cspCallHttpServerMethod("zLi9bMjnQSEEKZ3aSWpv30cwax5Vi30__s91FsV2HiDUppKgEVE4p5w$5OYs4ewu$zyTCsH5DSKd2s0g$jpK85vI$O3p$YkhWlWUHxQ2KDY",object._serverClass,method,rettype,zenSyncFlag,header,body,spec,arglist,ns,zenGetThreadId());
+		} else {
+			cspHttpServerMethod("zLi9bMjnQSEEKZ3aSWpv30cwax5Vi30__s91FsV2HiDUppKgEVE4p5w$5OYs4ewu$zyTCsH5DSKd2s0g$jpK85vI$O3p$YkhWlWUHxQ2KDY",object._serverClass,method,rettype,zenSyncFlag,header,body,spec,arglist,ns,zenGetThreadId());
+		}
+	}
+}
+function zenInstanceMethod(object,method,spec,rettype,args)
+{
+	if (zenAutoLogoutTimerID) {
+		self.clearTimeout(zenAutoLogoutTimerID);
+		zenAutoLogoutTimerID = self.setTimeout("zenAutoLogout()",zenAutoLogoutTime);
+	}
+	if (zenPage.onServerMethodCall) { zenPage.onServerMethodCall(method); }
+	var state = new zenSerialState();
+	state.addObject(object);
+	var arglist = zenBuildArgumentList(state,spec,args);
+	if (zenDEBUGTraceEvents) { zenTRACE('Server Instance Method',method,arglist);}
+	var header = state.getHeader();
+	var body = state.getBody();
+	var ns = 'HSCUSTOM';
+	if (''!=rettype) {
+		var ret = cspHttpServerMethod("k1V2bkNr$tUjaZq2HfSOovPkL$WJrgfj8AklyagGgG4A1EmTrHXIiyj1ddJe$u6XGOIz8$5UNnQpLPay9jrjS4VpAkmsKh2N2BRDxVhdvys",object.index,method,rettype,zenSyncFlag,header,body,spec,arglist,ns,zenGetThreadId());
+		return zenConvertType(rettype,ret);
+	} else {
+		if (!zenSynchronousMode) {
+			cspCallHttpServerMethod("k1V2bkNr$tUjaZq2HfSOovPkL$WJrgfj8AklyagGgG4A1EmTrHXIiyj1ddJe$u6XGOIz8$5UNnQpLPay9jrjS4VpAkmsKh2N2BRDxVhdvys",object.index,method,rettype,zenSyncFlag,header,body,spec,arglist,ns,zenGetThreadId());
+		} else {
+			cspHttpServerMethod("k1V2bkNr$tUjaZq2HfSOovPkL$WJrgfj8AklyagGgG4A1EmTrHXIiyj1ddJe$u6XGOIz8$5UNnQpLPay9jrjS4VpAkmsKh2N2BRDxVhdvys",object.index,method,rettype,zenSyncFlag,header,body,spec,arglist,ns,zenGetThreadId());
+		}
+	}
+}
+function zenLink(url,share)
+{
+	var parms = '';
+	if (share) {
+		parms = 'CSPSHARE=1&CSPCHD=000000010000g7lUKnoBGsSHpDl31_MT86rNFCho4hZ_WJKIp0';
+	}
+	var s = url.split('?');
+	var loc = s[0];
+	if (null!=s[1]||''!=parms) {
+		if (null!=s[1]&&s[1].indexOf('$NAMESPACE=')>-1) {parms = parms.split('&').filter(function(qp) { return !qp.startsWith('$NAMESPACE='); } ).join('&')}
+		loc += '?' + parms + (null==s[1]?'':((''==parms)?'':'&') + s[1]);
+	}
+	return loc;
+}
+var _zenEmbeddedPage = false;
+var zenDecimalSeparator = '.';
+var zenNumericGroupSeparator = ',';
+var zenNumericGroupSize = 3;
+var _zenResource = new Object();
+_zenResource['zenDayNames'] = 'Sunday,Monday,Tuesday,Wednesday,Thursday,Friday,Saturday';
+_zenResource['zenDayShortNames'] = 'S,M,T,W,T,F,S';
+_zenResource['zenMonthNames'] = 'January,February,March,April,May,June,July,August,September,October,November,December';
+_zenResource['zenMonthShortNames'] = 'Jan,Feb,Mar,Apr,May,Jun,Jul,Aug,Sep,Oct,Nov,Dec';
+var _zenTEXT = new Object();
+var _zenDOMAIN = '%Ensemble';
+
+self._zenClassIdx['AgentConfig'] = 'SessionAgent_UI_AgentConfig';
+self.SessionAgent_UI_AgentConfig = function(index,id) {
+	if (index>=0) {SessionAgent_UI_AgentConfig__init(this,index,id);}
+}
+
+self.SessionAgent_UI_AgentConfig__init = function(o,index,id) {
+	('undefined' == typeof _ZEN_Component_page__init) ?zenMaster._ZEN_Component_page__init(o,index,id):_ZEN_Component_page__init(o,index,id);
+	o.useSoftModals = true;
+}
+function SessionAgent_UI_AgentConfig_serialize(set,s)
+{
+	var o = this;s[0]='4277539460';s[1]=o.index;s[2]=o.id;s[3]=o.name;s[4]=set.addObject(o.parent,'parent');s[5]=set.addObject(o.composite,'composite');s[6]=o.SVGClassList;s[7]=o.UserSVGPackageList;s[8]=o.align;s[9]=o.aux;s[10]=o.backgroundTimerInterval;s[11]=o.cellAlign;s[12]=o.cellSize;s[13]=o.cellStyle;s[14]=o.cellVAlign;s[15]=set.serializeList(o,o.children,true,'children');s[16]=o.containerStyle;s[17]=o.cssLevel;s[18]=(o.designMode?1:0);s[19]=(o.disabled?1:0);s[20]=(o.dragAndDrop?1:0);s[21]=(o.dragEnabled?1:0);s[22]=(o.dropEnabled?1:0);s[23]=(o.dynamic?1:0);s[24]=o.enclosingClass;s[25]=o.enclosingStyle;s[26]=o.error;s[27]=o.groupClass;s[28]=o.groupStyle;s[29]=o.height;s[30]=(o.hidden?1:0);s[31]=o.hint;s[32]=o.hintClass;s[33]=o.hintStyle;s[34]=(o.inlineSVG?1:0);s[35]=(o.isPopup?1:0);s[36]=(o.isSoftModal?1:0);s[37]=o.label;s[38]=o.labelClass;s[39]=o.labelDisabledClass;s[40]=o.labelPosition;s[41]=o.labelStyle;s[42]=o.lastModalIndex;s[43]=o.layout;s[44]=o.nextIndex;s[45]=o.onafterdrag;s[46]=o.onbeforedrag;s[47]=o.onclick;s[48]=o.ondrag;s[49]=o.ondrop;s[50]=o.onhide;s[51]=o.onoverlay;s[52]=o.onrefresh;s[53]=o.onshow;s[54]=o.onupdate;s[55]=o.overlayMode;s[56]=o.popupParent;s[57]=o.renderFlag;s[58]=(o.showLabel?1:0);s[59]=o.slice;s[60]=o.title;s[61]=o.tuple;s[62]=(o.useSVG?1:0);s[63]=(o.useSoftModals?1:0);s[64]=o.valign;s[65]=(o.visible?1:0);s[66]=o.width;s[67]=(o.zenPersistentPopup?1:0);
+}
+function SessionAgent_UI_AgentConfig_getSettings(s)
+{
+	s['name'] = 'string';
+	this.invokeSuper('getSettings',arguments);
+}
+
+self.SessionAgent_UI_AgentConfig_cancelEdit = function() {
+    zenPage.loadAgent();
+}
+
+self.SessionAgent_UI_AgentConfig_credTypeChanged = function() {
+    var credType = zen('credTypeRadio').getValue();
+    if (credType === 'creds') {
+        zen('envVarText').setHidden(true);
+        zen('credCombo').setHidden(false);
+    } else {
+        zen('envVarText').setHidden(false);
+        zen('credCombo').setHidden(true);
+    }
+}
+
+self.SessionAgent_UI_AgentConfig_loadAgent = function() {
+    var agentName = zen('agentSelect').getValue();
+    var json = zenPage.LoadAgentConfig(agentName);
+    var data;
+    try {
+        data = JSON.parse(json);
+    } catch (e) {
+        data = { error: 'parse failure' };
+    }
+    if (data.error) {
+        // Surface the error in the saveStatus label so the operator
+        // sees something useful. The form fields stay at their last
+        // values (or empty on initial load).
+        zen('saveStatus').setValue('Load failed: ' + data.error);
+        return;
+    }
+
+    // Populate fields. setValue() updates both the underlying value and
+    // the rendered control. Coerce undefined/null to empty string so
+    // we never feed "undefined" into a text input.
+    zen('providerSelect').setValue(data.Provider || 'openai');
+    zen('modelCombo').setValue(data.Model || '');
+    zen('endpointUrlText').setValue(data.EndpointUrl || '');
+    zen('envVarText').setValue(data.EnvVarName || '');
+    zen('credCombo').setValue(data.CredentialName || '');
+    zen('maxTokensText').setValue(data.MaxTokens || 4000);
+    zen('temperatureText').setValue(data.Temperature || 0.1);
+    zen('systemPromptText').setValue(data.SystemPromptOverride || '');
+    zen('enabledCheck').setValue(data.Enabled ? 1 : 0);
+
+    // Decide credTypeRadio state from which field has a non-empty
+    // value. If both are empty, default to 'env' (the OD4 default
+    // shape). If both are populated (rare — operator-side edit), prefer
+    // 'creds' since CredentialName is the more sophisticated path.
+    var hasCred = (data.CredentialName && data.CredentialName !== '');
+    if (hasCred) {
+        zen('credTypeRadio').setValue('creds');
+    } else {
+        zen('credTypeRadio').setValue('env');
+    }
+
+    // Fire the change handlers so visibility + suggestions reflect
+    // the loaded state.
+    zenPage.providerChanged();
+    zenPage.credTypeChanged();
+    zenPage.spoChanged();
+
+    // Clear any stale save-status message from a prior interaction.
+    zen('saveStatus').setValue('');
+}
+
+self.SessionAgent_UI_AgentConfig_onloadHandler = function() {
+    zenPage.loadAgent();
+}
+
+self.SessionAgent_UI_AgentConfig_providerChanged = function() {
+    var provider = zen('providerSelect').getValue();
+    var modelCombo = zen('modelCombo');
+    var suggestions;
+
+    switch (provider) {
+        case 'openai':
+            suggestions = 'gpt-4.1-mini,gpt-4.1-nano,gpt-5-mini';
+            break;
+        case 'anthropic':
+            suggestions = 'claude-sonnet-4-5,claude-opus-4-7';
+            break;
+        case 'gemini':
+            suggestions = 'gemini-2.5-pro,gemini-3-pro';
+            break;
+        case 'openai-compatible':
+            suggestions = 'qwen2.5:32b,llama3.3:70b';
+            break;
+        default:
+            suggestions = '';
+    }
+
+    // Update the combobox suggestions. Zen combobox lookups via
+    // valueList / displayList — same string for an identifier-only
+    // combobox.
+    modelCombo.valueList = suggestions;
+    modelCombo.displayList = suggestions;
+    // Force the dropdown options to re-render. Zen recomputes the
+    // <option> children when refreshContents is called on the
+    // enclosing component.
+    if (typeof modelCombo.refreshContents === 'function') {
+        modelCombo.refreshContents();
+    }
+
+    // Endpoint-URL visibility — visible iff provider === openai-compatible.
+    zen('endpointUrlText').setHidden(provider !== 'openai-compatible');
+}
+
+self.SessionAgent_UI_AgentConfig_saveConfig = function() {
+    var status = zen('saveStatus');
+    if (status) {
+        status.setValue('Save handler ships in Story 6.2 — your changes are not yet persisted.');
+        status.setProperty('controlClass', 'saveStatusInfo');
+        if (typeof status.refreshContents === 'function') {
+            status.refreshContents();
+        }
+    }
+}
+
+self.SessionAgent_UI_AgentConfig_spoChanged = function() {
+    var text = zen('systemPromptText').getValue() || '';
+    var len = text.length;
+    var counter = zen('spoCharCounter');
+    if (!counter) return;
+
+    var label;
+    var cssClass;
+    if (len > 8192) {
+        label = len + ' / 8192 characters — exceeds cap; will truncate on save';
+        cssClass = 'spoCounterDanger';
+    } else if (len === 8192) {
+        label = '8192 / 8192 characters — at cap (may have been silently truncated previously)';
+        cssClass = 'spoCounterDanger';
+    } else if (len > 7500) {
+        label = len + ' / 8192 characters — approaching cap';
+        cssClass = 'spoCounterWarn';
+    } else {
+        label = len + ' / 8192 characters';
+        cssClass = 'spoCounterNormal';
+    }
+
+    counter.setValue(label);
+    // Apply the CSS class to the rendered control. Zen labels expose a
+    // controlClass attribute which becomes the rendered span's class.
+    counter.setProperty('controlClass', cssClass);
+    if (typeof counter.refreshContents === 'function') {
+        counter.refreshContents();
+    }
+}
+
+self.SessionAgent_UI_AgentConfig_JavaInstalled = function() {
+	return zenClassMethod(this,'JavaInstalled','','BOOLEAN',arguments);
+}
+
+self.SessionAgent_UI_AgentConfig_LoadAgentConfig = function(pAgentName) {
+	return zenClassMethod(this,'LoadAgentConfig','L','VARCHAR',arguments);
+}
+
+self.SessionAgent_UI_AgentConfig_LoadZenComponent = function(pNamespace,pName,pClassName,pCSSLevel) {
+	return zenClassMethod(this,'LoadZenComponent','L,L,L,L','BOOLEAN',arguments);
+}
+
+self.SessionAgent_UI_AgentConfig_MonitorBackgroundTask = function(pTaskID) {
+	zenClassMethod(this,'MonitorBackgroundTask','L','',arguments);
+}
+
+self.SessionAgent_UI_AgentConfig_ReallyRefreshContents = function() {
+	zenInstanceMethod(this,'ReallyRefreshContents','','',arguments);
+}
+self.SessionAgent_UI_AgentConfig__Loader = function() {
+	zenLoadClass('_ZEN_Component_page');
+	SessionAgent_UI_AgentConfig.prototype = zenCreate('_ZEN_Component_page',-1);
+	var p = SessionAgent_UI_AgentConfig.prototype;
+	if (null==p) {return;}
+	p.constructor = SessionAgent_UI_AgentConfig;
+	p.superClass = ('undefined' == typeof _ZEN_Component_page) ? zenMaster._ZEN_Component_page.prototype:_ZEN_Component_page.prototype;
+	p.__ZENcomponent = true;
+	p._serverClass = 'SessionAgent.UI.AgentConfig';
+	p._type = 'AgentConfig';
+	p.serialize = SessionAgent_UI_AgentConfig_serialize;
+	p.getSettings = SessionAgent_UI_AgentConfig_getSettings;
+	p.JavaInstalled = SessionAgent_UI_AgentConfig_JavaInstalled;
+	p.LoadAgentConfig = SessionAgent_UI_AgentConfig_LoadAgentConfig;
+	p.LoadZenComponent = SessionAgent_UI_AgentConfig_LoadZenComponent;
+	p.MonitorBackgroundTask = SessionAgent_UI_AgentConfig_MonitorBackgroundTask;
+	p.ReallyRefreshContents = SessionAgent_UI_AgentConfig_ReallyRefreshContents;
+	p.cancelEdit = SessionAgent_UI_AgentConfig_cancelEdit;
+	p.credTypeChanged = SessionAgent_UI_AgentConfig_credTypeChanged;
+	p.loadAgent = SessionAgent_UI_AgentConfig_loadAgent;
+	p.onloadHandler = SessionAgent_UI_AgentConfig_onloadHandler;
+	p.providerChanged = SessionAgent_UI_AgentConfig_providerChanged;
+	p.saveConfig = SessionAgent_UI_AgentConfig_saveConfig;
+	p.spoChanged = SessionAgent_UI_AgentConfig_spoChanged;
+}
+// ================================================================================
+function zenCreatePageModel() {
+try {
+var o = null;
+zenCreate('SessionAgent_UI_AgentConfig',1,'');
+zenCreate('_ZEN_Component_vgroup',2,'');
+zenCreate('_ZEN_Component_select',3,'agentSelect');
+zenCreate('_ZEN_Component_select',4,'providerSelect');
+zenCreate('_ZEN_Component_combobox',5,'modelCombo');
+zenCreate('_ZEN_Component_text',6,'endpointUrlText');
+zenCreate('_ZEN_Component_radioSet',7,'credTypeRadio');
+zenCreate('_ZEN_Component_text',8,'envVarText');
+zenCreate('_ZEN_Component_combobox',9,'credCombo');
+zenCreate('_ZEN_Component_text',10,'maxTokensText');
+zenCreate('_ZEN_Component_text',11,'temperatureText');
+zenCreate('_ZEN_Component_textarea',12,'systemPromptText');
+zenCreate('_ZEN_Component_label',13,'spoCharCounter');
+zenCreate('_ZEN_Component_checkbox',14,'enabledCheck');
+zenCreate('_ZEN_Component_label',15,'saveStatus');
+zenCreate('_ZEN_Component_hgroup',16,'');
+zenCreate('_ZEN_Component_button',17,'saveButton');
+zenCreate('_ZEN_Component_spacer',18,'');
+zenCreate('_ZEN_Component_button',19,'cancelButton');
+
+o = _zenIndex[1];
+o.SVGClassList = 'SessionAgent.UI.AgentConfig';
+o.children[0] = _zenIndex[2];
+o.isPopup = false;
+o.layout = 'Y5pbsusVKSoZQsF5a3ygOA';
+o.nextIndex = 19;
+o.title = 'Agent Configuration';
+
+o = _zenIndex[2];
+o.cellStyle = 'padding:6px;';
+o.children[0] = _zenIndex[3];
+o.children[1] = _zenIndex[4];
+o.children[2] = _zenIndex[5];
+o.children[3] = _zenIndex[6];
+o.children[4] = _zenIndex[7];
+o.children[5] = _zenIndex[8];
+o.children[6] = _zenIndex[9];
+o.children[7] = _zenIndex[10];
+o.children[8] = _zenIndex[11];
+o.children[9] = _zenIndex[12];
+o.children[10] = _zenIndex[13];
+o.children[11] = _zenIndex[14];
+o.children[12] = _zenIndex[15];
+o.children[13] = _zenIndex[16];
+o.layout = 'Y5pbsusVKSoZQsF5a3ygOA';
+o.parent = _zenIndex[1];
+
+o = _zenIndex[3];
+o.displayList = 'Session Inspection,Message Search';
+o.id = 'agentSelect';
+o.label = 'Agent';
+o.onchange = 'zenPage.loadAgent();';
+o.parent = _zenIndex[2];
+o.sql = '48DJpeIqw72cN5As$JzG$w';
+o.value = 'session-inspection';
+o.valueList = 'session-inspection,message-search';
+
+o = _zenIndex[4];
+o.displayList = 'OpenAI,Anthropic,Google Gemini,OpenAI-Compatible (Ollama\/vLLM)';
+o.id = 'providerSelect';
+o.label = 'Provider';
+o.onchange = 'zenPage.providerChanged();';
+o.parent = _zenIndex[2];
+o.sql = '48DJpeIqw72cN5As$JzG$w';
+o.valueList = 'openai,anthropic,gemini,openai-compatible';
+
+o = _zenIndex[5];
+o.editable = true;
+o.id = 'modelCombo';
+o.label = 'Model';
+o.parent = _zenIndex[2];
+
+o = _zenIndex[6];
+o.hidden = true;
+o.id = 'endpointUrlText';
+o.label = 'Endpoint URL (OpenAI-Compatible only)';
+o.parent = _zenIndex[2];
+o.size = 60;
+
+o = _zenIndex[7];
+o.displayList = 'Environment Variable,Ens.Config.Credentials';
+o.id = 'credTypeRadio';
+o.label = 'Credential Source';
+o.onchange = 'zenPage.credTypeChanged();';
+o.optionCount = 2;
+o.parent = _zenIndex[2];
+o.sql = '48DJpeIqw72cN5As$JzG$w';
+o.value = 'env';
+o.valueList = 'env,creds';
+
+o = _zenIndex[8];
+o.id = 'envVarText';
+o.label = 'Environment Variable Name';
+o.parent = _zenIndex[2];
+o.size = 40;
+
+o = _zenIndex[9];
+o.displayList = 'SessionAgentAnthropic,SessionAgentGemini,SessionAgentLiveProbeOpenAI,SessionAgentOpenAI';
+o.editable = true;
+o.hidden = true;
+o.id = 'credCombo';
+o.label = 'Ens.Config.Credentials Entry';
+o.parent = _zenIndex[2];
+o.valueList = 'SessionAgentAnthropic,SessionAgentGemini,SessionAgentLiveProbeOpenAI,SessionAgentOpenAI';
+
+o = _zenIndex[10];
+o.id = 'maxTokensText';
+o.label = 'Max Tokens';
+o.parent = _zenIndex[2];
+o.size = 8;
+
+o = _zenIndex[11];
+o.id = 'temperatureText';
+o.label = 'Temperature';
+o.parent = _zenIndex[2];
+o.size = 8;
+
+o = _zenIndex[12];
+o.cols = 80;
+o.id = 'systemPromptText';
+o.label = 'System Prompt Override (optional)';
+o.onchange = 'zenPage.spoChanged();';
+o.onkeyup = 'zenPage.spoChanged();';
+o.parent = _zenIndex[2];
+o.rows = 6;
+
+o = _zenIndex[13];
+o.id = 'spoCharCounter';
+o.parent = _zenIndex[2];
+o.value = '0 \/ 8192 characters';
+
+o = _zenIndex[14];
+o.caption = 'Enable this agent';
+o.id = 'enabledCheck';
+o.parent = _zenIndex[2];
+
+o = _zenIndex[15];
+o.id = 'saveStatus';
+o.parent = _zenIndex[2];
+
+o = _zenIndex[16];
+o.children[0] = _zenIndex[17];
+o.children[1] = _zenIndex[18];
+o.children[2] = _zenIndex[19];
+o.layout = 'mUYbDTBwd4dwBALCDMiA9Q';
+o.parent = _zenIndex[2];
+
+o = _zenIndex[17];
+o.caption = 'Save';
+o.id = 'saveButton';
+o.onclick = 'zenPage.saveConfig();';
+o.parent = _zenIndex[16];
+
+o = _zenIndex[18];
+o.parent = _zenIndex[16];
+o.width = '6';
+
+o = _zenIndex[19];
+o.caption = 'Cancel';
+o.id = 'cancelButton';
+o.onclick = 'zenPage.cancelEdit();';
+o.parent = _zenIndex[16];
+zenPage = _zenIndex[1];
+}
+catch(ex) {
+ zenExceptionHandler(ex,arguments,'Error building ZEN Page Model.');
+}
+}
+
+window.onload = function() {
+	if (null == self.zenASSERT) { alert('ZEN ERROR:\nRequired include file, zenutils.js, not found.'); window.stop(); return; }
+	if (14 != self.zenUtilsVersion) { alert('ZEN ERROR:\nzenutils.js has the wrong version number.\nPage version:14\nzenutils.js: ' + (self.zenUtilsVersion ? self.zenUtilsVersion : '')); window.stop(); return; }
+	if (14 != self.js_zen_core) { alert('ZEN ERROR:\nInclude file is missing or has the wrong version number:\nPage version:14\nZEN_Component__core.js: ' + (self.js_zen_core ? self.js_zen_core : '')); window.stop(); return ; }
+ 
+	zenPageEventHandler('onload'); }
+window.onbeforeunload = function() { return zenPageEventHandler('onunload'); }
+window.onresize = function() { zenPageEventHandler('onresize'); }
+window.onkeydown = function(event) { return zenPageEventHandler('onkeydown',event); }
+window.onkeyup = function(event) { return zenPageEventHandler('onkeyup',event); }
+	
+//]]>
+</script>
+</body>
+</html>
+<!-- .00444 -->

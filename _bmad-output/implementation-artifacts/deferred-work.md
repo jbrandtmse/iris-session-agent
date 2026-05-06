@@ -903,3 +903,22 @@ This file accumulates findings, follow-ups, and architect-decision items that ar
   - **Recommendation:** Pick up in Epic 5 retro doc-cleanup pass; rewrite as "all four providers (OpenAI / Anthropic / Gemini / OpenAI-Compat)".
   - **Owner:** Epic 5 retro.
   - **Blocking?** Not blocking.
+
+---
+
+## Deferred from: code review of story-6-1-agentconfig-zen-form-layout (2026-05-06)
+
+- **`AgentConfigTest.TestLoadAgentConfigReturnsSeededRow` softened `Enabled=0` assertion to boolean-shape check — operator-state-tolerant but loses seed-default coverage.**
+  - **Source:** Story 6.1 code review LOW-1.
+  - **Severity:** LOW (no predicted-bug shape; documented design choice).
+  - **The observation:** The dev softened `$$$AssertEquals(Enabled, 0)` to `AssertTrue((Enabled=0) || (Enabled=1))` because the live `Config.Agent` row for `session-inspection` had `Enabled=1` (operator-modified state from prior Epic 4/5 manual testing). The softening is justified per Rule 9 (test must not break on operator state drift), but it loses coverage of the genuine seed-default invariant.
+  - **Recommendation:** A future test-hardening pass (sibling Story 6.x or an Epic 6 retro action item) should add a `TestLoadAgentConfigSeedDefaultEnabled` that resets state via `%DeleteId` + reseed in `OnBeforeOneTest` and asserts the genuine seed-default value. The seed-default invariant is owned by `ConfigAgentTest.cls` (the persistence-layer test class), not by the UI helper test, so the softening here is acceptable for Story 6.1's scope.
+  - **Owner:** Epic 6 lead — pick up during retro health-check pass or sibling test-hardening story.
+  - **Blocking?** Not blocking. Story 6.1 ships as-is.
+
+- **Story 6.1 Completion Notes regression-sweep count was understated by 30 (claimed 239/239, ground truth was 269/269 from SQL probe).**
+  - **Source:** Story 6.1 code review MEDIUM-1.
+  - **Severity:** MEDIUM at find-time (Rule 5.0 AC-1 violation: SQL-probe-as-ground-truth); resolved in this commit by reviewer-annotated correction in Completion Notes.
+  - **Recommendation:** Lead must apply Rule 5.0 AC-1's SQL-probe-as-ground-truth invariant on every empirical-battery claim — drive the "N/N pass" line from the SQL probe against `%UnitTest_Result.TestMethod`, NOT from the `iris_execute_tests` JSON envelope (which silently truncates per Rule 6 step 3). The package-runner truncation behavior was directly observed in this story (package-level invocation returned only 11 of the 270 test methods). Codify this as a sprint-planning checklist item: "Did the empirical battery claim cite a SQL probe?" If no, reject the claim. Already covered by Rule 5.0 AC-1 — this entry is informational so future cycles see this is a recurring failure mode.
+  - **Owner:** Epic 6 lead — process-level, not code-level.
+  - **Blocking?** Not blocking — substantive "all pass" claim was correct in shape; only the count was wrong.

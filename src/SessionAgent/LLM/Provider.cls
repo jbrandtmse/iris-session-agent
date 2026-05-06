@@ -194,12 +194,23 @@ Method Invoke(pCanonicalHistory As %DynamicArray, pToolDefs As %DynamicArray, pS
 
     Try {
         ; Step 2 — resolve API key via the EnvSecret three-rung ladder.
-        Set tApiKey = ##class(SessionAgent.Util.EnvSecret).Resolve(
-            pConfigAgent.EnvVarName,
-            pConfigAgent.CredentialName)
+        ; Story 4.0 codification: $Char(0) is IRIS's legacy %String null
+        ; sentinel — operators clearing these via SQL UPDATE see the column
+        ; come back as $Char(0) instead of "". Treat both as empty so the
+        ; intentional-no-auth path (openai-compatible / Ollama) bypasses the
+        ; fast-path credential gate. Bug-1 surfaced 2026-05-06.
+        Set tEnvVarName = pConfigAgent.EnvVarName
+        Set tCredName = pConfigAgent.CredentialName
+        If tEnvVarName = $Char(0) Set tEnvVarName = ""
+        If tCredName = $Char(0) Set tCredName = ""
+        Set tApiKey = ##class(SessionAgent.Util.EnvSecret).Resolve(tEnvVarName, tCredName)
 
-        ; Step 3 — credential-missing structured-error envelope.
-        If tApiKey = "" {
+        ; Step 3 — credential-missing structured-error envelope. Bypass for
+        ; the intentional-no-auth case (both EnvVarName AND CredentialName
+        ; empty — typically Ollama/openai-compatible). Concrete decides
+        ; whether empty-key is acceptable; canonical providers will raise
+        ; a structured error inside their CallMessages.
+        If (tApiKey = "") && ((tEnvVarName '= "") || (tCredName '= "")) {
             Do ..PopulateCredentialError(pProviderResponse, pConfigAgent.AgentName)
             Set tLatency = ..ComputeLatencyMs(tStart)
             ; Audit-emit at boundary; IsError=1.

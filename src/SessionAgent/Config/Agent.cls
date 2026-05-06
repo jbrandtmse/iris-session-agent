@@ -91,8 +91,19 @@ Property EnvVarName As %String;
 /// <p>For <code>openai-compatible</code> providers (Ollama, vLLM,
 /// Together, Anyscale, etc.), the base URL where the agent posts
 /// completion requests. Empty for OpenAI / Anthropic / Gemini whose
-/// concrete adapter knows the canonical endpoint.</p>
-Property EndpointUrl As %String;
+/// concrete adapter knows the canonical endpoint, OR a per-agent
+/// override of the canonical endpoint for any provider.</p>
+///
+/// <p><b>MAXLEN=512</b> (raised from the IRIS-default 50 during the
+/// Epic 5 user-led manual-test pass, 2026-05-06). The default-50 was
+/// caught by Bug-2: the Gemini canonical endpoint URL
+/// <code>https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent</code>
+/// is 81 characters — the operator could not store this URL via SQL UPDATE
+/// or the future Story 6.1 Zen form because validation rejected with
+/// SQLCODE -105. 512 covers any practical URL including query strings,
+/// non-default ports (Ollama's <code>:11434</code>, vLLM behind reverse
+/// proxy on <code>:8443</code>), and longer hosted-endpoint paths.</p>
+Property EndpointUrl As %String(MAXLEN = 512);
 
 /// <p><b>L4 read-only invariant flag</b> (PRD NFR-S1, FR50). The tools
 /// side checks this before any tool dispatch — when <code>1</code> (the

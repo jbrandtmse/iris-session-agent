@@ -154,9 +154,14 @@ Property ApiKey As %String [ Internal ];
 /// empty return and surfaces the structured error.</p>
 Method GetEndpointUrl() As %String
 {
-    If $IsObject(..ConfigAgent), ..ConfigAgent.EndpointUrl '= "" {
-        Quit ..ConfigAgent.EndpointUrl
-    }
+    ; Story 4.0 codification: $Char(0) is IRIS's legacy %String null sentinel
+    ; for columns whose value was set to "" via SQL UPDATE; treat it as the
+    ; empty string so the no-default-endpoint structured error fires correctly.
+    ; Bug-1 surfaced 2026-05-06.
+    Set tStored = ""
+    If $IsObject(..ConfigAgent) Set tStored = ..ConfigAgent.EndpointUrl
+    If tStored = $Char(0) Set tStored = ""
+    If tStored '= "" Quit tStored
     Quit ""
 }
 
@@ -278,6 +283,12 @@ Method CallMessages(pCanonicalHistory As %DynamicArray, pToolDefs As %DynamicArr
             Set tEnvVar = ..ConfigAgent.EnvVarName
             Set tCredName = ..ConfigAgent.CredentialName
         }
+        ; Story 4.0 codification: $Char(0) is IRIS's legacy %String null
+        ; sentinel — operators clearing these via SQL UPDATE see the column
+        ; come back as $Char(0) instead of "". Treat both as empty so the
+        ; intentional-no-auth path (Ollama) engages. Bug-1 surfaced 2026-05-06.
+        If tEnvVar = $Char(0) Set tEnvVar = ""
+        If tCredName = $Char(0) Set tCredName = ""
         Set ..ApiKey = ##class(SessionAgent.Util.EnvSecret).Resolve(tEnvVar, tCredName)
 
         ; If CredentialName was non-empty BUT resolution returned empty,

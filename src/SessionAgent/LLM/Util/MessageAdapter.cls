@@ -636,6 +636,21 @@ ClassMethod GeminiToCanonical(pRaw As %DynamicObject) As %DynamicObject [ Intern
         }
     }
 
+    ; Content-aware stopReason override. Gemini's generateContent returns
+    ; finishReason="STOP" on turns whose parts include a functionCall block —
+    ; the API does not distinguish "STOP without tool" from "STOP with tool".
+    ; A naive STOP→end_turn mapping makes the AgentLoop skip tool dispatch on
+    ; the very turn where Gemini asked a tool to be invoked, leaving the chat
+    ; panel showing only an undispatched tool_use block (rendered as empty
+    ; agent text). When at least one tool_use block was emitted (tCallSeq>0),
+    ; override stopReason to "tool_use" so the AgentLoop recognises the
+    ; dispatch contract regardless of finishReason. Bug-4 surfaced 2026-05-06
+    ; during Epic 5 manual-test pass — predicted by Story 5.4 reviewer's
+    ; deferred MEDIUM finding (content-blind stopReason mapping).
+    If tCallSeq > 0 {
+        Set tStopReason = "tool_use"
+    }
+
     Do tOut.%Set("content", tContent)
     Do tOut.%Set("stopReason", tStopReason)
 

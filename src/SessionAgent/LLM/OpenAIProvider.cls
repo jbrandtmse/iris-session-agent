@@ -133,9 +133,13 @@ Property ApiKey As %String [ Internal ];
 /// <method>CallMessages</method> before any URL lookup is needed.</p>
 Method GetEndpointUrl() As %String
 {
-    If $IsObject(..ConfigAgent), ..ConfigAgent.EndpointUrl '= "" {
-        Quit ..ConfigAgent.EndpointUrl
-    }
+    ; Story 4.0 codification: $Char(0) is IRIS's legacy %String null sentinel
+    ; for columns whose value was set to "" via SQL UPDATE; treat it as the
+    ; empty string so the canonical fallback engages. Bug-1 surfaced 2026-05-06.
+    Set tStored = ""
+    If $IsObject(..ConfigAgent) Set tStored = ..ConfigAgent.EndpointUrl
+    If tStored = $Char(0) Set tStored = ""
+    If tStored '= "" Quit tStored
     Quit ..#DEFAULTENDPOINTURL
 }
 

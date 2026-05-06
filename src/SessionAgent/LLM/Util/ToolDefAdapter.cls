@@ -111,6 +111,19 @@ ClassMethod CanonicalToOpenAi(pCanonical As %DynamicArray) As %DynamicArray [ In
 /// fold into ONE <code>functionDeclarations</code> array inside ONE
 /// <code>tools</code>-array element. The result is therefore a one-element
 /// array even when the input has many tools.</p>
+///
+/// <p><b>Schema-field whitelist.</b> Gemini's <code>function_declarations[].parameters</code>
+/// is a Schema proto, NOT JSON Schema — only a subset of fields is accepted.
+/// The canonical tool input_schemas declare <code>additionalProperties: false</code>
+/// (per Story 4.0 codification of locked-subset schemas) which Gemini's API
+/// rejects with HTTP 400 <i>"Unknown name 'additionalProperties' at parameters"</i>.
+/// <method>ToGeminiSchema</method> below performs a recursive whitelist clone
+/// keeping only Gemini-supported fields (<code>type, format, description,
+/// nullable, enum, maxItems, minItems, properties, required, items</code>).
+/// Bug surfaced 2026-05-06 during Epic 5 user-led manual-test pass —
+/// Story 5.2 mock + live tests didn't catch this because the live test
+/// fixture used a smaller / hand-built tool array, NOT the runtime 13-tool
+/// registry from <class>SessionAgent.Tool.Registry</class>.</p>
 ClassMethod CanonicalToGemini(pCanonical As %DynamicArray) As %DynamicArray [ Internal ]
 {
     Set tDecls = ##class(%DynamicArray).%New()
@@ -125,7 +138,10 @@ ClassMethod CanonicalToGemini(pCanonical As %DynamicArray) As %DynamicArray [ In
             Do tDecl.%Set("description", tTool.%Get("description"))
         }
         If tTool.%IsDefined("input_schema") {
-            Do tDecl.%Set("parameters", tTool.%Get("input_schema"))
+            Set tInputSchema = tTool.%Get("input_schema")
+            If $IsObject(tInputSchema) {
+                Do tDecl.%Set("parameters", ..ToGeminiSchema(tInputSchema))
+            }
         }
         Do tDecls.%Push(tDecl)
     }
@@ -135,6 +151,39 @@ ClassMethod CanonicalToGemini(pCanonical As %DynamicArray) As %DynamicArray [ In
 
     Set tOut = ##class(%DynamicArray).%New()
     Do tOut.%Push(tWrap)
+    Quit tOut
+}
+
+/// <p>Recursive whitelist clone of a JSON-Schema fragment, keeping only
+/// fields that Gemini's <code>function_declarations[].parameters</code>
+/// Schema proto accepts. See <method>CanonicalToGemini</method> for the
+/// originating bug context.</p>
+ClassMethod ToGeminiSchema(pSchema As %DynamicObject) As %DynamicObject [ Internal ]
+{
+    Set tOut = ##class(%DynamicObject).%New()
+    Set tAllowed = ",type,format,description,nullable,enum,maxItems,minItems,properties,required,items,"
+    Set tIter = pSchema.%GetIterator()
+    While tIter.%GetNext(.tKey, .tVal) {
+        Continue:tAllowed'[(","_tKey_",")
+        If (tKey = "properties") && $IsObject(tVal) {
+            ; Recurse into each property's sub-schema.
+            Set tProps = ##class(%DynamicObject).%New()
+            Set tPIter = tVal.%GetIterator()
+            While tPIter.%GetNext(.tPK, .tPV) {
+                If $IsObject(tPV) {
+                    Do tProps.%Set(tPK, ..ToGeminiSchema(tPV))
+                } Else {
+                    Do tProps.%Set(tPK, tPV)
+                }
+            }
+            Do tOut.%Set(tKey, tProps)
+        } ElseIf (tKey = "items") && $IsObject(tVal) {
+            ; items can be a sub-schema (array element schema) — recurse.
+            Do tOut.%Set(tKey, ..ToGeminiSchema(tVal))
+        } Else {
+            Do tOut.%Set(tKey, tVal)
+        }
+    }
     Quit tOut
 }
 

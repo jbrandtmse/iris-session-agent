@@ -522,9 +522,14 @@ ClassMethod InstantiateProvider(pConfig As SessionAgent.Config.Agent) As Session
         ; Story 5.1 — Anthropic Messages API (canonical-passthrough per FR27).
         Set tProvider = ##class(SessionAgent.LLM.AnthropicProvider).%New()
     }
-    ; Stories 5.2 / 5.3 will extend this switch with gemini /
-    ; openai-compatible. Unknown values fall through to NULLOREF so
-    ; RunTurn surfaces the "Unsupported provider" envelope.
+    ElseIf pConfig.Provider = "gemini" {
+        ; Story 5.2 — Google Gemini generateContent API (canonical
+        ; translation via MessageAdapter + ToolDefAdapter per FR27).
+        Set tProvider = ##class(SessionAgent.LLM.GeminiProvider).%New()
+    }
+    ; Story 5.3 will extend this switch with openai-compatible. Unknown
+    ; values fall through to NULLOREF so RunTurn surfaces the
+    ; "Unsupported provider" envelope.
     Quit tProvider
 }
 

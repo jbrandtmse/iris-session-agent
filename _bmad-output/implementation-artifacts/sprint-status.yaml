@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-05-02
-last_updated: 2026-05-06 (Story 5.1 done — AnthropicProvider live verified, cache_read 7202 tokens; review clean 0 HIGH/MEDIUM, 3 LOW deferrals)
+last_updated: 2026-05-06 (Story 5.2 done — GeminiProvider live verified gemini-2.5-flash; review clean 0 HIGH/MEDIUM, 1 LOW deferred to Story 5.3)
 project: iris-session-agent
 # Epic 1 complete (retro 2026-05-02); Epic 2 retrospective triage gate (Story 2.0) 2026-05-03
 project_key: NOKEY
@@ -96,7 +96,7 @@ development_status:
   epic-5: in-progress
   5-0-epic-4-deferred-cleanup: done
   5-1-llm-anthropicprovider-concrete: done
-  5-2-llm-geminiprovider-concrete: backlog
+  5-2-llm-geminiprovider-concrete: done
   5-3-llm-openaicompatprovider-concrete: backlog
   5-4-tool-call-roundtrip-integration-test-infrastructure: backlog
   epic-5-retrospective: optional

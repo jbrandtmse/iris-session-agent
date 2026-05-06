@@ -813,3 +813,16 @@ This file accumulates findings, follow-ups, and architect-decision items that ar
   - **Recommendation:** Story 5.3 (OpenAI-compatible provider) should generalize the URL parser into a shared utility and split `host:port` into separate `Server` and `Port` fields. Apply the fix to all four concrete providers in the same commit.
   - **Owner:** Story 5.3 (OpenAICompatProvider concrete) — natural carrier since it owns the operator-override URL surface most directly.
   - **Blocking?** Not blocking.
+
+---
+
+## Deferred from: code review of story-5-2-llm-geminiprovider-concrete (2026-05-06)
+
+- **Story 5.1 (`AnthropicProvider`) lacks a standing `*Live.cls` smoke test class — pattern divergence from Story 5.2's `GeminiProviderLive.cls`.**
+  - **Source:** Story 5.2 code review (lead flagged item #4).
+  - **Severity:** LOW (operator-observable as inconsistency only at epic-end battery time; both providers were live-verified during their respective stories — Story 5.1 via a transient helper that was deleted, Story 5.2 via the standing `GeminiProviderLive.cls`).
+  - **The observation:** Story 5.2 commits `src/SessionAgent/Test/GeminiProviderLive.cls` as a standing class supporting the epic-end empirical battery (Rule 6 step 4 / Rule 11) — gracefully skips on missing credential, follows `*Live.cls` naming, NOT a `%UnitTest.TestCase` subclass so doesn't run in CI by default, exposes a single `Invoke()` classmethod the lead can call manually for re-verification. Story 5.1 used a transient helper class that the dev deleted post-investigation, so the Anthropic provider has no standing live-test surface. At Epic 5 retro time, the lead will re-run the empirical battery against the four shipped providers; if `AnthropicProviderLive.cls` doesn't exist, the lead will have to re-author it ad-hoc, defeating the standing-class rationale.
+  - **Why deferred:** Predicted-bug shape per Rule 8 — Epic 5 retro empirical battery will be inconsistent across providers, increasing re-author cost. Genuine future-epic scope per Rule 8 test 1: the natural carrier is Story 5.3 (`OpenAICompatProvider`) where the dev will already be authoring `OpenAICompatProviderLive.cls` per the same Rule 11 pattern; adding `AnthropicProviderLive.cls` retroactively in the same commit is cheap (mirror `GeminiProviderLive.cls`, swap to Anthropic credential + Anthropic endpoint).
+  - **Recommendation:** In Story 5.3's spec, add a Task line: "Author `OpenAICompatProviderLive.cls` AND retroactively add `AnthropicProviderLive.cls` (mirror `GeminiProviderLive.cls`) so all four cloud providers have standing Rule 11 live-test surfaces by Epic 5 close." This unifies the pattern at minimal cost.
+  - **Owner:** Story 5.3 dev (OpenAICompatProvider concrete) — closest natural carrier; same provider epic.
+  - **Blocking?** Not blocking. Epic 5 retro can re-author ad-hoc if the deferral is missed.

@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-05-02
-last_updated: 2026-05-06 (Story 5.3 done — OpenAICompatProvider for Ollama qwen3:14b live verified; ParseEndpointUrl centralized; AnthropicProviderLive retro-added; review clean 0 HIGH/MEDIUM, 2 LOW deferrals)
+last_updated: 2026-05-06 (Epic 5 COMPLETE — all 5 stories done; 4-provider catalog locked behind 52-pair matrix; review caught 2 MEDIUM auto-fixes incl AgentLoop concurrent-turn overloading bug; epic-5-retrospective awaits user decision)
 project: iris-session-agent
 # Epic 1 complete (retro 2026-05-02); Epic 2 retrospective triage gate (Story 2.0) 2026-05-03
 project_key: NOKEY
@@ -93,12 +93,12 @@ development_status:
   4-7-explainerror-comprehensive-read-only-suite-verification: done
   epic-4-retrospective: done
 
-  epic-5: in-progress
+  epic-5: done
   5-0-epic-4-deferred-cleanup: done
   5-1-llm-anthropicprovider-concrete: done
   5-2-llm-geminiprovider-concrete: done
   5-3-llm-openaicompatprovider-concrete: done
-  5-4-tool-call-roundtrip-integration-test-infrastructure: backlog
+  5-4-tool-call-roundtrip-integration-test-infrastructure: done
   epic-5-retrospective: optional
 
   epic-6: backlog

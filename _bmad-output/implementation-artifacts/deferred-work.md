@@ -848,3 +848,57 @@ This file accumulates findings, follow-ups, and architect-decision items that ar
   - **Recommendation:** When the next provider story touches the BuildPayload helpers (e.g., a 5th provider extension), patch all four providers to skip the `tools` field when empty. One-line fix `If $IsObject(tOaTools), tOaTools.%Size() > 0 { Do tPayload.%Set("tools", tOaTools) }`.
   - **Owner:** Future provider story.
   - **Blocking?** Not blocking.
+
+---
+
+## Deferred from: code review of story-5.4-tool-call-roundtrip-integration-test-infrastructure (2026-05-06)
+
+- **Retry-loop duplication across 4 concrete providers — 1.7× threshold; refactor to `RetryWithBackoff.ExecuteOnInstance` strongly justified.**
+  - **Source:** Story 5.4 AC-7 audit + carry-forward from Story 2.9 deferred entry (deferred-work.md:258 area).
+  - **Severity:** MEDIUM (architect-decision item — not a bug, but a maintenance cost: every retry-tuning change requires 4 parallel edits with bug-introducing copy-paste risk).
+  - **The count (verified Story 5.4):** OpenAIProvider 55 lines (243-297), AnthropicProvider 48 lines (291-338), GeminiProvider ~45 lines, OpenAICompatProvider ~46 lines — total **~194-202 lines** of structurally identical retry orchestration. Story 2.9 deferred-work threshold was ~120 lines for evaluating refactor.
+  - **Why deferred (Rule 8 test 1 — genuine future-story scope):** the refactor crosses all four production providers + their unit-test classes. Touching that surface is a deliberate scope-bounded story (Story 6.x or 7.x), not an opportunistic ride-along on a test-infrastructure story. Story 5.4's mock harness deliberately bypasses the retry path (mock CallMessages overrides the production retry loop), so the matrix test wouldn't catch a refactor regression — Story 6.x must add focused unit tests around `RetryWithBackoff.ExecuteOnInstance` itself and verify each provider's retry envelope wiring still triggers correctly post-refactor.
+  - **Recommendation:** Open Story 6.x as **"Provider retry-loop consolidation to `RetryWithBackoff.ExecuteOnInstance`"** with ACs covering: (a) introduce a `ExecuteOnInstance(pProviderLabel, pCallback) As %DynamicObject` helper that returns `{statusCode, bodyText, headers, midFlight, exhausted}`; (b) replace the inline `While tAttempt < tMaxAttempts {...}` block in each of the 4 providers with one call to that helper; (c) add `RetryWithBackoffTest` cases for the new helper; (d) verify the 11 per-provider tests + 4 `*ProviderLive` tests still pass.
+  - **Owner:** Architect (Winston) — to scope the consolidation story for Epic 6 sprint planning.
+  - **Blocking?** Not blocking. Maintenance-cost item, not correctness.
+
+- **Gemini live-API stopReason inconsistency: `finishReason="STOP"` returned despite `functionCall` part being present, mapped to canonical `stopReason="end_turn"` instead of `tool_use`.**
+  - **Source:** Story 5.4 closing-battery live test (Audit.LlmCall row 121: gemini, end_turn, with content `type=tool_use name=event_log`).
+  - **Severity:** MEDIUM (operator-observable: AgentLoop's iteration-termination depends on accurate stopReason — a tool_use turn misclassified as end_turn could cause the agent to stop iterating instead of dispatching the tool call).
+  - **The observation:** `MessageAdapter.MapGeminiFinishReason` (line 666 of MessageAdapter.cls) maps `"STOP" → "end_turn"` without inspecting the candidate's content. The matrix mock (`BuildGeminiToolUseResponse`) deliberately emits `finishReason="TOOL_CALLS"` to exercise the structurally correct path; the live API often returns `"STOP"` even with a `functionCall` part present, which the canonical translation classifies as terminal text-only end. AgentLoop's stop-reason switch (line ~285) routes `"end_turn"` to "no further iterations" — so the agent could fail to dispatch a real Gemini tool_use call.
+  - **Why deferred (Rule 8 test 1 — genuine future-story scope):** the fix requires content-aware translation in `MessageAdapter.ProviderToCanonical("gemini", ...)` — post-process: if `stopReason="end_turn"` AND content has any `tool_use` block, override `stopReason → "tool_use"`. Same fix-class needed across `ProviderToCanonical("openai", ...)` for OpenAI's analogous `finish_reason="stop"` + `tool_calls` block edge (per Story 5.0/5.1 retros — verify whether OpenAI's adapter already handles this). Story 5.4's deterministic test passes because the mock emits `TOOL_CALLS`; only the live test surfaces the real-API quirk. Refactor + test add belongs in a focused Story 6.x.
+  - **Recommendation:** Open Story 6.x as **"Content-aware stopReason override in MessageAdapter"** with ACs covering: (a) post-process step in `ProviderToCanonical` for both OpenAI and Gemini — if any `tool_use` content block is present, override `stopReason → "tool_use"` regardless of upstream finishReason; (b) add an integration test against a captured live Gemini response body that reproduces `STOP + functionCall`; (c) verify AgentLoop now correctly enters the tool-dispatch branch.
+  - **Owner:** Architect (Winston) / Epic 6 dev — to scope for Epic 6 sprint planning.
+  - **Blocking?** Could mask tool-dispatch failures on real Gemini traffic; should be picked up early in Epic 6.
+
+- **AgentLoop "Concurrent turn in progress" message overloading — FIXED in Story 5.4.**
+  - **Source:** Story 5.4 dev-discovered (debugging session 2026-05-06).
+  - **Severity:** MEDIUM (was — fixed; entry kept for retro/learning purposes).
+  - **The bug (now fixed):** `AgentLoop.RunTurn` line 131-135 emitted `"Concurrent turn in progress; please wait."` whenever `LoadOrCreate` returned NULLOREF, regardless of root cause. This masked datatype-validation failures (e.g., SessionKey overflowing MAXLEN=50) that produce a non-OK `tLoadStatus` — devs investigated phantom concurrency issues for hours instead of seeing the real validation error.
+  - **Story 5.4 fix-now (Rule 8):** added `If $$$ISERR(tLoadStatus)` branch to surface the underlying error text via `$System.Status.GetErrorText`; the misleading "Concurrent turn in progress" message is now reserved for genuine lock-acquisition failures (where `pStatus = $$$OK` but the OREF is NULL).
+  - **Verified empirically:** `RunTurn(..., "this-is-a-very-long-session-key-that-exceeds-50-chars-and-it-does", ...)` now returns `"Chat history load failed: ERROR #7201: Datatype value '...' length longer than MAXLEN allowed of 50"` — the real cause.
+  - **Owner:** Story 5.4 (resolved); kept here as retro signal for "never-throw envelope but lossy error classification" pattern.
+  - **Blocking?** Not blocking — fix shipped in Story 5.4.
+
+- **Test-suite count mild drift in dev's Completion Notes — total is 266/266, not 264/264.**
+  - **Source:** Story 5.4 code review SQL probe.
+  - **Severity:** LOW (cosmetic — dev's verbatim regression sweep transcript shows individual class tallies that sum to 266; dev wrote "Total: 264 / 264 / 0" in the closing line. `VisualTraceTest` shows 8 tests in the live SQL but the dev's transcript wrote 6).
+  - **Why noted:** Rule 2 sharpening asks for verbatim transcripts in Completion Notes; the verbatim per-class output is correct; only the manually-summed total line is +2 stale (likely typed before the latest VisualTraceTest method additions).
+  - **Recommendation:** Pass-through — does not invalidate the empirical battery; future Rule-2 transcripts should sum the per-class tallies via `SUM(tm.ID)` rather than typing a manual total to avoid this class of drift.
+  - **Owner:** Lead (process improvement — automate the total in future transcripts).
+  - **Blocking?** Not blocking.
+
+- **Pre-existing flake in `AgentLoopGuardsTest:TestRunTurnMaxIterationsCap` — intermittently fails under heavier test-suite cadence (carry-forward to Epic 6 retro).**
+  - **Source:** Story 5.4 code review re-run; carry-forward from Story 5.0 mention.
+  - **Severity:** LOW (pre-existing — Story 5.4 re-runs showed Status=1 in fresh isolation; Status=0 surfaced when run inside a hot suite-39 cadence; 1-of-2 runs flaked).
+  - **The observation:** running `RunOneTestCase` produced Status=1; the same method shows Status=0 in a prior TestSuite=35 run captured in `%UnitTest_Result`. Not investigated deeply during Story 5.4 review (out of scope for the closer; pre-existing).
+  - **Recommendation:** Carry forward to Epic 6 for root-cause investigation. Likely cause is global state leaking between `OnBeforeOneTest`/`OnAfterOneTest` boundaries (override holders, ProviderOverride PPG, Config.Agent rows). The matrix test (`OnAfterAllTests`) sweeps SessionKey-prefixed rows; the AgentLoopGuardsTest may not. Worth a focused re-test cadence run + global-state probe.
+  - **Owner:** Epic 6 dev / lead.
+  - **Blocking?** Not blocking — flakes do not block ship; flake budget belongs in Epic 6 retro health.
+
+- **`epic-5-operator-state.md:85` says "all three cloud providers" — stale phrasing now that 4 providers ship.**
+  - **Source:** Story 5.4 review Rule-4 stale-reference scan.
+  - **Severity:** LOW (internal planning artifact, not operator-facing; OpenAICompat is technically a cloud or local endpoint, ambiguous categorization).
+  - **Recommendation:** Pick up in Epic 5 retro doc-cleanup pass; rewrite as "all four providers (OpenAI / Anthropic / Gemini / OpenAI-Compat)".
+  - **Owner:** Epic 5 retro.
+  - **Blocking?** Not blocking.

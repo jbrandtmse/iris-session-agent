@@ -129,8 +129,18 @@ ClassMethod RunTurn(pAgentName As %String, pSessionKey As %String, pPortalUser A
         Set tLoadStatus = $$$OK
         Set tHist = ##class(SessionAgent.Chat.History).LoadOrCreate(pAgentName, pSessionKey, pPortalUser, "", .tLoadStatus)
         If '$IsObject(tHist) {
-            ; Lock conflict / persistence error — never-throw envelope.
-            Set tResult.AssistantMarkdown = "Concurrent turn in progress; please wait."
+            ; Story 5.4 — differentiate the never-throw envelope so future devs
+            ; do not chase a phantom concurrency issue when the actual cause is
+            ; a datatype validation / persistence failure (e.g., SessionKey
+            ; overflowing MAXLEN=50). Inspect tLoadStatus: if it carries a
+            ; non-OK status, surface the underlying error text; otherwise the
+            ; null OREF with OK status indicates a genuine lock-acquisition
+            ; conflict (two browser tabs hitting the same SessionKey).
+            If $$$ISERR(tLoadStatus) {
+                Set tResult.AssistantMarkdown = "Chat history load failed: " _ $System.Status.GetErrorText(tLoadStatus)
+            } Else {
+                Set tResult.AssistantMarkdown = "Concurrent turn in progress; please wait."
+            }
             ; tHist is NULLOREF — no lock to release, no Save needed.
             Quit
         }

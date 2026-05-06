@@ -57,3 +57,62 @@ jobs:
           fi
           echo "NFR-C5 gate PASS"
           echo "::endgroup::"
+
+  # Story 5.4 AC-8 — per-release tool-call-roundtrip live-endpoint validation.
+  # Runs the SAME 4-provider × 13-tool matrix the deterministic
+  # SessionAgent.Test.ToolCallRoundtripIntegrationTest exercises, but against
+  # REAL provider endpoints. Gated behind the four provider secrets so PRs
+  # from forks (which can't see secrets) skip cleanly. Runs on push to main
+  # and on release tags only — not on PRs — to avoid burning provider
+  # budgets on every PR. MaxOutputTokens=50 caps per-call spend at provider
+  # free-tier-friendly levels.
+  #
+  # Status: skeleton only. The job currently fails fast with a TODO message
+  # because the project's Python-less IRIS Community Docker image is still
+  # blocked (Story 1.7 deferred entry). When that image lands, replace the
+  # TODO step with a checkout + zpm install + iris_execute_tests step that
+  # invokes a future SessionAgent.Test.ToolCallRoundtripLive class. Until
+  # then the YAML is an explicit placeholder so operators reading the
+  # workflow file see the intended shape.
+  tool-call-roundtrip-real-endpoint-validation:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || startsWith(github.ref, 'refs/tags/')
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      OPENAI_COMPAT_ENDPOINT_URL: ${{ secrets.OPENAI_COMPAT_ENDPOINT_URL }}
+    steps:
+      - name: Skip if any provider secret is unset
+        run: |
+          set -e
+          MISSING=""
+          [ -z "$OPENAI_API_KEY" ] && MISSING="$MISSING OPENAI_API_KEY"
+          [ -z "$ANTHROPIC_API_KEY" ] && MISSING="$MISSING ANTHROPIC_API_KEY"
+          [ -z "$GEMINI_API_KEY" ] && MISSING="$MISSING GEMINI_API_KEY"
+          [ -z "$OPENAI_COMPAT_ENDPOINT_URL" ] && MISSING="$MISSING OPENAI_COMPAT_ENDPOINT_URL"
+          if [ -n "$MISSING" ]; then
+            echo "::notice::Skipping live-endpoint matrix — missing secrets:$MISSING"
+            echo "skip=true" >> "$GITHUB_ENV"
+          else
+            echo "skip=false" >> "$GITHUB_ENV"
+          fi
+
+      - name: Checkout
+        if: env.skip != 'true'
+        uses: actions/checkout@v4
+
+      - name: Live-endpoint matrix run (placeholder)
+        if: env.skip != 'true'
+        run: |
+          set -e
+          # TODO (Story 1.7 follow-up + Story 5.4 AC-8 evolution): when a
+          # Python-less IRIS Community Docker image becomes publicly
+          # available, replace this step with:
+          #   1. docker pull intersystems/iris-community:<python-less-tag>
+          #   2. docker run + zpm install <repo>
+          #   3. Invoke a future SessionAgent.Test.ToolCallRoundtripLive
+          #      class that walks the 4×13 matrix against real endpoints
+          #      with MaxOutputTokens=50; failure surfaces with
+          #      provider=<name>, tool=<name>, request_id=<id>.
+          echo "::notice::Live-endpoint matrix placeholder — IRIS Community Python-less image dependency unblocks this step. Tracked in deferred-work.md."

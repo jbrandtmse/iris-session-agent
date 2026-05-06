@@ -34,7 +34,8 @@
 /// <p><b>FR29 90s timeout.</b> Sets <code>%Net.HttpRequest.Timeout = 90</code>
 /// per call via class parameter <code>HTTPTIMEOUTSEC</code>; mirrors the
 /// OpenAI / Anthropic precedent so a single regression-test pivot flips
-/// all three providers if FR29 changes.</p>
+/// all four providers (Story 5.3 added OpenAICompatProvider with the same
+/// 90s parameter) if FR29 changes.</p>
 ///
 /// <p><b>NFR-S3 never-log invariant.</b> The resolved API key is fetched
 /// inside <method>CallMessages</method> via
@@ -478,21 +479,31 @@ Method IssueHttpsPost(pPayloadJson As %String, pAuthHeader As %String, pEndpoint
     Do tResp.%Set("headers", ##class(%DynamicObject).%New())
 
     Try {
-        ; Parse Server + Location from pEndpointUrl (always non-empty —
-        ; GetEndpointUrl substitutes the model into the template).
+        ; Parse Server + Location + Port + Https from pEndpointUrl (always
+        ; non-empty — GetEndpointUrl substitutes the model into the
+        ; template). Story 5.3 centralized parser on the abstract base.
         Set tServer = ..#DEFAULTSERVER
         Set tLocation = "/"
+        Set tPort = 0
+        Set tHttps = 1
         If pEndpointUrl '= "" {
             Set tParsed = ..ParseEndpointUrl(pEndpointUrl)
             Set tServer = tParsed.%Get("server")
             Set tLocation = tParsed.%Get("location")
+            Set tPort = +tParsed.%Get("port")
+            Set tHttps = +tParsed.%Get("https")
         }
 
         Set tReq = ##class(%Net.HttpRequest).%New()
-        Set tReq.Https = 1
-        Set tReq.SSLConfiguration = ..#SSLCONFIGURATION
+        Set tReq.Https = tHttps
+        If tHttps = 1 {
+            Set tReq.SSLConfiguration = ..#SSLCONFIGURATION
+        }
         Set tReq.Timeout = pTimeoutSec
         Set tReq.Server = tServer
+        If tPort > 0 {
+            Set tReq.Port = tPort
+        }
         Set tReq.ContentType = "application/json"
 
         ; Split pAuthHeader on the first ": " (header name : header value).
@@ -674,32 +685,6 @@ ClassMethod ParseGeminiRetryDelay(pResponseBody As %String) As %Integer
     If tDigits = "" Quit tResult
     Set tResult = +tDigits
     Quit tResult
-}
-
-/// <p>Internal — parse <var>pUrl</var> (e.g.,
-/// <code>https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent</code>)
-/// into a <CLASS>%DynamicObject</CLASS> with <code>{server, location}</code>.</p>
-ClassMethod ParseEndpointUrl(pUrl As %String) As %DynamicObject [ Internal ]
-{
-    Set tOut = ##class(%DynamicObject).%New()
-    Do tOut.%Set("server", "")
-    Do tOut.%Set("location", "/")
-
-    Set tStripped = pUrl
-    If $Find(tStripped, "://") {
-        Set tStripped = $Piece(tStripped, "://", 2, 99)
-    }
-
-    Set tSlashPos = $Find(tStripped, "/")
-    If tSlashPos = 0 {
-        Do tOut.%Set("server", tStripped)
-        Do tOut.%Set("location", "/")
-        Quit tOut
-    }
-
-    Do tOut.%Set("server", $Extract(tStripped, 1, tSlashPos - 2))
-    Do tOut.%Set("location", $Extract(tStripped, tSlashPos - 1, *))
-    Quit tOut
 }
 
 /// <p>Per-instance hook returning MaxAttempts. Defaults to <code>4</code>

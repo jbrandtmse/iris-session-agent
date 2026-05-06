@@ -99,7 +99,16 @@ For each cloud provider you intend to use, wire **one** of the two delivery mech
 
   Set the `Password` field to your API key. Resolution falls back from env-var → `Ens.Config.Credentials` row → fail-fast if neither is present (per [`SessionAgent.Util.EnvSecret`](src/SessionAgent/Util/EnvSecret.cls)).
 
-**OpenAI-compatible / Ollama (Epic 5 Story 5.3):** the endpoint URL goes in [`SessionAgent.Config.Agent`](src/SessionAgent/Config/Agent.cls) (e.g., `http://192.168.0.123:11434/v1` for a network-hosted Ollama). For default Ollama deployments **no API key is required**; for hosted OpenAI-compatible endpoints that require auth, wire a credential under `SystemName='SessionAgentOpenAICompat'` (or any name configured in your `Config.Agent` row).
+**OpenAI-compatible / Ollama (Epic 5 Story 5.3):** the **full** endpoint URL — including the `/v1/chat/completions` path — goes in [`SessionAgent.Config.Agent.EndpointUrl`](src/SessionAgent/Config/Agent.cls). Examples:
+
+  | Deployment | Canonical `Config.Agent.EndpointUrl` |
+  |---|---|
+  | Local Ollama | `http://localhost:11434/v1/chat/completions` |
+  | Network Ollama | `http://<host>:11434/v1/chat/completions` (e.g., `http://192.168.0.123:11434/v1/chat/completions`) |
+  | vLLM behind reverse-proxy | `https://<host>:8443/v1/chat/completions` |
+  | LM Studio (default) | `http://localhost:1234/v1/chat/completions` |
+
+  Set `Config.Agent.Provider = 'openai-compatible'`. For default Ollama deployments **no API key is required** — leave `Config.Agent.CredentialName` empty (the provider auto-detects this and omits the `Authorization` header). For paid OpenAI-compatible endpoints (Together AI, OpenRouter, Anyscale, paid Ollama instances behind Bearer auth), wire a credential under any name and reference it via `Config.Agent.CredentialName='YourCredentialName'`. Both `http://` and `https://` schemes are supported (the provider auto-detects the scheme + non-default port from the URL — Ollama's `:11434`, llama.cpp's `:8080`, etc.).
 
 **API keys are never stored inside `SessionAgent.Config.Agent` itself.**
 

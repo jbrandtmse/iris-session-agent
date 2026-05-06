@@ -519,21 +519,30 @@ Method IssueHttpsPost(pPayloadJson As %String, pAuthHeaderList As %String, pEndp
     Do tResp.%Set("headers", ##class(%DynamicObject).%New())
 
     Try {
-        ; Parse Server + Location from pEndpointUrl. Format:
-        ;   https://<server>[:port]/<location...>
+        ; Parse Server + Location + Port + Https from pEndpointUrl. Story 5.3
+        ; centralized parser on the abstract base.
         Set tServer = ..#DEFAULTSERVER
         Set tLocation = ..#DEFAULTLOCATION
+        Set tPort = 0
+        Set tHttps = 1
         If pEndpointUrl '= "" {
             Set tParsed = ..ParseEndpointUrl(pEndpointUrl)
             Set tServer = tParsed.%Get("server")
             Set tLocation = tParsed.%Get("location")
+            Set tPort = +tParsed.%Get("port")
+            Set tHttps = +tParsed.%Get("https")
         }
 
         Set tReq = ##class(%Net.HttpRequest).%New()
-        Set tReq.Https = 1
-        Set tReq.SSLConfiguration = ..#SSLCONFIGURATION
+        Set tReq.Https = tHttps
+        If tHttps = 1 {
+            Set tReq.SSLConfiguration = ..#SSLCONFIGURATION
+        }
         Set tReq.Timeout = pTimeoutSec
         Set tReq.Server = tServer
+        If tPort > 0 {
+            Set tReq.Port = tPort
+        }
         Set tReq.ContentType = "application/json"
 
         ; Iterate the auth header list and SetHeader each name:value pair.
@@ -668,32 +677,6 @@ ClassMethod %UsageGet(pUsageRaw As %DynamicObject, pKey As %String) As %Integer 
     If '$IsObject(pUsageRaw) Quit 0
     If 'pUsageRaw.%IsDefined(pKey) Quit 0
     Quit +pUsageRaw.%Get(pKey)
-}
-
-/// <p>Internal — parse <var>pUrl</var> (e.g.,
-/// <code>https://api.anthropic.com/v1/messages</code>) into a
-/// <CLASS>%DynamicObject</CLASS> with <code>{server, location}</code>.</p>
-ClassMethod ParseEndpointUrl(pUrl As %String) As %DynamicObject [ Internal ]
-{
-    Set tOut = ##class(%DynamicObject).%New()
-    Do tOut.%Set("server", "")
-    Do tOut.%Set("location", "/")
-
-    Set tStripped = pUrl
-    If $Find(tStripped, "://") {
-        Set tStripped = $Piece(tStripped, "://", 2, 99)
-    }
-
-    Set tSlashPos = $Find(tStripped, "/")
-    If tSlashPos = 0 {
-        Do tOut.%Set("server", tStripped)
-        Do tOut.%Set("location", "/")
-        Quit tOut
-    }
-
-    Do tOut.%Set("server", $Extract(tStripped, 1, tSlashPos - 2))
-    Do tOut.%Set("location", $Extract(tStripped, tSlashPos - 1, *))
-    Quit tOut
 }
 
 /// <p>Per-instance hook returning MaxAttempts. Defaults to <code>4</code>

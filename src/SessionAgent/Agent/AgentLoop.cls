@@ -527,8 +527,14 @@ ClassMethod InstantiateProvider(pConfig As SessionAgent.Config.Agent) As Session
         ; translation via MessageAdapter + ToolDefAdapter per FR27).
         Set tProvider = ##class(SessionAgent.LLM.GeminiProvider).%New()
     }
-    ; Story 5.3 will extend this switch with openai-compatible. Unknown
-    ; values fall through to NULLOREF so RunTurn surfaces the
+    ElseIf pConfig.Provider = "openai-compatible" {
+        ; Story 5.3 — Ollama / vLLM / LM Studio / any
+        ; OpenAI-Chat-Completions-compatible endpoint. Wire shape IS
+        ; OpenAI Chat Completions; reuses the Story 2.9 MessageAdapter
+        ; "openai" switch verbatim (no new adapter branch).
+        Set tProvider = ##class(SessionAgent.LLM.OpenAICompatProvider).%New()
+    }
+    ; Unknown values fall through to NULLOREF so RunTurn surfaces the
     ; "Unsupported provider" envelope.
     Quit tProvider
 }

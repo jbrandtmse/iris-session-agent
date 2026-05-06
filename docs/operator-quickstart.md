@@ -77,6 +77,22 @@ SELECT Name, Description FROM Security.Roles WHERE Name = 'SessionAgent_ReadOnly
 
 If both queries return the expected row counts, your Epic 1 install is correct. After Story 2.5 ships the audit ledger tables, this verification expands to include `SELECT TOP 0 * FROM SessionAgent_Audit.LlmCall` and `SELECT TOP 0 * FROM SessionAgent_Audit.ToolCall` — both should return empty result sets confirming the schemas are in place.
 
+## 6. Switching to self-hosted (Ollama / vLLM / LM Studio)
+
+Per-token LLM cost is the most common adoption blocker. Once Epic 5 lands you can point the runtime at any **OpenAI-Chat-Completions-compatible** endpoint hosted inside your own perimeter — no per-token cost, your data never leaves your VPC. The provider is the same `SessionAgent.LLM.OpenAICompatProvider` shipped by Story 5.3; you only swap the `Config.Agent` row's `EndpointUrl` and `Model` fields.
+
+Smallest configuration change (per the README §6 table):
+
+```
+Provider        = openai-compatible
+EndpointUrl     = http://<host>:11434/v1/chat/completions   ; e.g. http://192.168.0.123:11434/...
+Model           = qwen3:14b                                 ; or any model your endpoint serves
+CredentialName  = ''                                        ; leave empty for default Ollama (no auth)
+EnvVarName      = PATH                                      ; satisfies abstract template; ignored when CredentialName empty
+```
+
+For paid OpenAI-compatible providers (Together AI, OpenRouter, Anyscale) set `CredentialName='YourCredential'` and create the matching `Ens.Config.Credentials` row with a Bearer token in `Password`. For HTTPS endpoints (vLLM behind reverse-proxy, paid hosted), the same `DefaultSSL` configuration the README §7 documents covers TLS — the provider auto-detects scheme + non-default port from the URL. See **README §6** for the full deployment table and provider-comparison rationale.
+
 ---
 
 ## What's next

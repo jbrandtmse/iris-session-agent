@@ -401,4 +401,111 @@ ClassMethod ComputeLatencyMs(pStart As %Numeric) As %Integer [ Internal ]
     Quit $Normalize(tDelta * 1000, 0)
 }
 
+/// <p>Internal — parse an HTTP endpoint URL into its constituent
+/// <CLASS>%Net.HttpRequest</CLASS> properties. Returns a
+/// <CLASS>%DynamicObject</CLASS> with:</p>
+/// <ul>
+/// <li><code>server</code> — bare host (no port suffix), e.g.
+/// <code>api.openai.com</code> or <code>192.168.0.123</code>.</li>
+/// <li><code>port</code> — explicit port as an integer, or <code>0</code>
+/// when the URL has no <code>:port</code> suffix (caller should leave
+/// <code>%Net.HttpRequest.Port</code> at its default for the scheme).</li>
+/// <li><code>location</code> — path component beginning with
+/// <code>/</code>, e.g. <code>/v1/chat/completions</code>.</li>
+/// <li><code>https</code> — <code>1</code> for <code>https://</code> URLs,
+/// <code>0</code> for <code>http://</code> URLs (Story 5.3 Ollama needs
+/// HTTP-only support; OpenAI/Anthropic/Gemini are HTTPS).</li>
+/// </ul>
+///
+/// <p><b>Story 5.3 R-3 closure.</b> Centralized here on the abstract base
+/// to fix the Story 5.1 bug where <code>server</code> retained the
+/// <code>:port</code> suffix and <code>https</code> was hardcoded at the
+/// call site. Per the canonical OpenAI / Anthropic / Gemini deployments
+/// (HTTPS, port 443) the bug never bit; Ollama
+/// (<code>http://192.168.0.123:11434/v1/chat/completions</code>) is the
+/// first concrete that exercises both edges. All three pre-existing
+/// concretes inherit this method (their previous duplicates were removed
+/// in the same Story 5.3 commit per Rule 8 fix-now).</p>
+///
+/// <p>Examples:</p>
+/// <ul>
+/// <li><code>https://api.openai.com/v1/chat/completions</code> →
+/// <code>{server:"api.openai.com", port:0, location:"/v1/chat/completions",
+/// https:1}</code>.</li>
+/// <li><code>http://192.168.0.123:11434/v1/chat/completions</code> →
+/// <code>{server:"192.168.0.123", port:11434,
+/// location:"/v1/chat/completions", https:0}</code>.</li>
+/// <li><code>https://example.com:8443/v1/messages</code> →
+/// <code>{server:"example.com", port:8443, location:"/v1/messages",
+/// https:1}</code>.</li>
+/// </ul>
+ClassMethod ParseEndpointUrl(pUrl As %String) As %DynamicObject [ Internal ]
+{
+    Set tOut = ##class(%DynamicObject).%New()
+    Do tOut.%Set("server", "")
+    Do tOut.%Set("port", 0, "number")
+    Do tOut.%Set("location", "/")
+    Do tOut.%Set("https", 1, "number")
+
+    If $Get(pUrl) = "" Quit tOut
+
+    ; Step 1 — scheme detection. Default https=1 if no scheme present
+    ; (defensive — the historic OpenAI/Anthropic/Gemini call sites always
+    ; supply a scheme, so this branch is unreachable in production but
+    ; safe).
+    Set tStripped = pUrl
+    Set tHttps = 1
+    If $Find(tStripped, "://") {
+        Set tScheme = $Piece(tStripped, "://", 1)
+        Set tStripped = $Piece(tStripped, "://", 2, 99)
+        If $ZConvert(tScheme, "L") = "http" Set tHttps = 0
+    }
+    Do tOut.%Set("https", tHttps, "number")
+
+    ; Step 2 — split host[:port] and /path. tSlashPos = index of first
+    ; "/" + 1 per $Find semantics (or 0 if not found).
+    Set tHostPort = tStripped
+    Set tLocation = "/"
+    Set tSlashPos = $Find(tStripped, "/")
+    If tSlashPos > 0 {
+        Set tHostPort = $Extract(tStripped, 1, tSlashPos - 2)
+        Set tLocation = $Extract(tStripped, tSlashPos - 1, *)
+    }
+
+    ; Step 3 — split host and port from the host[:port] piece.
+    Set tServer = tHostPort
+    Set tPort = 0
+    If tHostPort [ ":" {
+        Set tServer = $Piece(tHostPort, ":", 1)
+        Set tPortStr = $Piece(tHostPort, ":", 2)
+        ; Defensive — only treat as a port if all chars are digits. URLs
+        ; with IPv6 brackets or other oddities pass through as a single
+        ; server string (port = 0).
+        Set tIsAllDigits = (tPortStr '= "")
+        Set tCi = 1
+        While tCi <= $Length(tPortStr) {
+            Set tCh = $Extract(tPortStr, tCi)
+            If (tCh < "0") || (tCh > "9") {
+                Set tIsAllDigits = 0
+                Quit
+            }
+            Set tCi = tCi + 1
+        }
+        If tIsAllDigits {
+            Set tPort = +tPortStr
+        } Else {
+            ; Bracketed/odd host — restore the full host:port verbatim
+            ; into server so the HTTP layer can fail visibly rather than
+            ; silently dropping the port.
+            Set tServer = tHostPort
+            Set tPort = 0
+        }
+    }
+
+    Do tOut.%Set("server", tServer)
+    Do tOut.%Set("port", tPort, "number")
+    Do tOut.%Set("location", tLocation)
+    Quit tOut
+}
+
 }

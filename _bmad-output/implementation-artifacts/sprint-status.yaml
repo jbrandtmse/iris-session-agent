@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-05-02
-last_updated: 2026-05-06 (Epic 5 COMPLETE — all 5 stories done; 4-provider catalog locked behind 52-pair matrix; review caught 2 MEDIUM auto-fixes incl AgentLoop concurrent-turn overloading bug; epic-5-retrospective awaits user decision)
+last_updated: 2026-05-06 (Epic 5 COMPLETE + retrospective DONE — all 5 stories done; 4-provider catalog locked behind 52-pair matrix; user-led chat-panel manual-test surfaced 4 wire-format bugs all fixed in 0ffbbfa; retro saved at epic-5-retro-2026-05-06.md; 5 action items captured for Story 6.0 carry-forward)
 project: iris-session-agent
 # Epic 1 complete (retro 2026-05-02); Epic 2 retrospective triage gate (Story 2.0) 2026-05-03
 project_key: NOKEY
@@ -99,7 +99,7 @@ development_status:
   5-2-llm-geminiprovider-concrete: done
   5-3-llm-openaicompatprovider-concrete: done
   5-4-tool-call-roundtrip-integration-test-infrastructure: done
-  epic-5-retrospective: optional
+  epic-5-retrospective: done
 
   epic-6: backlog
   6-1-agentconfig-zen-form-layout: backlog

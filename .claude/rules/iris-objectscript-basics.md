@@ -288,6 +288,79 @@ a ZPM hook?" Any yes blocks the PR.
    - Collect keys into a $ListBuild list first, then iterate the list separately to modify the object
    - This applies to attachment processing, Mango selector evaluation, and any code that transforms JSON objects in-place
 
+## $Char(0) sentinel — grep target for `%String` reads with SQL UPDATE write paths
+
+**Rule.** Any code reading a `%String` column whose write path includes SQL
+UPDATE (e.g., a Zen form save handler that emits `UPDATE … SET col = ''`,
+or any direct `%SQL.Statement` call against the table) **must** inline-
+normalize `$Char(0) → ""` at the read site, OR delegate the read to a
+centralized helper that performs the normalization. This is a *grep-target*
+invariant — every `..Config*.*` / `..<TableProperty>` read is a candidate
+site, and reviewers grep for the pattern at story sign-off.
+
+**Why.** IRIS's legacy `%String` representation uses `$Char(0)` (one byte,
+ASCII NUL) as the in-table null sentinel for columns whose value was set
+to `""` via a SQL UPDATE statement. The OREF-graph getter (`obj.Property`)
+returns `$Char(0)` verbatim for such rows, but downstream code typically
+checks `If tValue '= ""` — which is **TRUE for `$Char(0)`** because
+`$Char(0)` is a non-empty 1-character string. The result: a
+defaulting-on-empty fallback (e.g., "use the canonical default endpoint
+URL when EndpointUrl is blank") is silently bypassed, and the empty-string
+sentinel is forwarded to downstream APIs that interpret it as "look up
+this credential" or "GET this URL" — producing baffling failures whose
+root cause is invisible at the call site.
+
+**Originating incidents.**
+- **Story 4.0 codification (Epic 3 manual-test Bug-1, 2026-05-03)** —
+  `Tool.Inspection.SessionSummary` and one sibling read `..ConfigAgent.X`
+  for tool-config and shipped without the normalization; user-led
+  chat-panel manual-test surfaced the failure mode.
+- **Epic 5 manual-test Bug-1 (2026-05-06)** — `..ConfigAgent.EndpointUrl`
+  read in `GetEndpointUrl()` of all 4 LLM providers needed the same
+  normalization. Applied in Stories 5.1 / 5.2 / 5.3.
+- **Story 6.0 sweep (2026-05-06)** — extended the codification beyond
+  endpoint URL to credential-resolve sites:
+  `..ConfigAgent.EnvVarName` + `..ConfigAgent.CredentialName` reads in
+  `CallMessages` of all 4 providers (`SessionAgent.LLM.OpenAIProvider`,
+  `AnthropicProvider`, `GeminiProvider`, `OpenAICompatProvider`) were
+  unnormalized. Symptom: an operator who clears `EnvVarName` via the
+  Zen form (or via `UPDATE Config_Agent SET EnvVarName = ''`) gets
+  `$SYSTEM.Util.GetEnviron($Char(0))` invoked at runtime — undefined
+  behavior; the credential ladder's rung-1 path fires against a
+  bogus env-var name instead of being skipped. Same for `CredentialName`
+  → `Ens.Config.Credentials.%ExistsId($Char(0))` → spurious credential
+  lookup. Fixed in Story 6.0 Task 2.
+
+**The pattern.** Use this canonical inline form at every read site (or
+delegate to a helper that wraps it):
+
+```objectscript
+Set tStored = ""
+If $IsObject(..ConfigAgent) Set tStored = ..ConfigAgent.<Property>
+If tStored = $Char(0) Set tStored = ""
+; ... downstream check `If tStored '= ""` now behaves correctly ...
+```
+
+**Grep-target invariant.** When a story modifies any code that reads a
+`%String` property of a configuration object whose persistence layer is
+mutated by SQL UPDATE (Config.Agent, Config.Search, future Config.X),
+the dev MUST grep:
+
+```
+grep -rn "\.\.\.Config[A-Za-z]*\." src/SessionAgent/
+```
+
+…and confirm every match falls into one of:
+1. **Already normalized** — the read site has the `If tStored = $Char(0) Set tStored = ""` line below it.
+2. **Read into a comparison that doesn't care about empty-vs-NUL** — e.g., `If ..ConfigAgent.Provider = "openai"` — `$Char(0)` is not `"openai"`, so the comparison fires the same way for empty-string rows. (Documented exception; still safer to normalize so the variable can be reused.)
+3. **Read into a method call that itself performs the normalization** — e.g., `Util.EnvSecret.Resolve(envVar, credName)` after Story 6.0 hardens the guard.
+
+**Reviewer enforcement.** Any unnormalized `..Config*.*` read in a story diff
+that doesn't fall into one of those three categories is a HIGH-severity
+finding per Rule 8 (predicted-bug shape: drift between operator's empty-
+string intent and the runtime's `$Char(0)`-backed read). Fix-now in the
+same story.
+
 ## Response Utility Consistency
    - Always use `Response.JSON()` or `Response.JSONStatus(statusCode, obj)` for success responses — never write to %response.Write() directly or set ContentType/Status manually
    - This ensures consistent Content-Type headers, character encoding, and status codes across all endpoints

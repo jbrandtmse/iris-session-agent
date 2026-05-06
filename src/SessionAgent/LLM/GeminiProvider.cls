@@ -198,6 +198,11 @@ Method GetEndpointUrl() As %String
     If $IsObject(..ConfigAgent) {
         Set tModel = ..ConfigAgent.Model
     }
+    ; Story 6.0 sweep — $Char(0) sentinel normalization (project rule
+    ; §"$Char(0) sentinel"). An operator who clears Model via SQL UPDATE
+    ; would otherwise interpolate the literal $Char(0) byte into the
+    ; Gemini URL template, producing a 404 against a bogus model path.
+    If tModel = $Char(0) Set tModel = ""
     Set tUrl = ..#DEFAULTENDPOINTTEMPLATE
     Set tUrl = $Replace(tUrl, "{model}", tModel)
     Quit tUrl

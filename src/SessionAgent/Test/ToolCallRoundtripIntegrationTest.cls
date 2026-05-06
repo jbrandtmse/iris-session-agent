@@ -231,8 +231,18 @@ ClassMethod EnumerateMatrix() As %DynamicArray
         Do tProviders.%Push(tRs.%Get("ClassName"))
     }
 
-    ; Tool discovery — reuse the production registry.
-    Set tTools = ##class(SessionAgent.Tool.Registry).ListTools()
+    ; Tool discovery — source from the canonical tool-defs entry point
+    ; (Story 6.0 / Epic 5 retro AI-3). GetCanonicalToolDefs is the
+    ; documented surface every code path needing canonical tool defs
+    ; sources from — including the runtime AgentLoop.RunTurn (Step 5)
+    ; and this matrix's fixture path. Sharing one source-of-truth means
+    ; any drift in the canonical shape (e.g., a regression that drops
+    ; additionalProperties: false from an input_schema) is caught by both
+    ; the live wire-shape path AND the matrix simultaneously, instead of
+    ; the matrix passing while the live path silently breaks (Epic 5
+    ; Bug-3 shape — a fixture-vs-runtime drift caught only in user-led
+    ; manual-test).
+    Set tTools = ##class(SessionAgent.Tool.Registry).GetCanonicalToolDefs()
 
     ; Cartesian product.
     Set tProvIter = tProviders.%GetIterator()

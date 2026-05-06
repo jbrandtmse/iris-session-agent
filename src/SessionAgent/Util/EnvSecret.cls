@@ -68,6 +68,20 @@ Class SessionAgent.Util.EnvSecret Extends %RegisteredObject
 /// message either.</p>
 ClassMethod Resolve(pEnvVarName As %String = "", pCredentialName As %String = "") As %String
 {
+    ; Story 6.0 codification (Epic 5 retro AI-2 / project rule
+    ; §"$Char(0) sentinel"): IRIS's legacy %String null sentinel is the
+    ; one-byte $Char(0), set in-table when a SQL UPDATE writes "" to a
+    ; %String column. Callers that read Config.Agent.{EnvVarName,
+    ; CredentialName} via the OREF getter receive $Char(0) verbatim for
+    ; SQL-UPDATE-cleared rows. Without the normalization below, the
+    ; rung-1 / rung-2 guards `If pX '= ""` are TRUE for $Char(0) (a
+    ; non-empty 1-character string), and the resolver invokes
+    ; $SYSTEM.Util.GetEnviron($Char(0)) / Ens.Config.Credentials.%ExistsId(
+    ; $Char(0)) — undefined behavior. Normalize at the gate so every
+    ; ladder rung sees a clean empty string for operator-cleared inputs.
+    If pEnvVarName = $Char(0) Set pEnvVarName = ""
+    If pCredentialName = $Char(0) Set pCredentialName = ""
+
     ; Rung 1: process environment variable.
     If pEnvVarName '= "" {
         Set tEnvValue = $SYSTEM.Util.GetEnviron(pEnvVarName)

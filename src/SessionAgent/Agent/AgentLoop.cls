@@ -165,6 +165,15 @@ ClassMethod RunTurn(pAgentName As %String, pSessionKey As %String, pPortalUser A
             Quit
         }
 
+        ; Story 6.0 (Epic 5 retro AI-2 / project rule §"$Char(0)
+        ; sentinel"): IRIS legacy %String null sentinel for SQL-UPDATE-
+        ; cleared columns. Normalize at the read site so the downstream
+        ; "is empty?" guards (`If tConfig.SystemPromptOverride '= ""`,
+        ; the InstantiateProvider Provider-name dispatch) behave as the
+        ; operator expects when the Story 6.1 Zen form clears the field.
+        If tConfig.SystemPromptOverride = $Char(0) Set tConfig.SystemPromptOverride = ""
+        If tConfig.Provider = $Char(0) Set tConfig.Provider = ""
+
         ; ─────────────────────────────────────────────────────────────
         ; Step 4 — Append user message to TurnsJson.
         ; ─────────────────────────────────────────────────────────────

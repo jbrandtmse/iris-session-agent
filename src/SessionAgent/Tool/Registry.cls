@@ -219,6 +219,32 @@ ClassMethod Dispatch(pToolName As %String, pCallerCtx As SessionAgent.Agent.Call
     Quit tSC
 }
 
+/// <p><b>Story 6.0 (Epic 5 retro AI-3) — semantic alias for the
+/// canonical tool-def source.</b> Returns the same
+/// <CLASS>%DynamicArray</CLASS> that <method>ListTools</method> produces:
+/// each entry is the canonical
+/// <code>{name, description, input_schema}</code> shape, where
+/// <code>input_schema</code> includes <code>additionalProperties: false</code>
+/// per the Story 4.0 locked-subset codification.</p>
+///
+/// <p><b>Why a semantic alias?</b> The runtime tool-def array that
+/// <CLASS>SessionAgent.Agent.AgentLoop</CLASS> emits to provider
+/// <method>BuildPayload</method> + the test fixture that
+/// <CLASS>SessionAgent.Test.ToolCallRoundtripIntegrationTest</CLASS> uses
+/// for its 52-pair matrix MUST be the same array. Story 5.4 originally
+/// hand-built a tool array in the matrix without
+/// <code>additionalProperties: false</code> — that bug shipped silently
+/// because the matrix used a mock provider that bypasses
+/// <method>BuildPayload</method>'s tool-array translation. The
+/// `GetCanonicalToolDefs()` name is the documented surface every code
+/// path that needs canonical tool defs MUST source from, so a future
+/// reviewer reading the matrix code sees the fixture and the runtime
+/// share one source-of-truth.</p>
+ClassMethod GetCanonicalToolDefs() As %DynamicArray
+{
+    Quit ..ListTools()
+}
+
 /// <p>Internal — given a concrete class name and a parameter name,
 /// return the parameter's <code>Default</code> value (the literal value
 /// declared in the class). Returns the empty string if the parameter

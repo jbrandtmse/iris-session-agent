@@ -82,7 +82,7 @@ do ##class(SessionAgent.Sample.Bootstrap).StartProductionIfStopped()
 | Google Gemini | `generativelanguage.googleapis.com` | `DefaultSSL` (reuse) |
 | Ollama (local) | `192.168.0.123:11434` (no TLS) | n/a — HTTP, no SSL config |
 
-No new SSL config required for Epic 5; `DefaultSSL` covers all three cloud providers. Verify with `SELECT Name FROM Security.SSLConfigs WHERE Name = 'DefaultSSL'` from `%SYS`.
+No new SSL config required for Epic 5; `DefaultSSL` covers all four providers (OpenAI / Anthropic / Gemini / OpenAI-Compat — the OpenAI-Compat provider may also be wired against an HTTPS endpoint with `DefaultSSL` for non-Ollama hosts; the local Ollama default is HTTP and bypasses SSL config entirely). Verify with `SELECT Name FROM Security.SSLConfigs WHERE Name = 'DefaultSSL'` from `%SYS`.
 
 ### 6. RBAC
 

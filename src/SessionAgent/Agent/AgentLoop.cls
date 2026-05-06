@@ -251,6 +251,16 @@ ClassMethod RunTurn(pAgentName As %String, pSessionKey As %String, pPortalUser A
             ; Step 7b — invoke the provider via the abstract template.
             Set tProvResp = ##class(SessionAgent.Agent.ProviderResponse).%New()
             Set tCacheCfg = ##class(%DynamicObject).%New()
+            ; Anthropic prompt-caching plan (NFR-P6, Story 5.1): mark
+            ; cache_control on the system block + last tool entry. The
+            ; per-turn vocabulary digest (Epic 9) sits in the user-message
+            ; prefix and stays uncached. OpenAI / Gemini auto-cache and
+            ; ignore these flags, so emitting them unconditionally is
+            ; harmless for non-Anthropic providers.
+            If tConfig.Provider = "anthropic" {
+                Do tCacheCfg.%Set("SystemEnabled", 1)
+                Do tCacheCfg.%Set("ToolsEnabled", 1)
+            }
             Set tInvokeSC = tProvider.Invoke(tTurns, tToolDefs, tSysPrompt, tCacheCfg, tConfig, tCtx, .tProvResp)
             If $$$ISERR(tInvokeSC) {
                 ; Provider abstract returned hard %Status error (rare —
@@ -508,9 +518,13 @@ ClassMethod InstantiateProvider(pConfig As SessionAgent.Config.Agent) As Session
     If pConfig.Provider = "openai" {
         Set tProvider = ##class(SessionAgent.LLM.OpenAIProvider).%New()
     }
-    ; Stories 5.1 / 5.2 / 5.3 will extend this switch with anthropic /
-    ; gemini / openai-compatible. Unknown values fall through to NULLOREF
-    ; so RunTurn surfaces the "Unsupported provider" envelope.
+    ElseIf pConfig.Provider = "anthropic" {
+        ; Story 5.1 — Anthropic Messages API (canonical-passthrough per FR27).
+        Set tProvider = ##class(SessionAgent.LLM.AnthropicProvider).%New()
+    }
+    ; Stories 5.2 / 5.3 will extend this switch with gemini /
+    ; openai-compatible. Unknown values fall through to NULLOREF so
+    ; RunTurn surfaces the "Unsupported provider" envelope.
     Quit tProvider
 }
 

@@ -782,3 +782,34 @@ This file accumulates findings, follow-ups, and architect-decision items that ar
   - **Why deferred:** Pre-existing state-pollution sensitivity; Story 5.x dev can add a `Kill ^SessionAgent_Audit.LlmCallD` setup hook in `OnBeforeOneTest` if it recurs. Per Rule 8 test 1 (genuine future-epic scope — Epic 5 LLM provider stories will exercise `LlmCall` audit row writes more, may surface the issue more visibly).
   - **Owner:** Epic 5 dev (any of Stories 5.1-5.4) can add the cleanup hook if the test re-flakes during Epic 5 regression sweeps.
   - **Blocking?** Not blocking.
+
+---
+
+## Deferred from: code review of story-5-1-llm-anthropicprovider-concrete (2026-05-06)
+
+- **`SessionAgent.Config.Agent.SystemPromptOverride` MAXLEN=8192 silently truncates large operator-customized prompts.**
+  - **Source:** Story 5.1 dev report (Debug Log References) — dev hit silent truncation when investigating cache_read=0 anomaly with a 63KB padded test prompt.
+  - **Severity:** LOW (operator-visible behavior, but the runtime default `AgentDefaults.GetSystemPrompt` is well under 8192 and the override is operator-chosen).
+  - **The observation:** `Config.Agent.cls:77` declares `Property SystemPromptOverride As %String(MAXLEN = 8192)`. When an operator supplies an override longer than 8192 characters, the persistence layer silently truncates without raising `%Status` warning. Dev empirically confirmed this swallowed a 63KB → 5469 chars transformation. For Anthropic providers, this matters because Haiku's prompt-cache minimum is roughly 2048 tokens (~8192 chars) — a truncated override below that threshold means cache_control markers never engage Anthropic's cache layer, defeating NFR-P6 cost savings.
+  - **Why deferred:** (a) The runtime defaults (`AgentDefaults.GetSystemPrompt`) for both `session-inspection` and `message-search` agents are far below 8192. (b) Operators using a richly-tuned override are the only affected surface, and they are sophisticated users likely to notice the truncation in the Story 6.1 Zen form once it ships. (c) The fix is a cooperative change between `Config.Agent.cls` (raise MAXLEN, or convert to stream backing), the Story 6.1 Zen form (add a length warning + char counter), and possibly a startup linter that warns in `^%SYS.SessionAgent.Audit` if a row's override is exactly 8192 chars (a likely truncation marker).
+  - **Recommendation:** Story 6.1 (AgentConfig Zen form layout) is the natural carrier — when shipping the form, add (a) a visible char counter on the `SystemPromptOverride` textarea, (b) a soft validator that flags overrides > 7500 chars (warning) and > 8192 chars (block-or-truncate-with-confirm), (c) a one-line operator-facing note in README §Operator Prerequisites about the cap. Alternatively, raise the property cap to `MAXLEN=32767` (or convert to a stream property) in a Story 6.x backend tweak.
+  - **Owner:** Story 6.1 (AgentConfig Zen form) is the natural carrier per the operator-UX surface; the property-cap raise belongs in the same story or a sibling Story 6.x.
+  - **Blocking?** Not blocking. Operators can work around by keeping overrides ≤ 8192 chars.
+
+- **`BuildPayload` `%FromJSON(%ToJSON())` defensive-copy round-trip on tool defs could throw on malformed input.**
+  - **Source:** Story 5.1 code review (edge-case scan).
+  - **Severity:** LOW (caught by outer Try/Catch in `CallMessages`; canonical tool defs from `Tool.Registry.ListTools()` are well-formed by construction).
+  - **The observation:** `AnthropicProvider.cls:467` performs `Set tToolCopy = ##class(%DynamicObject).%FromJSON(tTool.%ToJSON())` to defensively clone each canonical tool def before potentially adding `cache_control`. If `tTool` somehow contains a `%DynamicArray` or `%DynamicObject` with a circular reference or non-serializable value, the `%ToJSON` could fail. The outer Try/Catch in `CallMessages` would convert this to a structured error envelope (no crash), but the failure mode is silent to the operator.
+  - **Why deferred:** (a) `Tool.Registry.ListTools()` returns deterministically-shaped canonical tool defs from the trust-boundary registry — circular references are not a real attack/error surface. (b) The defensive clone is itself the right pattern (avoids mutating caller's tool def). (c) A more robust clone strategy would use `%DynamicObject.%New()` + key-by-key copy, but that adds maintenance cost for negligible reward.
+  - **Recommendation:** No action. Document as known-acceptable in Story 5.4 (tool-call roundtrip integration test infrastructure) so the integration test exercises tool-def shape edge cases.
+  - **Owner:** Story 5.4 dev (tool-call roundtrip integration tests) — verify integration test covers malformed-tool-def graceful degradation.
+  - **Blocking?** Not blocking.
+
+- **`ParseEndpointUrl` server includes port suffix when endpoint URL has explicit port (`https://host:443/path`).**
+  - **Source:** Story 5.1 code review (edge-case scan; pre-existing shape inherited from Story 2.9 OpenAIProvider).
+  - **Severity:** LOW (pre-existing; both providers have identical parser; default 443 inferred when `Https=1` so observable break only on non-standard ports).
+  - **The observation:** Both `OpenAIProvider.ParseEndpointUrl` and `AnthropicProvider.ParseEndpointUrl` set `Server = $Extract(stripped, 1, slashPos - 2)`. For input `"https://api.anthropic.com:443/v1/messages"`, this yields `Server = "api.anthropic.com:443"` rather than the bare hostname + a separate `Port=443` setting. `%Net.HttpRequest` typically resolves a port-suffixed hostname correctly via DNS but this is non-canonical use.
+  - **Why deferred:** (a) Standard Anthropic / OpenAI endpoints have no port suffix in the canonical URL. (b) Operator-override endpoints (`Config.Agent.EndpointUrl`) for non-standard hosts (e.g., a corporate proxy) are an Epic 5.3 OpenAI-compatible concern. (c) Same parser ships in OpenAIProvider since Story 2.9 with no observable break in production.
+  - **Recommendation:** Story 5.3 (OpenAI-compatible provider) should generalize the URL parser into a shared utility and split `host:port` into separate `Server` and `Port` fields. Apply the fix to all four concrete providers in the same commit.
+  - **Owner:** Story 5.3 (OpenAICompatProvider concrete) — natural carrier since it owns the operator-override URL surface most directly.
+  - **Blocking?** Not blocking.

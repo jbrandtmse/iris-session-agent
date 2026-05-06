@@ -230,22 +230,31 @@ ClassMethod EmitConfigEmpty(pAgentName As %String, pIsAdmin As %Boolean = 0) As 
             Quit
         }
 
-        ; Build the prompt text per the admin / non-admin variant.
-        ; Both use plain English text; the admin variant adds the
-        ; placeholder Epic-6-link sentence.
-        If pIsAdmin {
-            Set tPromptText = "This agent isn't configured yet. Set up an LLM provider at SessionAgent.UI.AgentConfig.zen (configuration page coming in Epic 6 — placeholder URL for now)."
-        } Else {
-            Set tPromptText = "This agent isn't configured yet. Ask your operator-admin."
-        }
-
         ; Emit the panel shell with the prompt replacing the transcript +
         ; disabled input. The shape matches DrawChatPanel's wrapper so
         ; CSS selectors like .sa-chat-panel still apply (UX-DR7-admin
         ; says "replace transcript area"; we keep the panel chrome and
         ; replace the inner content).
+        ;
+        ; Admin variant (Story 6.3 AC-1): a real <a> anchor pointing to
+        ; the namespace-scoped AgentConfig zen page replaces the Story 3.5
+        ; placeholder bare-text reference. The href interpolates
+        ; $ZConvert($NAMESPACE, "L") so multi-namespace installs (Story 6.4)
+        ; route correctly. The U+2192 RIGHTWARDS ARROW glyph is the literal
+        ; Unicode character (UTF-8 byte sequence E2 86 92) per Rule 12 —
+        ; NOT an ASCII '->' substitute. UX-DR19 requires a real <a>;
+        ; UX-DR20 requires aria-label="Configure agent".
+        ;
+        ; Non-admin variant (UX-DR7-admin): unchanged from Story 3.5 — no
+        ; link, just the "Ask your operator-admin." guidance.
         &html<<section role="region" aria-label="Agent chat panel" class="sa-chat-panel">>
-        &html<<div class="sa-config-empty-prompt" role="alert">#($ZConvert(tPromptText, "O", "HTML"))#</div>>
+        If pIsAdmin {
+            Set tNsLower = $ZConvert($NAMESPACE, "L")
+            &html<<div class="sa-config-empty-prompt" role="alert">This agent isn't configured yet. <a href="/csp/#(tNsLower)#/SessionAgent.UI.AgentConfig.zen" aria-label="Configure agent">Configure agent →</a></div>>
+        } Else {
+            Set tPromptText = "This agent isn't configured yet. Ask your operator-admin."
+            &html<<div class="sa-config-empty-prompt" role="alert">#($ZConvert(tPromptText, "O", "HTML"))#</div>>
+        }
         &html<<form class="sa-input-area">>
         &html<<textarea class="sa-input-field sa-input-field-disabled" aria-label="Agent not configured" aria-disabled="true" disabled></textarea>>
         &html<</form>>

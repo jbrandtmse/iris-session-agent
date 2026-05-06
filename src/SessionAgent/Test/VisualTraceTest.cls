@@ -347,7 +347,22 @@ Method TestDrawChatPanelConfigEmptyAdmin()
     Do $$$AssertNotEquals(tCaptured, "", "EmitConfigEmpty (admin) produced output")
     Do $$$AssertTrue(tCaptured [ "sa-config-empty-prompt", "admin variant emits sa-config-empty-prompt class (Story 3.5 AC-1)")
     Do $$$AssertTrue(tCaptured [ "role=""alert""", "admin variant emits role=alert per UX-DR20-MVP")
-    Do $$$AssertTrue(tCaptured [ "SessionAgent.UI.AgentConfig.zen", "admin variant references the Epic-6 placeholder URL (Story 3.5 AC-1)")
+    ; Story 6.3 AC-2: real-anchor shape replaces the Story 3.5 placeholder
+    ; bare-text reference. Three sharpened assertions verify the rendered
+    ; <a> element matches the contract: opening tag with href to a
+    ; namespace-scoped /csp/ path, href ends with the AgentConfig.zen
+    ; segment, and the aria-label per UX-DR20.
+    Do $$$AssertTrue(tCaptured [ "<a href=""/csp/", "admin variant emits a real <a href> element (Story 6.3 AC-1)")
+    Do $$$AssertTrue(tCaptured [ "/SessionAgent.UI.AgentConfig.zen""", "admin variant href ends with AgentConfig.zen (Story 6.3 AC-1)")
+    Do $$$AssertTrue(tCaptured [ "aria-label=""Configure agent""", "admin variant anchor has aria-label per UX-DR20 (Story 6.3 AC-1)")
+    ; Story 6.3 AC-2: namespace dynamism — the rendered href interpolates
+    ; $ZConvert($NAMESPACE, "L") server-side, so the assertion uses the
+    ; runtime-resolved lowercased namespace (NOT a hardcoded literal).
+    Do $$$AssertTrue(tCaptured [ ("/csp/" _ $ZConvert($NAMESPACE, "L") _ "/"), "admin variant href interpolates $ZConvert($NAMESPACE,'L') (Story 6.3 AC-1)")
+    ; Story 6.3 AC-2: U+2192 RIGHTWARDS ARROW must be present (NOT '->'
+    ; ASCII, NOT mojibake). Per Rule 12, the arrow is the most likely
+    ; mojibake risk in this file (Story 3.7 '·' separator precedent).
+    Do $$$AssertTrue(tCaptured [ $Char(8594), "admin variant uses U+2192 RIGHTWARDS ARROW glyph (Story 6.3 AC-1, Rule 12)")
     Do $$$AssertTrue(tCaptured [ "sa-input-field-disabled", "admin variant emits sa-input-field-disabled CSS class (Story 3.5 AC-1)")
     Do $$$AssertTrue(tCaptured [ "aria-disabled=""true""", "admin variant emits aria-disabled=true on input (Story 3.5 AC-1 / UX-DR20-MVP)")
     Quit
@@ -384,7 +399,14 @@ ClassMethod CaptureEmitConfigEmpty(pAgentName As %String, pIsAdmin As %Boolean) 
     Set tIO = $IO
     Set tCaptured = ""
     Try {
-        Open tTempFile:("WNS"):2
+        ; Open with UTF-8 translation so multi-byte sequences (e.g., the
+        ; U+2192 RIGHTWARDS ARROW glyph in the Story 6.3 admin-variant
+        ; "Configure agent →" anchor) round-trip cleanly. The K parameter
+        ; activates the named translation table (without K, the \UTF8\
+        ; spec is parsed but not applied — multi-byte chars are silently
+        ; stripped to '?'). Without UTF-8 translation the file device
+        ; defeats the Story 6.3 AC-2 arrow-presence assertion.
+        Open tTempFile:("WNSK\UTF8\"):2
         Use tTempFile
         Set tSC = ##class(SessionAgent.EnsPortal.Util.ChatPanelDrawHelper).EmitConfigEmpty(pAgentName, pIsAdmin)
         Use tIO
@@ -392,6 +414,7 @@ ClassMethod CaptureEmitConfigEmpty(pAgentName As %String, pIsAdmin As %Boolean) 
 
         Set tStream = ##class(%Stream.FileCharacter).%New()
         Do tStream.LinkToFile(tTempFile)
+        Set tStream.TranslateTable = "UTF8"
         While 'tStream.AtEnd {
             Set tCaptured = tCaptured _ tStream.Read(32000)
         }

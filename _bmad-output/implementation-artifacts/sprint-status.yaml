@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-05-02
-last_updated: 2026-05-06 (Story 6.2 review — save handler + NFR-O2 hot-config-change empirically proven)
+last_updated: 2026-05-06 (Story 6.3 done — clean review, 0 findings; placeholder admin link replaced; Aishah Journey 3 checklist authored)
 project: iris-session-agent
 # Epic 1 complete (retro 2026-05-02); Epic 2 retrospective triage gate (Story 2.0) 2026-05-03
 project_key: NOKEY
@@ -105,7 +105,7 @@ development_status:
   6-0-epic-5-deferred-cleanup: done
   6-1-agentconfig-zen-form-layout: review
   6-2-save-handler-hot-config-change-verification: review
-  6-3-replace-placeholder-admin-link-end-to-end-configure-and-ask-validation: backlog
+  6-3-replace-placeholder-admin-link-end-to-end-configure-and-ask-validation: done
   6-4-multi-namespace-install-support: backlog
   epic-6-retrospective: optional
 

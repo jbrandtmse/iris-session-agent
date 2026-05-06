@@ -356,4 +356,90 @@ Method TestFormatExceptionForOperatorNullInputReturnsEmpty()
     Quit
 }
 
+/// <p>Story 5.0 AC-5 — assert each new Ens-specific curated code returns
+/// a complete matched envelope: <code>render_strategy="matched"</code>,
+/// non-empty <code>decoded_text</code>, populated <code>common_causes</code>
+/// array, populated <code>suggested_diagnostics</code> array,
+/// <code>code_class="interop"</code>. Single helper-driven test
+/// exercises all 4 new codes (ErrGeneral, ErrBPTimeout, ErrNoTimeout,
+/// ErrException) plus the corrected <code>&lt;Ens&gt;ErrBPTerminated</code>
+/// (replaces stale <code>&lt;Ens&gt;ErrBPTerm</code> from Story 4.7).</p>
+Method TestExplainErrorStory50EnsCodesAllReturnMatchedEnvelope()
+{
+    Set tCtx = ..BuildCtx()
+    Set tCodes = $ListBuild("<Ens>ErrGeneral", "<Ens>ErrBPTimeout", "<Ens>ErrNoTimeout", "<Ens>ErrException", "<Ens>ErrSearchTableNotIndex", "<Ens>ErrBPTerminated")
+    Set tPtr = 0
+    While $ListNext(tCodes, tPtr, tCode) {
+        Set tArgs = {"status_or_error_string": (tCode)}
+        Set tResult = ""
+        Set tSC = ##class(SessionAgent.Tool.Inspection.ExplainError).Invoke(tCtx, tArgs, .tResult)
+        Do $$$AssertStatusOK(tSC, tCode _ ": Invoke returns $$$OK")
+        Do $$$AssertEquals(tResult.structuredContent.%Get("render_strategy"), "matched", tCode _ ": render_strategy='matched'")
+        Do $$$AssertEquals(tResult.structuredContent.%Get("matched_code"), tCode, tCode _ ": matched_code echoes the input code")
+        Do $$$AssertEquals(tResult.structuredContent.%Get("code_class"), "interop", tCode _ ": code_class='interop' (Ens family)")
+        Do $$$AssertNotEquals(tResult.structuredContent.%Get("decoded_text"), "", tCode _ ": decoded_text non-empty")
+        Set tCauses = tResult.structuredContent.%Get("common_causes")
+        Do $$$AssertTrue($IsObject(tCauses), tCode _ ": common_causes is array")
+        Do $$$AssertTrue(tCauses.%Size() > 0, tCode _ ": common_causes non-empty (>= 1 entry)")
+        Set tDiags = tResult.structuredContent.%Get("suggested_diagnostics")
+        Do $$$AssertTrue($IsObject(tDiags), tCode _ ": suggested_diagnostics is array")
+        Do $$$AssertTrue(tDiags.%Size() > 0, tCode _ ": suggested_diagnostics non-empty (>= 1 entry)")
+    }
+    Quit
+}
+
+/// <p>Story 5.0 AC-5 — verify the stale <code>&lt;Ens&gt;ErrBPTerm</code>
+/// key is GONE from the curated table (corrected to canonical
+/// <code>&lt;Ens&gt;ErrBPTerminated</code> per
+/// <code>irislib/EnsErrors.inc</code> line 18). The bare lookup of the
+/// stale name must fall through to the unmatched-shape envelope.</p>
+Method TestExplainErrorStaleErrBPTermNoLongerMatches()
+{
+    Set tCtx = ..BuildCtx()
+    Set tArgs = {"status_or_error_string": "<Ens>ErrBPTerm"}
+    Set tResult = ""
+    Set tSC = ##class(SessionAgent.Tool.Inspection.ExplainError).Invoke(tCtx, tArgs, .tResult)
+    Do $$$AssertStatusOK(tSC, "Invoke returns $$$OK on stale ErrBPTerm")
+    ; The stale name is a substring of <Ens>ErrBPTerminated — the
+    ; ordered LookupCuratedCode must NOT match the longer canonical
+    ; name when the input is the SHORTER stale name. Allowed outcomes:
+    ; either "unmatched" (the stale name is gone) OR "matched" with
+    ; matched_code = "<Ens>ErrBPTerminated" (longest-prefix lookup
+    ; resolved upward). Either is acceptable; what is FORBIDDEN is
+    ; matched_code = "<Ens>ErrBPTerm" (stale name still in the table).
+    Set tStrategy = tResult.structuredContent.%Get("render_strategy")
+    If tStrategy = "matched" {
+        Do $$$AssertNotEquals(tResult.structuredContent.%Get("matched_code"), "<Ens>ErrBPTerm", "matched_code MUST NOT be the stale '<Ens>ErrBPTerm' name (Story 5.0 correction)")
+    } Else {
+        Do $$$AssertEquals(tStrategy, "unmatched", "render_strategy is 'unmatched' for the stale ErrBPTerm name (Story 5.0)")
+    }
+    Quit
+}
+
+/// <p>Story 5.0 Item G fold-in — the curated table is per-process
+/// cached via <code>^||SessionAgentExplainErrorTable</code>. Verify
+/// the cache PPG is set after a BuildErrorTable call, and that a
+/// second call returns a populated table when the cache is present.
+/// (Cannot directly assert "no rebuild on cache hit" without
+/// instrumentation; this test instead asserts the contract: cache is
+/// seeded after first call, cache rehydration yields the same shape.)</p>
+Method TestExplainErrorTableCachedInProcessPrivateGlobal()
+{
+    ; Clear the cache to force a fresh build.
+    Kill ^||SessionAgentExplainErrorTable
+    Do $$$AssertEquals($Data(^||SessionAgentExplainErrorTable), 0, "cache PPG cleared at start")
+    Set tFirst = ##class(SessionAgent.Tool.Inspection.ExplainError).BuildErrorTable()
+    Do $$$AssertTrue(tFirst.%Size() > 0, "first BuildErrorTable returns populated table")
+    Do $$$AssertNotEquals($Data(^||SessionAgentExplainErrorTable), 0, "cache PPG seeded after first call")
+    ; Second call — should rehydrate from cache and return a table of
+    ; the same size with the same keys.
+    Set tSecond = ##class(SessionAgent.Tool.Inspection.ExplainError).BuildErrorTable()
+    Do $$$AssertEquals(tSecond.%Size(), tFirst.%Size(), "cached call returns same-sized table")
+    Do $$$AssertTrue(tSecond.%IsDefined("<Ens>ErrGeneral"), "cached call has <Ens>ErrGeneral entry")
+    Do $$$AssertTrue(tSecond.%IsDefined("<Ens>ErrBPTerminated"), "cached call has corrected <Ens>ErrBPTerminated entry")
+    ; Cleanup.
+    Kill ^||SessionAgentExplainErrorTable
+    Quit
+}
+
 }

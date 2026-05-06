@@ -477,6 +477,70 @@ Method TestCanonicalToOpenAiMultiTurnToolFlowPreservesIdLinkage()
     Quit
 }
 
+/// <p>Story 5.0 AC-6 — verify the OpenAI tool_result fan-out path
+/// emits one OpenAI <code>{role:"tool"}</code> message per tool_result
+/// block when a single canonical user-role message carries TWO
+/// tool_result blocks. Mixed content shapes: one block has plain
+/// string content, the other has array-of-text-blocks content (which
+/// the adapter must stringify to JSON via <code>%ToJSON</code>).
+/// This was the deferred test gap from Story 2.8 review (named
+/// successor: Story 2.9; silently dropped; surfaced in Epic 4 retro
+/// continued-deferrals; verified empirically here).</p>
+Method TestCanonicalUserTwoToolResultBlocksFanOutToTwoOpenAiToolMessages()
+{
+    Set tHistory = ##class(%DynamicArray).%New()
+    Set tMsg = ##class(%DynamicObject).%New()
+    Do tMsg.%Set("role", "user")
+    Set tContent = ##class(%DynamicArray).%New()
+
+    ; Block 1 — tool_result with plain string content.
+    Set tBlk1 = ##class(%DynamicObject).%New()
+    Do tBlk1.%Set("type", "tool_result")
+    Do tBlk1.%Set("tool_use_id", "call_alpha")
+    Do tBlk1.%Set("content", "session 42 has 5 messages")
+    Do tContent.%Push(tBlk1)
+
+    ; Block 2 — tool_result with array-of-text-blocks content
+    ; (canonical Anthropic permits both shapes). Adapter must stringify
+    ; the array via %ToJSON.
+    Set tBlk2 = ##class(%DynamicObject).%New()
+    Do tBlk2.%Set("type", "tool_result")
+    Do tBlk2.%Set("tool_use_id", "call_beta")
+    Set tBlk2Content = ##class(%DynamicArray).%New()
+    Set tTextBlk = ##class(%DynamicObject).%New()
+    Do tTextBlk.%Set("type", "text")
+    Do tTextBlk.%Set("text", "second tool returned 12 rows")
+    Do tBlk2Content.%Push(tTextBlk)
+    Do tBlk2.%Set("content", tBlk2Content)
+    Do tContent.%Push(tBlk2)
+
+    Do tMsg.%Set("content", tContent)
+    Do tHistory.%Push(tMsg)
+
+    Set tOut = ##class(SessionAgent.LLM.Util.MessageAdapter).CanonicalToProvider("openai", tHistory)
+
+    ; FAN-OUT INVARIANT: TWO tool_result blocks → TWO OpenAI tool messages.
+    Do $$$AssertEquals(tOut.%Size(), 2, "Two OpenAI messages emitted (fan-out: one per tool_result block; empty user message suppressed)")
+
+    ; First message — string content path.
+    Set tOaMsg1 = tOut.%Get(0)
+    Do $$$AssertEquals(tOaMsg1.%Get("role"), "tool", "Index 0 role='tool' (first fan-out)")
+    Do $$$AssertEquals(tOaMsg1.%Get("tool_call_id"), "call_alpha", "Index 0 tool_call_id='call_alpha' (string-content block's tool_use_id)")
+    Do $$$AssertEquals(tOaMsg1.%Get("content"), "session 42 has 5 messages", "Index 0 content preserved verbatim from string tool_result")
+
+    ; Second message — array-of-text-blocks content path; stringified to JSON.
+    Set tOaMsg2 = tOut.%Get(1)
+    Do $$$AssertEquals(tOaMsg2.%Get("role"), "tool", "Index 1 role='tool' (second fan-out)")
+    Do $$$AssertEquals(tOaMsg2.%Get("tool_call_id"), "call_beta", "Index 1 tool_call_id='call_beta' (array-content block's tool_use_id)")
+    ; Content for the array form is %ToJSON of the array — assert it's a
+    ; string (not an object) and contains the expected text.
+    Set tContent2 = tOaMsg2.%Get("content")
+    Do $$$AssertTrue('$IsObject(tContent2), "Index 1 content is a STRING (array-of-text-blocks stringified via %ToJSON), got isObject=" _ $IsObject(tContent2))
+    Do $$$AssertTrue(tContent2 [ "second tool returned 12 rows", "Index 1 stringified content includes the inner text payload")
+    Do $$$AssertTrue(tContent2 [ """type"":""text""", "Index 1 stringified content preserves the array-of-text-blocks JSON shape")
+    Quit
+}
+
 /// <p>Internal helper — build a 3-message canonical history with mixed
 /// block types: <code>user</code> with text, <code>assistant</code> with
 /// text + tool_use, <code>tool</code> with tool_result.</p>

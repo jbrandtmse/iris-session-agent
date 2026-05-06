@@ -166,3 +166,67 @@ runner's summary, the runner truncated and the per-class workaround applies.
 - **Cross-suite invariant check** (e.g., "does any class fail under
   audit-ledger writes?"): per-class, scripted, results captured to a file
   the lead reads end-to-end before claiming green.
+
+### SQL-probe-as-ground-truth for test-pass verification (Story 5.0 / Epic 4 retro AI-1)
+
+**Rule.** After any per-class test run claiming N/N pass — whether via the
+package runner, the per-class workaround above, or any other invocation —
+the dev MUST verify the total pass count via direct SQL probe against
+`%UnitTest_Result.TestMethod` joined to `%UnitTest_Result.TestCase`. The
+underlying global (`^UnitTest.Result`) is **ground truth**; the
+`mcp__iris-dev-mcp__iris_execute_tests` envelope is **best-effort** and can
+mask BOTH count discrepancies AND failing-method information when the
+result list is large enough to truncate.
+
+**Recommended SQL.** The schema joins `TestMethod` (per-method) → `TestCase`
+(per-class). Filter to the latest run per class via the most-recent
+`TestCase.ID`:
+
+```sql
+SELECT %EXACT(tm.Name) AS Method, tm.Status, %EXACT(tc.Name) AS TestClass
+FROM %UnitTest_Result.TestMethod tm
+JOIN %UnitTest_Result.TestCase tc ON tm.TestCase = tc.ID
+WHERE %EXACT(tc.Name) LIKE 'SessionAgent.Test.%'
+  AND tc.ID IN (
+    SELECT MAX(ID) FROM %UnitTest_Result.TestCase
+    WHERE %EXACT(Name) LIKE 'SessionAgent.Test.%'
+    GROUP BY %EXACT(Name)
+  )
+ORDER BY %EXACT(tc.Name), %EXACT(tm.Name)
+```
+
+The aggregate-count form for a one-line pass/fail summary (note that
+unqualified `Status` is ambiguous across the join — qualify as `tm.Status`):
+
+```sql
+SELECT COUNT(*) AS Total,
+       SUM(CASE WHEN tm.Status=1 THEN 1 ELSE 0 END) AS Passed,
+       SUM(CASE WHEN tm.Status=0 THEN 1 ELSE 0 END) AS Failed
+FROM %UnitTest_Result.TestMethod tm
+JOIN %UnitTest_Result.TestCase tc ON tm.TestCase = tc.ID
+WHERE %EXACT(tc.Name) LIKE 'SessionAgent.Test.%'
+  AND tc.ID IN (
+    SELECT MAX(ID) FROM %UnitTest_Result.TestCase
+    WHERE %EXACT(Name) LIKE 'SessionAgent.Test.%'
+    GROUP BY %EXACT(Name)
+  )
+```
+
+**Why ground-truth.** Story 4.7 shipped a HIGH-severity off-by-one bug
+past the dev's "all 8 methods Status=1" claim — the real recorded state was
+9 of 10 methods (one new test added late in the cycle had been truncated
+out of the `iris_execute_tests` JSON envelope, and the dev never noticed
+the missing tail row). The SQL probe shows every recorded method
+unconditionally; truncation cannot hide a row that exists in the global.
+
+**When to run.** Every empirical-battery test claim. Every retro opening's
+"N/N pass" line. Every story Completion Notes line that asserts a regression
+sweep. Pre-state baselines AND post-state confirmation. The MCP envelope is
+acceptable to drive iteration during dev; the SQL probe is the verification
+gate before claiming completion.
+
+**The shortcut form** for an iteration-style check (no per-method roster,
+just totals) — `SELECT COUNT(*) FROM %UnitTest_Result.TestMethod tm JOIN
+... WHERE tm.Status=0 AND ...` — answers the binary "any failures?"
+question in one row. Use that to drive a tight red-green loop, then run the
+full per-method query at completion-claim time.

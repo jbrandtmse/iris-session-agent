@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-05-02
-last_updated: 2026-05-04 (Epic 4 retrospective done — 1 Rule 6 sub-clause + 1 Rule 2 sharpening + 2 watch-items + 5 carry-forwards into Story 5.0)
+last_updated: 2026-05-06 (Story 5.0 done — Epic 4 deferred cleanup; reviewer applied MEDIUM doc-comment patch + 4 LOW deferrals; 225/225 regression sweep verified)
 project: iris-session-agent
 # Epic 1 complete (retro 2026-05-02); Epic 2 retrospective triage gate (Story 2.0) 2026-05-03
 project_key: NOKEY
@@ -93,7 +93,8 @@ development_status:
   4-7-explainerror-comprehensive-read-only-suite-verification: done
   epic-4-retrospective: done
 
-  epic-5: backlog
+  epic-5: in-progress
+  5-0-epic-4-deferred-cleanup: done
   5-1-llm-anthropicprovider-concrete: backlog
   5-2-llm-geminiprovider-concrete: backlog
   5-3-llm-openaicompatprovider-concrete: backlog

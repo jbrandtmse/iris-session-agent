@@ -35,6 +35,22 @@ These rules exist because Epic 1 required user intervention 6+ times for things 
 - Never speculatively complete. "Looks like it should work" is not verification.
 - This rule applies to Lead, Dev agents, and Code-Review agents equally.
 
+**Sharpened (Story 5.0 / Epic 4 retro AI-2) — verbatim AC-contract evidence in Completion Notes.** For each verification task `[x]`, the dev's Completion Notes MUST capture **verbatim output that proves the AC's "Then ..." clause holds** — a SQL probe result, a method invocation return, a tool dispatch envelope, a class Description grep, a chrome-devtools-mcp screenshot reference, or whatever evidence form matches the contract. **"Tests passed" is necessary but not sufficient.** Examples of the evidence-shape match:
+
+- AC's "Then ..." is *"the class declares Description = X"* → evidence is the **verbatim Description string** from the compiled class (e.g., `iris_doc_get` UDL output or `iris_sql_execute` against `%Dictionary.ParameterDefinition`).
+- AC's "Then ..." is *"the SQL projection returns N rows of shape Y"* → evidence is the **verbatim SQL probe output** with column headers and row data.
+- AC's "Then ..." is *"the rendered welcome message reads 'Hello, $User'"* → evidence is the **verbatim chrome-devtools-mcp `take_snapshot` / `take_screenshot` output** showing that exact string in the rendered DOM (per Rule 12 — UI stories).
+- AC's "Then ..." is *"the tool dispatch returns `render_strategy=matched`"* → evidence is the **verbatim envelope JSON** from `iris_execute_classmethod` against `Tool.Registry.Dispatch`.
+- AC's "Then ..." is *"the regression sweep is N/N pass"* → evidence is the **verbatim SQL probe output against `%UnitTest_Result.TestMethod`** per Rule 6 step 3 (the MCP envelope is best-effort, not ground truth).
+
+The originating Epic 4 incidents — **5 reviewer-caught bugs that all involved the dev claiming completion based on tests-passing without empirical proof of the AC's actual contract:**
+1. **Story 4.3 HIGH** — silent `%Prepare` failure path: tests passed but no test exercised the SQL Statement.%Prepare-returns-error code path.
+2. **Story 4.4 HIGH x2** — class Description drift x2: tests passed but the registered tool descriptions in `%Dictionary.ParameterDefinition` had drifted from the spec wording, surfacing as wrong tool descriptions in `Tool.Registry.ListTools` output.
+3. **Story 4.7 HIGH** — `FormatException` off-by-one: dev claimed "8/8 methods pass" from `iris_execute_tests`; real recorded state was 9/10 (one tail row truncated from the envelope; SQL probe would have caught it).
+4. **Story 4.5 wider sweep needed** — `find_related_sessions` empty-array case wasn't asserted on the actual SQL probe shape; the test passed against the dev's mental model but the production output differed.
+
+**Apply at story sign-off.** When flipping the last task `[x]`, the dev re-reads each AC and confirms the Completion Notes contain the verbatim evidence shape matching that AC's "Then ..." clause. If any AC lacks the evidence, the dev keeps the task `[ ]` until the evidence is captured.
+
 ## Rule 3: Higher-level MCP before generic `iris_execute_command`
 
 **Rule.** Before constructing an `iris_execute_command` invocation, check whether a typed MCP exists for the operation. If yes, use the typed MCP.
@@ -86,6 +102,20 @@ These rules exist because Epic 1 required user intervention 6+ times for things 
 - Discrepancies trigger a same-commit correction pass through all canonical docs (per the cross-cutting rename precedent set by Story 1.4 SessionAgent_ReadOnly fix).
 - Also update auto-memory entries that may carry the stale term (e.g., `project_package_naming.md`).
 
+### Watch-item: operator-facing static text vs shipped-capability divergence (Story 5.0 / Epic 4 retro AI-3)
+
+When an epic adds tools, providers, agents, or other shipped capabilities, the stale-reference scan MUST also include **operator-facing static text** that may have been written in a prior epic enumerating only the THEN-shipped capabilities. The scan target list extends beyond external dependency names (HSCUSTOMCODE | gpt-4o | etc.) to include:
+
+- **Welcome messages** in chat panels, portals, REPLs (e.g., `chat-panel.js renderWelcomeMessage`).
+- **Error envelopes** that enumerate what the system can/can't do (e.g., "I can answer questions about: A, B, C" — must update when D ships).
+- **Status messages** rendered in the UI (e.g., "X tools available" must match the actual registered count).
+- **Button labels / attribution prefixes / capability statements** in any operator-rendered surface.
+- **Doc comments + class Descriptions** that enumerate capability lists (these surface in `Tool.Registry.ListTools` output and operator-facing portals).
+
+**Originating finding.** Story 4.7 manual-test session (Epic 4 close-out) caught the chat-panel `renderWelcomeMessage` claiming only the **3 Epic 3 inspection tools** (`session_summary`, `session_timeline`, `message_headers`) despite Epic 4 having shipped **13 total tools** (10 new — `event_log`, `rule_log`, `get_message_body`, `get_message_detail`, three BP-introspection, `find_related_sessions`, `find_sessions_by_body`, `explain_error`). The welcome message had not been updated as Epic 4 stories shipped the new tools — a stale-reference invariant that no automated test caught because the welcome string is operator-facing prose, not a structural assertion. Fix landed in commit `d7ebf80`.
+
+**Apply at story start.** When a story adds a capability, the lead's Task 0 stale-reference scan MUST `grep` for capability enumerations across `*.js` (UI assets), `*.cls` (doc comments + Description parameters), `*.md` (README, deferred-work, planning artifacts) and update each reference in the same commit. The scan keywords are the capability-list terms, not just the dependency names: e.g., for a new tool `find_x`, grep for the existing tool names that appear together in lists (`session_summary`, `session_timeline`, etc.) — wherever an enumeration appears, that's a candidate for stale-reference correction.
+
 ## Rule 5: One-liner check before deferring
 
 **Rule.** When something fails (zpm error, compile error, test failure, MCP error), spend 5–15 minutes on empirical investigation via probes + research BEFORE deferring to a future story.
@@ -115,7 +145,7 @@ If the fix is found in <15 min total: apply it, update affected docs in the same
 
 1. **End-to-end install:** `zpm load` (or epic-specific install path), capture full lifecycle output.
 2. **Expected state via typed MCPs:** `iris_role_list`, `iris_audit_events`, `iris_namespace_list`, `iris_task_list`, etc. — whichever surfaces are owned by the epic's deliverables.
-3. **Full regression suite:** `iris_execute_tests` per-class sweep (the package-level runner truncates; per-class is the workaround codified across Stories 2.4 through 2.12; see [`.claude/rules/object-script-testing.md` §"MCP `iris_execute_tests` Truncation Workaround"](object-script-testing.md)).
+3. **Full regression suite:** `iris_execute_tests` per-class sweep (the package-level runner truncates; per-class is the workaround codified across Stories 2.4 through 2.12; see [`.claude/rules/object-script-testing.md` §"MCP `iris_execute_tests` Truncation Workaround"](object-script-testing.md)). **The "N/N test pass" claim that gates the retro MUST come from a direct SQL probe against `%UnitTest_Result.TestMethod` (joined to `TestCase`), not from the MCP envelope** — the envelope can silently truncate failing-tail rows and mask off-by-one bugs (Story 4.7 HIGH severity). See [`.claude/rules/object-script-testing.md` §"SQL-probe-as-ground-truth for test-pass verification"](object-script-testing.md) for the canonical query.
 4. **Live integration test** (per Rule 11 below — added Epic 2 retro; **sharpened Epic 3 retro AI-13**): if the epic ships any code path that calls an external API, run the live test against **rich, production-shaped data** — sample production, fixture data, or real captured traffic. A bare namespace with synthetic test sessions does NOT count. For projects without a sample production, the lead must build minimal fixture data before claiming the battery is complete. Cited reason: Epic 3 Story 3.7 lead-walkthrough-on-bare-HSCUSTOM → user-redirected-to-sample-production incident — the redirect surfaced 5 manual-test bugs in 30 minutes that the bare-namespace smoke missed. Mock-only smoke tests are insufficient.
 5. **CI gates:** run each gate locally as the workflow would.
 6. **Cross-cutting invariant checks:** file-presence, `Language = python` grep, CDN grep, any other invariant the epic's stories depend on.
@@ -138,6 +168,26 @@ The battery is the *epic's exit gate* — without passing it, no retrospective c
 - User-supplied credentials persist in `Ens.Config.Credentials` (project rule: never in `.env` files committed to the repo; `.keys` is gitignored as a local-only fallback).
 - The checklist file documents which agent/credential maps to which story. Story specs MAY reference it.
 - If the user can't supply a credential at planning time (e.g., they're not at their workstation), the lead notes the gap and explicitly defers the live-test gate to the retro empirical battery — but as a documented deferral, not an oversight.
+
+### Watch-item: Sample production state at Epic-cycle Step 1 (Story 5.0 / Epic 4 retro AI-4)
+
+During Step 1 sprint planning, the lead MUST verify **sample-production state** (running / stopped / uninstalled) and re-Bootstrap to a known-good state if needed, **BEFORE** any per-story dev cycles run. This avoids the per-story re-Bootstrap friction observed in **Stories 4.3, 4.6, and 4.7**, all of which required mid-story re-Bootstrap when the dev agent discovered the production was stopped or uninstalled at story-start time.
+
+**One-line addition to the operator-setup checklist:**
+
+> *Sample production: confirm `Ens.Director.IsProductionRunning` returns 1 OR run `Bootstrap.Install` + `StartProductionIfStopped` + at least one `RunScenario` to populate fresh sessions.*
+
+**Rationale.** Sample-production state is operator-managed but ambient — it can drift between cycle resumes (server restart, namespace switch, manual cleanup), and a dev agent that finds a stopped or uninstalled production has to break flow to re-Bootstrap, which costs ~10 minutes per occurrence and creates a Rule 6 false-negative risk if the dev forgets to re-run scenario data after Bootstrap. Verifying once at Step 1 amortizes the check across the whole epic.
+
+**Apply at sprint planning.** When the lead constructs the operator-state checklist, sample-production state is a checklist item alongside API keys / SSL configurations / credentials. The lead's Step 1 verification probe set:
+
+```
+mcp__iris-dev-mcp__iris_execute_classmethod  classMethod: Ens.Director.IsProductionRunning
+```
+
+Returns `1` → state confirmed, no action.
+Returns `0` → run `Bootstrap.Install` + `StartProductionIfStopped` + at least one `RunScenario`, then re-probe.
+Returns error → the production may be uninstalled in this namespace; run full `Bootstrap.Install` from scratch.
 
 ## Rule 8: Defer threshold raised — "fix now" is the default
 

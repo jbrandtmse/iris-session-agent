@@ -266,12 +266,13 @@ This file accumulates findings, follow-ups, and architect-decision items that ar
 ## Deferred from: code review of story-2.8-llm-provider-abstract-adapter-utilities (2026-05-03)
 
 - **No test exercises the OpenAI tool_result fan-out path in `MessageAdapter.CanonicalToOpenAi`.**
+  - **Status:** **CLOSED 2026-05-06 by Story 5.0 AC-6** — `TestCanonicalUserTwoToolResultBlocksFanOutToTwoOpenAiToolMessages` added to `src/SessionAgent/Test/MessageAdapterTest.cls`. Test feeds a canonical user-role message with TWO `tool_result` blocks (one string content, one array-of-text-blocks content) and asserts the OpenAI output is TWO `{role:"tool", tool_call_id, content:...}` messages with the array form stringified via `%ToJSON`. Verified pass: 11/11 MessageAdapterTest pass post-Story-5.0 (was 10/10).
   - **Severity:** LOW (silent-regression risk only; the path compiles and is exercised whenever a real OpenAI provider receives a `tool` role canonical message at runtime — but no unit test locks the behavior).
   - **Location:** `src/SessionAgent/LLM/Util/MessageAdapter.cls:195-224` (the `If tRole = "tool"` branch that emits one OpenAI message per `tool_result` block) plus `src/SessionAgent/Test/MessageAdapterTest.cls` (no covering `Test*` method).
   - **The gap:** `TestCanonicalToGeminiRoleMapping` exercises a single `tool_result` block but tests Gemini's `functionResponse` part, not OpenAI's per-block fan-out. `TestRoundTripOpenAi` exercises assistant-side `tool_use`, not the tool-side `tool_result`. The OpenAI tool-message emission has its own non-trivial logic (per-block iteration, `tool_use_id` → `tool_call_id` rename, content stringification of array form via `%ToJSON`) that is currently uncovered.
   - **What to add:** one new `Test*` method that feeds a canonical `tool` role message with TWO `tool_result` blocks (one with string content, one with array-of-text-blocks content) and asserts the OpenAI output is TWO `{role:"tool", tool_call_id, content:...}` messages with the expected stringified content shapes.
   - **Why deferred (not fixed in review):** AC-4 enumerates seven specific `Test*` methods for `MessageAdapterTest`; the fan-out test is not among them. Adding it now would expand AC-4 scope mid-review. Natural carrier: Story 2.9 (`OpenAIProvider`) which will be the first real consumer of this path — its dev cycle should add the missing coverage as part of integration testing the OpenAI wire shape end-to-end.
-  - **Owner:** Story 2.9 dev (when implementing `OpenAIProvider`'s `CallMessages`).
+  - **Owner:** Story 2.9 dev (when implementing `OpenAIProvider`'s `CallMessages`). **Reassignment dropped silently in Story 2.9; Epic 4 retro continued-deferrals flagged it; Story 5.0 AC-6 closed it.**
   - **Blocking?** Not blocking. The path is logically correct on inspection; this is a defense-in-depth coverage gap, not a bug.
 
 - **Source:** Story 2.8 code review (2026-05-03). Two findings were auto-fixed in the same review pass: (a) `MessageAdapter.CanonicalToOpenAi` line 239 used the literal two-character string `"\n"` (backslash + n) when concatenating multiple text blocks for OpenAI's single `content` field — ObjectScript double-quoted strings do not interpret backslash escapes, so the user-visible content was getting `foo\nbar` instead of `foo` + newline + `bar`; replaced with `$Char(10)` plus a clarifying inline comment. (b) `Provider.ComputeLatencyMs` doc-comment said "integer-truncated" but `$Normalize(tDelta * 1000, 0)` rounds half-up; corrected the doc-comment to "integer-rounded (via `$Normalize`)". Both fixes verified: 5 classes recompile clean; 7/7 MessageAdapterTest + 3/3 ToolDefAdapterTest pass; 79/79 full per-class regression sweep intact (zero regressions across the 9 prior test classes — AgentDtoTest 7 + AuditEmit 3 + Audit 8 + ChatHistory 9 + ConfigAgent 10 + EnvSecret 8 + Json 9 + ReadOnlyRole 6 + RetryWithBackoff 9 + MessageAdapter 7 + ToolDefAdapter 3 = 79).
@@ -746,4 +747,38 @@ This file accumulates findings, follow-ups, and architect-decision items that ar
   - **The observation:** `4-7-rule-12-visual-pass-1.png` shows 6 sections in the right pane (Summary, Timeline, Message Headers, Event Log, Rule Log, Find Related Sessions). The dev's audit-row probe shows 9 distinct tool names dispatched. The remaining 3 sections (`get_message_body`, `get_business_process_source`, `explain_error`) are below the fold — they were dispatched but the screenshot was framed at the top of the chat panel.
   - **Why deferred:** SQL probe `SELECT TOP 25 ID, ToolName, IsError, ChatHistoryId FROM SessionAgent_Audit.ToolCall ORDER BY ID DESC` returned 18 rows, ChatHistoryId=19, all `IsError=false`, 9 distinct tool names. The audit-row probe IS the empirical proof; the screenshot is corroborating evidence, not the gate. No regression.
   - **Owner:** No bound successor. If Epic 4 retrospective wants a more comprehensive visual, take a full-page scrolling screenshot via chrome-devtools-mcp.
+  - **Blocking?** Not blocking.
+
+---
+
+## Deferred from: code review of 5-0-epic-4-deferred-cleanup (2026-05-06)
+
+- **Story 5.0 Completion Notes per-class breakdown lists `AuditEmitTest 3/3/0` but SQL probe at MAX(ID) shows that class was not part of the latest sweep cycle.**
+  - **Source:** Story 5.0 code review (this file's entry).
+  - **Severity:** LOW (notes accuracy; aggregate 225/225/0 is correct).
+  - **The observation:** Reviewer ran the canonical SQL probe per AC-1 — `SELECT %EXACT(tc.Name), COUNT(*), SUM(CASE WHEN tm.Status=1 THEN 1 ELSE 0 END), SUM(CASE WHEN tm.Status=0 THEN 1 ELSE 0 END) FROM %UnitTest_Result.TestMethod tm JOIN %UnitTest_Result.TestCase tc ON tm.TestCase = tc.ID WHERE %EXACT(tc.Name) LIKE 'SessionAgent.Test.%' AND tc.ID IN (SELECT MAX(ID) ... GROUP BY %EXACT(Name)) GROUP BY %EXACT(tc.Name) ORDER BY %EXACT(tc.Name)` — returned 28 classes summing to 225, but `AuditEmitTest` was NOT in the result set. The dev's reported per-class breakdown listed 29 classes including `AuditEmitTest 3/3/0` with the parenthetical "(re-run individually)". Aggregate math (225/225/0) is correct without AuditEmitTest's "3" being added — meaning either the dev's per-class table includes a row that's leftover from earlier draft notes, or AuditEmitTest's row should have summed differently elsewhere. AC-7's contract is the aggregate, which holds — this is purely notes-accuracy.
+  - **Why deferred:** LOW severity; aggregate contract holds; no predicted-bug shape. Per Rule 8 test 3 — cosmetic with no predicted-bug shape.
+  - **Owner:** No bound successor; lead may correct in a follow-up cleanup commit if desired.
+  - **Blocking?** Not blocking.
+
+- **Rule 2 sharpening text says "5 reviewer-caught bugs" but enumerates 4 numbered list items.**
+  - **Source:** Story 5.0 code review.
+  - **Severity:** LOW (cosmetic — item 2 covers Story 4.4 HIGH x2 = 2 bugs in 1 list bullet, totaling 5 bug-instances across 4 bullets).
+  - **The observation:** `.claude/rules/epic-cycle-discipline.md` Rule 2 sharpening section says "**5 reviewer-caught bugs that all involved the dev claiming completion based on tests-passing without empirical proof of the AC's actual contract:**" then numbers 1, 2, 3, 4. Item 2 reads "Story 4.4 HIGH x2 — class Description drift x2" which compresses 2 bugs into 1 bullet. Reader counting bullets sees 4; reader counting "x2" sees 5.
+  - **Why deferred:** Cosmetic; the rule text is unambiguous to anyone reading carefully.
+  - **Owner:** No bound successor.
+  - **Blocking?** Not blocking.
+
+- **Story 5.0 Change Log row 2 says "4 ObjectScript files modified, 2 rule files extended" — actually 3 ObjectScript files (`ExplainError.cls`, `InspectionSuiteVerificationTest.cls`, `MessageAdapterTest.cls`) + 2 rule files + 3 workflow artifacts (deferred-work.md, sprint-status.yaml, story file).**
+  - **Source:** Story 5.0 code review.
+  - **Severity:** LOW (cosmetic miscount in Change Log).
+  - **Owner:** No bound successor.
+  - **Blocking?** Not blocking.
+
+- **Pre-existing flaky test observation: `SessionAgent.Test.AgentLoopGuardsTest:TestRunTurnMaxIterationsCap`.**
+  - **Source:** Story 5.0 dev report + Story 5.0 reviewer re-run verification.
+  - **Severity:** LOW (transient; passes on re-run).
+  - **The observation:** Dev reported a transient `<INVALID OREF>` failure on the first post-Story-5.0 sweep, attributed to ambient `SessionAgent_Audit.LlmCall` row state from cumulative test runs (test asserts exactly 10 rows post-RunTurn; cumulative state had 20). Reviewer re-ran the class twice via `iris_execute_tests` + SQL probe — both runs Status=1, Duration ≈ 0.876s. Not caused by Story 5.0 (the dev did not touch `AgentLoop`, `ConfigAgent`, `Audit.LlmCall` storage, or this test class).
+  - **Why deferred:** Pre-existing state-pollution sensitivity; Story 5.x dev can add a `Kill ^SessionAgent_Audit.LlmCallD` setup hook in `OnBeforeOneTest` if it recurs. Per Rule 8 test 1 (genuine future-epic scope — Epic 5 LLM provider stories will exercise `LlmCall` audit row writes more, may surface the issue more visibly).
+  - **Owner:** Epic 5 dev (any of Stories 5.1-5.4) can add the cleanup hook if the test re-flakes during Epic 5 regression sweeps.
   - **Blocking?** Not blocking.

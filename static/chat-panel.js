@@ -28,7 +28,18 @@
         inputEl: null,        // .sa-input-field textarea
         transcriptEl: null,   // .sa-message-transcript div
         statusEl: null,       // .sa-status-text div
-        inFlight: false       // true while a turn is mid-flight
+        inFlight: false,      // true while a turn is mid-flight
+        // Story 10.3 AC-3 — cache the most-recent agent turn's
+        // toolCallsRendered[] for the click-through capture entry. The
+        // cache is set at the END of handleEnvelope (after all rendering
+        // completes) so a render-error path does NOT populate the cache
+        // with a partially-processed envelope. Returning-conversation
+        // transcripts loaded from Chat.History do NOT populate the cache
+        // (they have no envelope) — clicks on those entries fire
+        // RecordClickThrough with '[]' (empty contributing tool calls),
+        // which Story 9.5's substrate handles per its AC-1 (no aliases
+        // inferred → returns aliases_recorded: []; not an error).
+        lastToolCallsRendered: []
     };
 
     /* Citation-chip regex per AC-3 (Story 3.2) extended in Story 3.4
@@ -537,6 +548,14 @@
         assistantBlock.setAttribute('class', 'sa-message-block sa-msg-agent');
         renderMarkdownFallback(assistantMarkdown, assistantBlock);
         state.transcriptEl.appendChild(assistantBlock);
+
+        // Story 10.3 AC-3 — cache the most-recent agent turn's
+        // toolCallsRendered[] for the click-through capture path. Set
+        // AFTER all rendering completes so a render-error path doesn't
+        // populate the cache with a partially-processed envelope. Each
+        // operator turn overwrites the previous cache; the click handler
+        // (onSearchResultClick) reads it to assemble contributingToolCalls.
+        state.lastToolCallsRendered = (envelope && envelope.toolCallsRendered) || [];
 
         finishTurn();
     }
@@ -1085,37 +1104,113 @@
     }
 
     /**
-     * Story 10.2 AC-4 — search-result-entry click handler STUB.
+     * Story 10.3 AC-2 / AC-3 / AC-4 / AC-5 — search-result-entry click
+     * handler. Replaces Story 10.2's stub body.
      *
      * Called by onTranscriptClick when the operator clicks any
-     * .sa-search-result-entry anchor. Story 10.2 ships only the stub
-     * (preventDefault + console.log + TODO marker); Story 10.3 replaces
-     * this body with the actual RecordClickThrough ZenMethod hyperevent
-     * + navigation hand-off to Visual Trace.
+     * .sa-search-result-entry anchor. Execution sequence:
+     *   1. event.preventDefault() — suppress the default href="#" jump.
+     *   2. Read data-session-id / data-search-session-key /
+     *      data-tool-call-index attributes from the anchor.
+     *   3. Assemble contributingToolCalls[] by mapping
+     *      state.lastToolCallsRendered into the {tool_name, args, result}
+     *      shape Story 9.5's substrate expects (AC-3).
+     *   4. Fire-and-forget zenPage.RecordClickThrough(searchSessionKey,
+     *      sessionId, JSON.stringify(contributingToolCalls)) wrapped in
+     *      try/catch — any throw is logged via console.warn but the
+     *      operator MUST navigate even if vocabulary capture fails (AC-5).
+     *   5. Construct the destination URL (HealthShare-aware via path
+     *      detection, AC-4) and set window.location.href.
+     *
+     * UX-DR25 fire-and-forget: NO confirmation message; navigate
+     * immediately after the hyperevent call returns to the JS event loop.
      *
      * The function-name boundary is the load-bearing surface contract:
-     * Story 10.3 keeps the same name so the delegation in
-     * onTranscriptClick continues to dispatch correctly.
+     * onTranscriptClick dispatches by name.
      */
     function onSearchResultClick(anchor, event) {
         if (event && typeof event.preventDefault === 'function') {
             event.preventDefault();
         }
-        var sessionId = anchor && anchor.getAttribute && anchor.getAttribute('data-session-id');
-        var tcIndex = anchor && anchor.getAttribute && anchor.getAttribute('data-tool-call-index');
-        if (typeof console !== 'undefined' && console.log) {
-            console.log('[sa-search] click captured: session-id=' + sessionId + ', tool-call-index=' + tcIndex + ' — Story 10.3 will wire the actual hand-off');
+        if (!anchor || typeof anchor.getAttribute !== 'function') {
+            return;
         }
-        // Story 10.2 manual-smoke / test fixture hook: mirror the
-        // SessionAgentChatTestHook pattern so a smoke driver can assert
-        // the click reached this stub. Story 10.3 keeps this hook for
-        // backward compatibility; production never installs it.
+        var sessionId = anchor.getAttribute('data-session-id') || '';
+        var searchSessionKey = anchor.getAttribute('data-search-session-key') || '';
+        var tcIndex = anchor.getAttribute('data-tool-call-index') || '';
+
+        // Story 10.3 AC-3 — assemble contributingToolCalls[] from the
+        // cached most-recent agent turn's toolCallsRendered[]. Map each
+        // tool-call card to the {tool_name, args, result} triple Story 9.5
+        // expects. Empty cache (e.g., click on a returning-conversation
+        // entry that loaded from Chat.History without re-issuing a search)
+        // produces an empty array; Story 9.5's substrate handles that
+        // correctly per its AC-1.
+        var cached = state.lastToolCallsRendered || [];
+        var contributingToolCalls = [];
+        for (var i = 0; i < cached.length; i++) {
+            var tc = cached[i];
+            if (!tc) {
+                continue;
+            }
+            contributingToolCalls.push({
+                tool_name: tc.name,
+                args: tc.args,
+                result: tc.result
+            });
+        }
+
+        // Story 10.3 AC-5 — fire-and-forget the hyperevent. Wrap in
+        // try/catch so a throw (network error, missing zenPage, 500
+        // response) is logged but does NOT block the navigation that
+        // follows. The operator MUST reach Visual Trace even if
+        // vocabulary capture fails.
+        try {
+            if (typeof zenPage !== 'undefined' && zenPage && typeof zenPage.RecordClickThrough === 'function') {
+                zenPage.RecordClickThrough(searchSessionKey, sessionId, JSON.stringify(contributingToolCalls));
+            } else if (typeof console !== 'undefined' && console.warn) {
+                console.warn('[sa-search] zenPage.RecordClickThrough unavailable — capture skipped, proceeding with navigation');
+            }
+        } catch (captureErr) {
+            if (typeof console !== 'undefined' && console.warn) {
+                console.warn('[sa-search] RecordClickThrough threw — proceeding with navigation:', captureErr);
+            }
+        }
+
+        // Manual-smoke / test fixture hook: a smoke driver may install
+        // window.SessionAgentSearchClickTestHook(sessionId, tcIndex,
+        // contributingToolCalls, destinationUrl) to assert click handling.
+        // Production never installs it. We delay the test-hook call until
+        // after the destinationUrl is computed below so smokes can assert
+        // on the URL too.
+
+        // Story 10.3 AC-4 — construct the destination URL with the
+        // HealthShare-vs-plain-IRIS prefix detection. The pattern matches
+        // Story 1.5's installer-printed bookmark patterns (verbatim) with
+        // the added FROM_SEARCH query param so Story 10.4 can render the
+        // "from search" stripe on the Visual Trace destination page.
+        var currentPath = (typeof window !== 'undefined' && window.location && window.location.pathname) || '';
+        var isHealthShare = currentPath.indexOf('/csp/healthshare/') === 0;
+        var nsMatch = currentPath.match(/\/csp\/(?:healthshare\/)?([^/]+)\//);
+        var ns = nsMatch ? nsMatch[1] : 'hscustom';
+        var prefix = isHealthShare ? '/csp/healthshare/' + ns : '/csp/' + ns;
+        var destinationUrl = prefix + '/SessionAgent.EnsPortal.VisualTrace.zen?SESSIONID=' + encodeURIComponent(sessionId) + '&FROM_SEARCH=' + encodeURIComponent(searchSessionKey);
+
+        // Test-hook firing AFTER destinationUrl is built — gives smokes
+        // visibility into all 4 load-bearing values without re-deriving
+        // them.
         if (typeof window !== 'undefined' && typeof window.SessionAgentSearchClickTestHook === 'function') {
             try {
-                window.SessionAgentSearchClickTestHook(sessionId, tcIndex);
+                window.SessionAgentSearchClickTestHook(sessionId, tcIndex, contributingToolCalls, destinationUrl);
             } catch (e) {
                 // Swallow — test-only hook.
             }
+        }
+
+        // Navigate. Per UX-DR25, no confirmation surface; the operator
+        // arrives on the Visual Trace tab silently.
+        if (typeof window !== 'undefined' && window.location) {
+            window.location.href = destinationUrl;
         }
     }
 

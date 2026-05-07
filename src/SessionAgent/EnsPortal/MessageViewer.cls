@@ -499,4 +499,38 @@ ClassMethod SendChatMessage(pAgentName As %String, pSessionKey As %String, pUser
     Quit tEnvelope
 }
 
+/// <p>Story 10.3 AC-1 — ZenMethod hyperevent wrapper for click-through
+/// vocabulary capture. The browser-side <code>onSearchResultClick</code>
+/// handler in <code>chat-panel.js</code> calls
+/// <code>zenPage.RecordClickThrough(searchSessionKey, sessionId,
+/// contributingToolCallsJson)</code> (3 args — Zen hyperevent boundary).
+/// This wrapper resolves <code>%session.Username</code> at the trust
+/// boundary and delegates to Story 9.5's 4-arg ClassMethod
+/// <CLASS>SessionAgent.Search.VocabCapture</CLASS>.<METHOD>RecordClickThrough</METHOD>.</p>
+///
+/// <p><b>Boundary resolution.</b> Per architecture §"Caller context
+/// propagation" — <code>%session.Username</code> is read here at the
+/// public-surface boundary, never inside business logic. The substrate
+/// ClassMethod accepts <var>pPortalUser</var> as a parameter and never
+/// reads <code>%session</code> itself.</p>
+///
+/// <p><b>Never-throw contract.</b> The substrate ClassMethod has its own
+/// <code>Try / Catch</code> and never throws (Story 9.5 AC); this wrapper
+/// just delegates without adding its own guard. The return-shape passes
+/// through verbatim from the inner ClassMethod (per Story 9.5's contract):
+/// <code>{success: true, aliases_recorded: [...]}</code> happy-path OR
+/// <code>{success: false, error: "..."}</code> error-path; either way,
+/// fire-and-forget from the JS side per UX-DR25.</p>
+ClassMethod RecordClickThrough(pSearchSessionKey As %String, pSessionId As %String, pContributingToolCallsJson As %String) As %String [ ZenMethod ]
+{
+    Set tPortalUser = ""
+    If $IsObject($Get(%session)) {
+        Set tPortalUser = %session.Username
+    }
+    If tPortalUser = "" {
+        Set tPortalUser = $Username
+    }
+    Quit ##class(SessionAgent.Search.VocabCapture).RecordClickThrough(pSearchSessionKey, pSessionId, pContributingToolCallsJson, tPortalUser)
+}
+
 }

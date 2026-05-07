@@ -206,9 +206,14 @@ Method TestChatPanelJsParsesCleanly()
     ; for sessions[] arrays. A regression that removes the scan loop
     ; silently disables search-result rendering.
     Do $$$AssertTrue(..FileContents [ "Array.isArray(sc.sessions)", "handleEnvelope detects sessions[] arrays via Array.isArray (Story 10.2 AC-1)")
-    ; Click-stub TODO marker — Story 10.3 will replace this body but
-    ; the function-name boundary must stay stable.
-    Do $$$AssertTrue(..FileContents [ "Story 10.3 will wire the actual hand-off", "Click stub TODO marker for Story 10.3 present (Story 10.2 AC-4)")
+    ; Story 10.3 wired the click-through hyperevent — replaces Story 10.2's
+    ; stub-marker assertion (the TODO marker text is gone post-Story-10.3).
+    ; The function-name boundary stays stable via the onSearchResultClick
+    ; check above, plus the new ClickThroughTest class asserts the wired
+    ; call site (zenPage.RecordClickThrough(...) literal). Here we assert
+    ; the wired call site directly so SearchAgentRenderTest stays a
+    ; complete static-invariant pin for the click-handler surface contract.
+    Do $$$AssertTrue(..FileContents [ "zenPage.RecordClickThrough(", "Click-through hyperevent wired (Story 10.3 AC-2 — replaces Story 10.2's stub-marker assertion)")
     ; Delegation in onTranscriptClick — must dispatch sa-search-result-entry
     ; clicks through to onSearchResultClick.
     Do $$$AssertTrue(..FileContents [ "closest('.sa-search-result-entry')", "Transcript click delegation finds .sa-search-result-entry (Story 10.2 AC-4)")

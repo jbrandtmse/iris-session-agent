@@ -134,6 +134,18 @@ ClassMethod GetIndexedLeadColumns() As %DynamicArray [ Abstract ]
 /// <var>pParams</var> entry.</li>
 /// </ul>
 ///
+/// <p><b>Time-column alias parameter (Story 8.6 — closes
+/// MEDIUM-8.5-F02 carry-forward).</b> The optional <var>pTimeColumnAlias</var>
+/// parameter qualifies the emitted <code>TimeCreated</code> predicate
+/// for JOIN-form callers. When non-empty (e.g.
+/// <code>pTimeColumnAlias = "mh"</code>), the helper emits
+/// <code>"mh.TimeCreated > ?"</code> instead of the bare
+/// <code>"TimeCreated > ?"</code>. When empty (default), the bare form
+/// is emitted — every existing caller that doesn't supply this parameter
+/// sees identical behavior. The alias parameter has NO effect in
+/// keyed-lookup mode (the <code>TimeCreated</code> predicate is omitted
+/// regardless of alias).</p>
+///
 /// <p><b>Error contract.</b> Returns the empty string AND sets
 /// <var>pErr</var> to <code>{isError:1, errorCode, message, maxAllowed?}</code>
 /// on rejection:</p>
@@ -152,7 +164,10 @@ ClassMethod GetIndexedLeadColumns() As %DynamicArray [ Abstract ]
 /// strings are concatenated by the helper, so the CALLER is responsible
 /// for ensuring those strings contain only literal SQL fragments with
 /// <code>?</code> placeholders — never user-controlled values
-/// interpolated into the predicate text.</p>
+/// interpolated into the predicate text. <var>pTimeColumnAlias</var> is
+/// concatenated into the emitted SQL — callers MUST pass only a
+/// hardcoded short alias (e.g., <code>"mh"</code>) under their direct
+/// control, never an operator-supplied value.</p>
 ///
 /// <p><b>%EXACT() discipline.</b> Per project rule §"IRIS SQL Case
 /// Sensitivity", concrete-tool authors writing
@@ -162,7 +177,7 @@ ClassMethod GetIndexedLeadColumns() As %DynamicArray [ Abstract ]
 /// <code>"%EXACT(SourceConfigName) = ?"</code>. The helper itself uses
 /// <code>TimeCreated</code> (a non-string Ens.DataType.UTC column) so
 /// no <code>%EXACT()</code> wrap is needed for the time predicate.</p>
-ClassMethod BuildBoundedWhereClause(pTimeWindowHours As %Integer = 0, ByRef pParams As %DynamicArray, ByRef pErr As %DynamicObject, pAdditionalPredicates...) As %String
+ClassMethod BuildBoundedWhereClause(pTimeWindowHours As %Integer = 0, ByRef pParams As %DynamicArray, ByRef pErr As %DynamicObject, pTimeColumnAlias As %String = "", pAdditionalPredicates...) As %String
 {
     Set pErr = ""
     If '$IsObject($Get(pParams)) Set pParams = []
@@ -202,7 +217,15 @@ ClassMethod BuildBoundedWhereClause(pTimeWindowHours As %Integer = 0, ByRef pPar
         Set tCutoffH = tDays _ "," _ tSecs
         Set tCutoffOdbc = $ZDateTime(tCutoffH, 3, 1)
 
-        Set tFragment = "TimeCreated > ?"
+        ; Story 8.6 — qualify the TimeCreated predicate with the alias
+        ; when provided (JOIN-form callers); emit bare form otherwise
+        ; (backward-compatible with every existing caller that doesn't
+        ; supply the parameter).
+        If pTimeColumnAlias '= "" {
+            Set tFragment = pTimeColumnAlias _ ".TimeCreated > ?"
+        } Else {
+            Set tFragment = "TimeCreated > ?"
+        }
         Do pParams.%Push(tCutoffOdbc)
     }
 

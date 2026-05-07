@@ -145,7 +145,7 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
         ; then we AND in our IN clause.
         Set tParams = []
         Set tErr = ""
-        Set tFragment = ##class(SessionAgent.Tool.Search.Base).BuildBoundedWhereClause(tWindowHours, .tParams, .tErr, "Status IN (" _ tInClause _ ")")
+        Set tFragment = ##class(SessionAgent.Tool.Search.Base).BuildBoundedWhereClause(tWindowHours, .tParams, .tErr, "", "Status IN (" _ tInClause _ ")")
         If $IsObject(tErr) && (tErr.%Size() > 0) {
             Set pResult = {"isError":(1), "content":[{"type":"text","text":(tErr.%Get("message"))}], "structuredContent":(tErr)}
             Quit

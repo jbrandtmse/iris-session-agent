@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-05-02
-last_updated: 2026-05-07 (Story 8.5 review — SearchByBodyField shipped + 3 SearchToolTest methods + sibling fix-nows for InspectionSuiteVerificationTest 20→21 and ToolCallRoundtripIntegrationTest 80→84; 313/313/0 SQL ground-truth via numerical-MAX-of-non-empty-run form; "8 production search tool(s) discovered; 0 violation(s)" log line; AC-11 live smoke envelope captured render_strategy=matched_sessions on seeded EnsLib.HL7.SearchTable fixture)
+last_updated: 2026-05-07 (Story 8.6 review — InspectBodyCandidates shipped + 4 SearchToolTest methods + sibling fix-nows for InspectionSuiteVerificationTest 21→22 and ToolCallRoundtripIntegrationTest 84→88 + AC-9 alias-param refactor closing MEDIUM-8.5-F02 carry-forward; 318/318/0 SQL ground-truth via numerical-MAX-of-non-empty-run form; "9 production search tool(s) discovered; 0 violation(s)" log line; AC-13 live smoke envelope captured 12 matches against real production SessionAgent.Sample.Msg.OrderRequest rows with cap_hit=true correctly detected)
 project: iris-session-agent
 # Epic 1 complete (retro 2026-05-02); Epic 2 retrospective triage gate (Story 2.0) 2026-05-03
 project_key: NOKEY
@@ -123,7 +123,7 @@ development_status:
   8-3-6-simple-indexed-access-tools: review
   8-4-searchbysupersession: review
   8-5-searchbybodyfield-ens-searchtablebase-pivot: review
-  8-6-inspectbodycandidates-two-stage-body-content-search: backlog
+  8-6-inspectbodycandidates-two-stage-body-content-search: review
   8-7-vocablookup-utility-comprehensive-searchtooltest: backlog
   epic-8-retrospective: optional
 

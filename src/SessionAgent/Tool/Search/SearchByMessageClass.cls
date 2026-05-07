@@ -77,7 +77,7 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
 
         Set tParams = []
         Set tErr = ""
-        Set tFragment = ##class(SessionAgent.Tool.Search.Base).BuildBoundedWhereClause(tWindowHours, .tParams, .tErr, "%EXACT(MessageBodyClassName) = ?")
+        Set tFragment = ##class(SessionAgent.Tool.Search.Base).BuildBoundedWhereClause(tWindowHours, .tParams, .tErr, "", "%EXACT(MessageBodyClassName) = ?")
         If $IsObject(tErr) && (tErr.%Size() > 0) {
             Set pResult = {"isError":(1), "content":[{"type":"text","text":(tErr.%Get("message"))}], "structuredContent":(tErr)}
             Quit

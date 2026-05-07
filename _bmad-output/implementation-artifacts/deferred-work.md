@@ -1075,8 +1075,9 @@ This file accumulates findings, follow-ups, and architect-decision items that ar
   - **Owner:** Lead (one-line `epics.md` edit on next planning-artifact pass; or rolls into Epic 8 retrospective close-out alongside the LOW-8.4-F02 sharpening).
   - **Blocking?** Not blocking. Spec-drift cosmetic; the live code is correct.
 
-- **MEDIUM-8.5-F02 — `Tool.Search.Base.BuildBoundedWhereClause` lacks an optional alias parameter for JOIN-form callers; Story 8.5 carries a local `$Replace` workaround that future search-tool authors will re-inherit.**
+- **MEDIUM-8.5-F02 — `Tool.Search.Base.BuildBoundedWhereClause` lacks an optional alias parameter for JOIN-form callers; Story 8.5 carries a local `$Replace` workaround that future search-tool authors will re-inherit.** **[RESOLVED in Story 8.6 — 2026-05-07]**
   - **Source:** Story 8.5 code review (predicted-recurrence pattern).
+  - **Resolution (Story 8.6):** All 3 coordinated changes from the Recommendation block landed in Story 8.6: (1) `Tool.Search.Base.BuildBoundedWhereClause` signature extended with `pTimeColumnAlias As %String = ""` parameter; non-empty value qualifies the emitted `TimeCreated > ?` predicate (e.g., `"mh.TimeCreated > ?"`). (2) `BoundedWhereInvariantTest` extended with new method `TestStubFixtureBoundedWhereWithAliasQualifies` asserting the alias-qualified form. (3) `SearchByBodyField.Invoke` Step 7 refactored to pass `"mh"` as the alias parameter — `$Replace` workaround removed. The new tool `Tool.Search.InspectBodyCandidates` uses the alias parameter directly. All existing callers updated to pass `""` for backward compatibility. 318/318 SQL ground-truth pass.
   - **Severity:** MEDIUM. The shipped workaround at [`SearchByBodyField.cls:336`](../../src/SessionAgent/Tool/Search/SearchByBodyField.cls#L336) — `Set tFragment = $Replace(tFragment, "TimeCreated > ?", "mh.TimeCreated > ?")` — is functionally correct (the substring is unique to `BuildBoundedWhereClause`'s emitted output, no SQL-injection risk because no operator input flows through it, no aliasing collision possible). But it sets a precedent: any future search tool that needs a JOIN form will re-inherit the same `$Replace`. Story 8.6 (`InspectBodyCandidates`) is the next consumer that will hit this exact shape.
   - **Why deferred (Rule 8 review):** Test 1 — genuine future-epic scope. The natural binding successor is **Story 8.6** (`InspectBodyCandidates`), which also pivots through SearchTable + JOIN and will be the second consumer of the workaround. The refactor is a backward-compatible additive parameter change that fits naturally inside Story 8.6's scope rather than retrofitting Story 8.5 in isolation.
   - **Predicted-bug shape (Rule 9 binding):** if `BuildBoundedWhereClause`'s emitted-output substring drifts in a future Story 8.6+ change (e.g., emits `"TimeCreated >= ?"` or `"TimeCreated > ? AND ..."`), Story 8.5's local `$Replace` will silently fail to qualify the alias and the SQL will reference the unqualified `TimeCreated` against an ambiguous column on the JOIN — `<SQLCODE>` -29 or similar will surface at runtime. The refactor closes the latent failure mode.
@@ -1089,3 +1090,37 @@ This file accumulates findings, follow-ups, and architect-decision items that ar
   - **Blocking?** Not blocking Story 8.5 (workaround is correct + documented). Becomes blocking on Story 8.6 entering dev — that story MUST address the alias-parameter refactor as part of its scope.
 
 
+
+---
+
+## Deferred from: code review of story-8.6-inspectbodycandidates-two-stage-body-content-search (2026-05-07)
+
+- **LOW-8.6-F01 — Stale class doc-comment in `SearchToolTest.cls` claims 100 cap-test rows are seeded that aren't.**
+  - **Source:** Story 8.6 code review (informational-only finding).
+  - **File:** [`src/SessionAgent/Test/SearchToolTest.cls`](../../src/SessionAgent/Test/SearchToolTest.cls) lines 53-62.
+  - **Severity:** LOW (no operator-observable defect; no test-correctness defect — the cap test asserts the AC-2 hard-validation path that fires BEFORE the prefilter SQL runs, so the 100 fixture rows would be unreachable code).
+  - **Observation:** The class doc-comment claims `OnBeforeAllTests` seeds "100 cap-test rows in BASESID+200..299 each with Status=8 (Error) and identical body text — exercises the AC-2 hard cap rejection path with candidate_cap=100." The seeding code does NOT actually create those rows; only the 5 happy-path bodies + 1 missing-body row are seeded. The `TestInspectBodyCandidatesCapEnforcedAt50` test correctly exercises the structured-error envelope path WITHOUT needing the 100 fixture rows.
+  - **Why deferred (Rule 8 review):** Test 3 — pure cosmetic, no predicted bug shape. The documentation is misleading but the test logic is correct.
+  - **Recommendation when picked up:** Edit class doc-comment to remove the "100 cap-test rows" claim; replace with "AC-2 hard-cap-validation tests rejection envelope without depending on fixture rows".
+  - **Owner:** Future cosmetic-cleanup pass; or rolls into Epic 8 retrospective close-out.
+  - **Blocking?** Not blocking.
+
+- **LOW-8.6-F02 — Dead PPG initialization scaffolding for cap-test fixture that was never seeded.**
+  - **Source:** Story 8.6 code review (informational-only finding; sibling to LOW-8.6-F01).
+  - **File:** [`src/SessionAgent/Test/SearchToolTest.cls`](../../src/SessionAgent/Test/SearchToolTest.cls) lines 447-448 + lines 607-615.
+  - **Severity:** LOW (dead code; killing/iterating empty PPGs is a no-op).
+  - **Observation:** `Kill ^||SessionAgentSearchInspectCapTestIds` and `Kill ^||SessionAgentSearchInspectCapBodyIds` are present in `OnBeforeAllTests`, and parallel iteration sweeps in `OnAfterAllTests`. But neither PPG is ever populated — the cap-test fixture is not seeded.
+  - **Why deferred (Rule 8 review):** Test 3 — pure cosmetic, no predicted bug shape.
+  - **Recommendation when picked up:** Either remove the dead PPG references (cleanup pass) or seed the actual 100-row cap-test fixture (enhancement). Neither is binding; pairs with LOW-8.6-F01 closure.
+  - **Owner:** Future cosmetic-cleanup pass; or rolls into Epic 8 retrospective close-out.
+  - **Blocking?** Not blocking.
+
+- **LOW-8.6-F03 — `InspectBodyCandidates` operator-readable summary echoes integer Status code rather than display name.**
+  - **Source:** Story 8.6 code review (enhancement opportunity).
+  - **File:** [`src/SessionAgent/Tool/Search/InspectBodyCandidates.cls`](../../src/SessionAgent/Tool/Search/InspectBodyCandidates.cls) line 447 (operator-readable summary text).
+  - **Severity:** LOW (no predicted-bug shape — the rendering is technically accurate).
+  - **Observation:** When `prefilter_indexed_column="Status"` and `prefilter_value="8"`, the operator-readable `content[0].text` reads "Inspected N candidate(s) filtered by Status='8' in the last 24 hour(s); …". An operator unfamiliar with Ens status codes will see `Status='8'` and have to look up that 8 = Error. Sibling tool `SearchByStatus` translates the integer to its display name internally before reporting; `InspectBodyCandidates` does not.
+  - **Why deferred (Rule 8 review):** Test 3 — pure cosmetic, no predicted bug shape. The LLM driving the tool will know the status code semantics (it is enum-described in `SearchByStatus.cls` Description) and can include the display name in its operator-facing summary; the LLM-grounded `structuredContent` carries the canonical machine-readable shape.
+  - **Recommendation when picked up:** Display-name-translate when `prefilter_indexed_column="Status"` (e.g., `Status='Error'` instead of `Status='8'`). The translation table is already implemented in [`SearchByStatus.cls`](../../src/SessionAgent/Tool/Search/SearchByStatus.cls) `StatusDisplayToCode` (could lift to a shared helper, or inline the inverse map in `InspectBodyCandidates`).
+  - **Owner:** Story 8.7 (Epic 8 closer) or Epic 8 retrospective close-out.
+  - **Blocking?** Not blocking.

@@ -84,7 +84,7 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
         ; TimeCreated > ? default; the SessionId predicate IS the bound.
         Set tParams = []
         Set tErr = ""
-        Set tFragment = ##class(SessionAgent.Tool.Search.Base).BuildBoundedWhereClause(..#KeyedLookupSentinel, .tParams, .tErr, "SessionId = ?")
+        Set tFragment = ##class(SessionAgent.Tool.Search.Base).BuildBoundedWhereClause(..#KeyedLookupSentinel, .tParams, .tErr, "", "SessionId = ?")
         If $IsObject(tErr) && (tErr.%Size() > 0) {
             Set pResult = {"isError":(1), "content":[{"type":"text","text":(tErr.%Get("message"))}], "structuredContent":(tErr)}
             Quit

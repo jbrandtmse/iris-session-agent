@@ -335,6 +335,10 @@ ClassMethod BuildMinimalToolArgs(pToolName As %String) As %String
     ; (the prop-name-not-indexed graceful path), preserving the canonical
     ; envelope shape for the round-trip.
     If pToolName = "search_by_body_field" Quit "{""search_table_class"":""EnsLib.HL7.SearchTable"",""prop_name"":""SyntheticNoMatchProp"",""prop_value"":""synthetic-12345"",""limit"":3}"
+    ; Story 8.6 — two-stage indexed-prefilter + body-content search.
+    ; Synthetic prefilter_value returns 0 candidates → 0 matches success
+    ; envelope; canonical envelope shape exercised on the round-trip.
+    If pToolName = "inspect_body_candidates" Quit "{""pattern"":""synthetic-no-match-pattern-86"",""prefilter_indexed_column"":""Status"",""prefilter_value"":""Synthetic.NoMatch.Status""}"
     ; Unknown tool — empty object. Will produce a tool-error envelope but
     ; the dispatch round-trip still happens.
     Quit "{}"
@@ -706,14 +710,15 @@ ClassMethod RunMatrix() As %DynamicObject
 /// 4 × 13 = 52 for Epic 5; Story 8.3 grew the count to 4 × 19 = 76
 /// (13 inspection + 6 search); Story 8.4 grew it to 4 × 20 = 80
 /// (13 inspection + 7 search); Story 8.5 grew it to 4 × 21 = 84
-/// (13 inspection + 8 search). When a 5th provider or 22nd tool is
+/// (13 inspection + 8 search); Story 8.6 grows it to 4 × 22 = 88
+/// (13 inspection + 9 search). When a 5th provider or 23rd tool is
 /// added, this assertion auto-fails so the maintainer updates the
 /// expected count + acknowledges the matrix grew. Defensive against
 /// silent shrinkage too (a regression deleting a tool).</p>
 Method TestMatrixCardinalityIs52()
 {
     Set tMatrix = ..EnumerateMatrix()
-    Do $$$AssertEquals(tMatrix.%Size(), 84, "Matrix cardinality at Story 8.5 close = 4 providers × 21 tools (13 inspection + 8 search) = 84 pairs (got: " _ tMatrix.%Size() _ ")")
+    Do $$$AssertEquals(tMatrix.%Size(), 88, "Matrix cardinality at Story 8.6 close = 4 providers × 22 tools (13 inspection + 9 search) = 88 pairs (got: " _ tMatrix.%Size() _ ")")
 }
 
 /// <p><b>AC-5 — Dispatch policy gate.</b> Structurally verify that every

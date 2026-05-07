@@ -162,11 +162,47 @@ Method TestStubFixtureKeyedLookupModeOmitsTimeWindow()
 {
     Set tParams = []
     Set tErr = ""
-    Set tFrag = ##class(SessionAgent.Test.Fixture.StubBoundedSearchTool).BuildBoundedWhereClause(-1, .tParams, .tErr, "%EXACT(SessionId) = ?")
+    Set tFrag = ##class(SessionAgent.Test.Fixture.StubBoundedSearchTool).BuildBoundedWhereClause(-1, .tParams, .tErr, "", "%EXACT(SessionId) = ?")
     Do $$$AssertEquals(tFrag, "%EXACT(SessionId) = ?", "Keyed-lookup fragment is exactly the additional predicate")
     Do $$$AssertTrue('(tFrag [ "TimeCreated"), "Keyed-lookup fragment does NOT contain TimeCreated")
     Do $$$AssertEquals(tParams.%Size(), 0, "Keyed-lookup mode does NOT push a TimeCreated cutoff onto pParams (the caller binds the keyed-predicate value separately)")
     Do $$$AssertEquals(tErr, "", "No error envelope on keyed-lookup mode")
+    Quit
+}
+
+/// <p>Story 8.6 AC-9 sub-2 — alias-form positive test. Calling the
+/// helper with <code>pTimeColumnAlias="mh"</code> qualifies the
+/// emitted <code>TimeCreated</code> predicate as
+/// <code>"mh.TimeCreated > ?"</code> instead of the bare form.
+/// Closes the MEDIUM-8.5-F02 carry-forward by locking the alias-form
+/// emission as a structural contract: any future regression that
+/// drops the alias-qualification path will fail here, NOT silently
+/// produce ambiguous-column SQL at runtime.</p>
+Method TestStubFixtureBoundedWhereWithAliasQualifies()
+{
+    Set tParams = []
+    Set tErr = ""
+    ; Default-window mode + alias = "mh" → emits "mh.TimeCreated > ?".
+    Set tFrag = ##class(SessionAgent.Test.Fixture.StubBoundedSearchTool).BuildBoundedWhereClause(0, .tParams, .tErr, "mh")
+    Do $$$AssertEquals(tFrag, "mh.TimeCreated > ?", "Alias-form fragment leads with mh.TimeCreated > ? (Story 8.6 AC-9 sub-2)")
+    Do $$$AssertEquals(tParams.%Size(), 1, "Alias mode still pushes exactly one cutoff bind value")
+    Do $$$AssertEquals(tErr, "", "No error envelope on alias mode")
+
+    ; With additional JOIN-form predicates concatenated.
+    Set tParams2 = []
+    Set tErr2 = ""
+    Set tFrag2 = ##class(SessionAgent.Test.Fixture.StubBoundedSearchTool).BuildBoundedWhereClause(0, .tParams2, .tErr2, "mh", "st.PropId = ?", "%EXACT(st.PropValue) = ?")
+    Do $$$AssertEquals(tFrag2, "mh.TimeCreated > ? AND st.PropId = ? AND %EXACT(st.PropValue) = ?", "Alias-form fragment composes with JOIN-form additional predicates")
+    Do $$$AssertEquals(tParams2.%Size(), 1, "Only the cutoff is pushed by the helper; caller binds the additional-predicate values separately")
+
+    ; Backward-compat: empty alias → bare form. (Existing behavior; the
+    ; primary backward-compat test is TestStubFixtureBoundedWhereDefaultsTo24h
+    ; which calls without the alias parameter.) Verify that explicitly
+    ; passing "" produces the same bare form.
+    Set tParams3 = []
+    Set tErr3 = ""
+    Set tFrag3 = ##class(SessionAgent.Test.Fixture.StubBoundedSearchTool).BuildBoundedWhereClause(0, .tParams3, .tErr3, "")
+    Do $$$AssertEquals(tFrag3, "TimeCreated > ?", "Empty alias produces bare 'TimeCreated > ?' (backward-compatible with pre-Story-8.6 behavior)")
     Quit
 }
 

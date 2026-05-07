@@ -38,6 +38,29 @@
 /// against this fixture. <code>OnAfterAllTests</code> deletes the seeded
 /// SearchTable rows + Ens.Config.SearchTableProp row.</p>
 ///
+/// <p>Story 8.6 extends this class with 4 additional test methods for
+/// <CLASS>SessionAgent.Tool.Search.InspectBodyCandidates</CLASS>
+/// (<method>TestInspectBodyCandidatesHappyPathSubstring</method>,
+/// <method>TestInspectBodyCandidatesRegexMode</method>,
+/// <method>TestInspectBodyCandidatesCapEnforcedAt50</method>,
+/// <method>TestInspectBodyCandidatesGracefulBodyError</method>).
+/// Fixture extension: <code>OnBeforeAllTests</code> seeds 5
+/// <CLASS>Ens.MessageHeader</CLASS> rows in <code>BASESID+60..64</code>
+/// each pointing at a real <CLASS>Ens.StringRequest</CLASS> body whose
+/// <code>StringValue</code> contains either <code>"E11.9 diagnosis"</code>
+/// or <code>"E12.0 diagnosis"</code> or <code>"unrelated text"</code>;
+/// 1 row in <code>BASESID+65</code> with a missing-body
+/// (<code>MessageBodyId</code> pointing at a non-existent
+/// <CLASS>Ens.StringRequest</CLASS> ID — exercises AC-6 graceful drop);
+/// 100 cap-test rows in <code>BASESID+200..299</code> each with
+/// <code>Status=8</code> (Error) and identical body text — exercises
+/// the AC-2 hard cap rejection path with <code>candidate_cap=100</code>.
+/// All rows use a unique <code>SourceConfigName='Ibc-FixSrc-86'</code>
+/// sentinel so the prefilter narrows to fixture rows only.
+/// <code>OnAfterAllTests</code> deletes the seeded
+/// <CLASS>Ens.StringRequest</CLASS> bodies in addition to the
+/// MessageHeader sweep.</p>
+///
 /// <p>Nine test methods total (six from Story 8.3 + three from Story 8.4):</p>
 /// <ol>
 /// <li><b>TestSearchByTimeReturnsTimeBoundedSessions</b> — fixture
@@ -124,6 +147,16 @@ Parameter BFFIXTUREPROPVALUE As %String = "MATCH-12345";
 /// orphaned MessageHeader rows. Random enough to avoid clashing with
 /// any real production row or the Story 4.6 fixture sentinel.</p>
 Parameter BFFIXTURESOURCESENTINEL As %String = "BfFixtureSrc-85";
+
+/// <p>Story 8.6 — sentinel SourceConfigName for InspectBodyCandidates
+/// fixtures. Used as the prefilter value in tests + as the cleanup
+/// sweep predicate.</p>
+Parameter IBCFIXTURESOURCESENTINEL As %String = "Ibc-FixSrc-86";
+
+/// <p>Story 8.6 — sentinel for cap-test rows (separate from the main
+/// happy-path fixture so the cap test doesn't perturb other tests'
+/// candidate counts).</p>
+Parameter IBCCAPSOURCESENTINEL As %String = "Ibc-CapSrc-86";
 
 /// <p>Constructor — accepts <code>initvalue</code> from
 /// <CLASS>%UnitTest.TestCase</CLASS> and forwards via <code>##super</code>
@@ -407,6 +440,84 @@ Method OnBeforeAllTests() As %Status
         }
     }
 
+    ; ---- Story 8.6 — InspectBodyCandidates fixture.
+    ; Defensive sweep — clear any prior-run debris keyed by our sentinels.
+    Kill ^||SessionAgentSearchInspectBodyTestIds
+    Kill ^||SessionAgentSearchInspectBodyBodyIds
+    Kill ^||SessionAgentSearchInspectCapTestIds
+    Kill ^||SessionAgentSearchInspectCapBodyIds
+    Set tIbcCleanup = ##class(%SQL.Statement).%New()
+    If $$$ISOK(tIbcCleanup.%Prepare("DELETE FROM Ens.MessageHeader WHERE %EXACT(SourceConfigName) = ?")) {
+        Do tIbcCleanup.%Execute(..#IBCFIXTURESOURCESENTINEL)
+        Do tIbcCleanup.%Execute(..#IBCCAPSOURCESENTINEL)
+    }
+
+    ; Fresh time within default 24h window.
+    Set tIbcShiftedSecs = tNowSecs - 1800
+    Set tIbcShiftedDays = tNowDays
+    If tIbcShiftedSecs < 0 Set tIbcShiftedSecs = tIbcShiftedSecs + 86400, tIbcShiftedDays = tIbcShiftedDays - 1
+    Set tIbcTime = $ZDateTime(tIbcShiftedDays _ "," _ tIbcShiftedSecs, 3, 1, 0)
+
+    ; 5 happy-path rows: BASESID+60..64. Each has a real Ens.StringRequest
+    ; body whose StringValue contains a known pattern.
+    ; +60: "E11.9 diagnosis primary" (matches "E11", regex "E1[12]")
+    ; +61: "E12.0 diagnosis primary" (matches NOT "E11", regex "E1[12]")
+    ; +62: "unrelated text content"  (matches NEITHER)
+    ; +63: "Patient diagnosis E11.9" (matches "E11", regex "E1[12]")
+    ; +64: "E11 short diagnosis"     (matches "E11", regex "E1[12]")
+    Set tIbcSeq = 0
+    Set tIbcBodySeq = 0
+    Set tIbcBodyTexts = $ListBuild("E11.9 diagnosis primary", "E12.0 diagnosis primary", "unrelated text content", "Patient diagnosis E11.9", "E11 short diagnosis")
+    Set tIbcOffset = 60
+    Set tIbcPtr = 0
+    While $ListNext(tIbcBodyTexts, tIbcPtr, tIbcBodyText) {
+        Set tIbcBody = ##class(Ens.StringRequest).%New(tIbcBodyText)
+        Set tSCibcb = tIbcBody.%Save()
+        If $$$ISERR(tSCibcb) {
+            Set tIbcOffset = tIbcOffset + 1
+            Continue
+        }
+        Set tIbcBodyId = tIbcBody.%Id()
+        Set tIbcBodySeq = tIbcBodySeq + 1
+        Set ^||SessionAgentSearchInspectBodyBodyIds(tIbcBodySeq) = tIbcBodyId
+
+        Set tIbcHdr = ##class(Ens.MessageHeader).%New()
+        Set tIbcHdr.SessionId = tBase + tIbcOffset
+        Set tIbcHdr.TimeCreated = tIbcTime
+        Set tIbcHdr.MessageBodyId = tIbcBodyId
+        Set tIbcHdr.MessageBodyClassName = "Ens.StringRequest"
+        Set tIbcHdr.SourceConfigName = ..#IBCFIXTURESOURCESENTINEL
+        Set tIbcHdr.TargetConfigName = ..#IBCFIXTURESOURCESENTINEL _ "-Tgt"
+        Set tIbcHdr.Status = 8
+        Set tSCibch = tIbcHdr.%Save()
+        If $$$ISOK(tSCibch) {
+            Set tRowSeq = tRowSeq + 1
+            Set ^||SessionAgentSearchTestIds(tRowSeq) = tIbcHdr.%Id()
+            Set tIbcSeq = tIbcSeq + 1
+            Set ^||SessionAgentSearchInspectBodyTestIds(tIbcSeq) = tIbcHdr.%Id()
+        }
+        Set tIbcOffset = tIbcOffset + 1
+    }
+
+    ; 1 missing-body row at BASESID+65 — exercises AC-6 graceful drop.
+    ; MessageBodyId points at a non-existent Ens.StringRequest ID
+    ; (very high integer well beyond any real fixture or production row).
+    Set tIbcMissingHdr = ##class(Ens.MessageHeader).%New()
+    Set tIbcMissingHdr.SessionId = tBase + 65
+    Set tIbcMissingHdr.TimeCreated = tIbcTime
+    Set tIbcMissingHdr.MessageBodyId = "99999999988"
+    Set tIbcMissingHdr.MessageBodyClassName = "Ens.StringRequest"
+    Set tIbcMissingHdr.SourceConfigName = ..#IBCFIXTURESOURCESENTINEL
+    Set tIbcMissingHdr.TargetConfigName = ..#IBCFIXTURESOURCESENTINEL _ "-Tgt"
+    Set tIbcMissingHdr.Status = 8
+    Set tSCibcm = tIbcMissingHdr.%Save()
+    If $$$ISOK(tSCibcm) {
+        Set tRowSeq = tRowSeq + 1
+        Set ^||SessionAgentSearchTestIds(tRowSeq) = tIbcMissingHdr.%Id()
+        Set tIbcSeq = tIbcSeq + 1
+        Set ^||SessionAgentSearchInspectBodyTestIds(tIbcSeq) = tIbcMissingHdr.%Id()
+    }
+
     Quit $$$OK
 }
 
@@ -478,6 +589,35 @@ Method OnAfterAllTests() As %Status
     Set tStmt = ##class(%SQL.Statement).%New()
     If $$$ISOK(tStmt.%Prepare("DELETE FROM Ens.MessageHeader WHERE SessionId BETWEEN ? AND ?")) {
         Do tStmt.%Execute(..#FIXTUREBASESID, ..#FIXTUREBASESID + 100)
+    }
+
+    ; ---- Story 8.6 — InspectBodyCandidates body cleanup.
+    ; Delete the seeded Ens.StringRequest bodies (body cleanup must run
+    ; AFTER MessageHeader cleanup so no FK references the bodies).
+    Set tIbcBodyIdx = ""
+    For  {
+        Set tIbcBodyIdx = $Order(^||SessionAgentSearchInspectBodyBodyIds(tIbcBodyIdx))
+        Quit:tIbcBodyIdx=""
+        Set tIbcBodyId = $Get(^||SessionAgentSearchInspectBodyBodyIds(tIbcBodyIdx))
+        If tIbcBodyId '= "" Do ##class(Ens.StringRequest).%DeleteId(tIbcBodyId)
+    }
+    Kill ^||SessionAgentSearchInspectBodyBodyIds
+    Kill ^||SessionAgentSearchInspectBodyTestIds
+    ; Cap-test bodies.
+    Set tIbcCapBodyIdx = ""
+    For  {
+        Set tIbcCapBodyIdx = $Order(^||SessionAgentSearchInspectCapBodyIds(tIbcCapBodyIdx))
+        Quit:tIbcCapBodyIdx=""
+        Set tIbcCapBodyId = $Get(^||SessionAgentSearchInspectCapBodyIds(tIbcCapBodyIdx))
+        If tIbcCapBodyId '= "" Do ##class(Ens.StringRequest).%DeleteId(tIbcCapBodyId)
+    }
+    Kill ^||SessionAgentSearchInspectCapBodyIds
+    Kill ^||SessionAgentSearchInspectCapTestIds
+    ; Belt-and-suspenders — sweep MessageHeader rows by sentinel.
+    Set tIbcSweep = ##class(%SQL.Statement).%New()
+    If $$$ISOK(tIbcSweep.%Prepare("DELETE FROM Ens.MessageHeader WHERE %EXACT(SourceConfigName) = ?")) {
+        Do tIbcSweep.%Execute(..#IBCFIXTURESOURCESENTINEL)
+        Do tIbcSweep.%Execute(..#IBCCAPSOURCESENTINEL)
     }
     Quit $$$OK
 }
@@ -888,6 +1028,176 @@ Method TestSearchByBodyFieldUnknownClassReturnsError()
     Do $$$AssertTrue(tSummary [ "is not an installed Ens.SearchTableBase subclass", "summary text matches AC-3 wording (got: " _ tSummary _ ")")
     Do $$$AssertTrue(tSummary [ "My.NotARealSearchTable", "summary text echoes the unknown class name")
     Do $$$AssertTrue(tSummary [ "search_by_message_class", "summary text mentions fallback tool 'search_by_message_class'")
+    Quit
+}
+
+/// <p>Story 8.6 AC-11 #1 — happy-path substring match. Fixture: 5
+/// rows in <code>BASESID+60..64</code> with bodies containing patterns
+/// that match (3 rows containing "E11") or NOT (2 rows: "E12.0" and
+/// "unrelated"). Prefilter on
+/// <code>SourceConfigName=IBCFIXTURESOURCESENTINEL</code> so the test
+/// narrows to the fixture only. Pattern <code>"E11"</code> (substring,
+/// default mode). Asserts the matching subset is returned with the
+/// AC-7 envelope shape.</p>
+Method TestInspectBodyCandidatesHappyPathSubstring()
+{
+    Set tCtx = ..BuildCtx()
+    Set tArgs = {"pattern":"E11", "prefilter_indexed_column":"SourceConfigName", "prefilter_value":(..#IBCFIXTURESOURCESENTINEL)}
+    Set tResult = ""
+    Set tSC = ##class(SessionAgent.Tool.Search.InspectBodyCandidates).Invoke(tCtx, tArgs, .tResult)
+    Do $$$AssertStatusOK(tSC, "InspectBodyCandidates.Invoke returns $$$OK")
+    Do $$$AssertEquals(+tResult.%Get("isError"), 0, "isError NOT set on happy path")
+    Do $$$AssertEquals(tResult.structuredContent.%Get("indexed_lead_column"), "SourceConfigName", "indexed_lead_column echoes prefilter_indexed_column")
+    Do $$$AssertEquals(tResult.structuredContent.%Get("pattern"), "E11", "pattern echoed")
+    Do $$$AssertEquals(tResult.structuredContent.%Get("prefilter_value"), ..#IBCFIXTURESOURCESENTINEL, "prefilter_value echoed")
+    Do $$$AssertEquals(+tResult.structuredContent.%Get("time_window_used"), 24, "time_window_used = 24 (default)")
+    Do $$$AssertEquals(+tResult.structuredContent.%Get("pattern_is_regex"), 0, "pattern_is_regex = false (default)")
+
+    ; The fixture seeded 5 happy-path rows + 1 missing-body row, total 6.
+    ; The missing-body row is dropped per AC-6, so candidates_inspected = 6
+    ; (count of attempted), match_count = 3 (E11.9 + E11.9 + E11 matches).
+    ; "E12.0" and "unrelated" don't match; missing-body silently dropped.
+    Do $$$AssertTrue(+tResult.structuredContent.%Get("candidates_inspected") >= 5, "candidates_inspected >= 5 (5 happy-path fixture rows seen; missing-body counted but match dropped)")
+    Do $$$AssertEquals(+tResult.structuredContent.%Get("match_count"), 3, "match_count = 3 (E11.9 primary, E11.9 patient, E11 short)")
+
+    ; Verify match envelope shape — each match has message_id, session_id,
+    ; body_class, body_excerpt.
+    Set tMatches = tResult.structuredContent.%Get("matches")
+    Do $$$AssertTrue($IsObject(tMatches), "matches is an array")
+    Do $$$AssertEquals(tMatches.%Size(), 3, "matches array has 3 entries")
+    Set tMIter = tMatches.%GetIterator()
+    Set tFoundE11 = 0
+    While tMIter.%GetNext(.tMKey, .tMatch) {
+        Do $$$AssertTrue(tMatch.%IsDefined("message_id"), "match has message_id")
+        Do $$$AssertTrue(tMatch.%IsDefined("session_id"), "match has session_id")
+        Do $$$AssertTrue(tMatch.%IsDefined("body_class"), "match has body_class")
+        Do $$$AssertTrue(tMatch.%IsDefined("body_excerpt"), "match has body_excerpt")
+        Do $$$AssertEquals(tMatch.%Get("body_class"), "Ens.StringRequest", "body_class is Ens.StringRequest")
+        ; body_excerpt should mention "E11" (substring match guarantee).
+        If tMatch.%Get("body_excerpt") [ "E11" Set tFoundE11 = tFoundE11 + 1
+    }
+    Do $$$AssertEquals(tFoundE11, 3, "all 3 match excerpts contain 'E11' (substring match correctness)")
+
+    ; Operator-readable summary text.
+    Set tSummary = tResult.content.%Get(0).text
+    Do $$$AssertTrue(tSummary [ "Inspected", "summary text begins with 'Inspected'")
+    Do $$$AssertTrue(tSummary [ "matched", "summary text contains 'matched'")
+    Do $$$AssertTrue(tSummary [ "E11", "summary text mentions the pattern")
+    Quit
+}
+
+/// <p>Story 8.6 AC-11 #2 — regex mode. Same fixture as
+/// <method>TestInspectBodyCandidatesHappyPathSubstring</method>; invoke
+/// with <code>pattern_is_regex=true</code>, pattern
+/// <code>"E1[12]"</code>. The PCRE/ICU regex matches BOTH "E11" AND
+/// "E12" rows — should hit 4 matches (3 E11 rows + 1 E12 row).</p>
+Method TestInspectBodyCandidatesRegexMode()
+{
+    Set tCtx = ..BuildCtx()
+    Set tArgs = {"pattern":"E1[12]", "pattern_is_regex":(1), "prefilter_indexed_column":"SourceConfigName", "prefilter_value":(..#IBCFIXTURESOURCESENTINEL)}
+    Set tResult = ""
+    Set tSC = ##class(SessionAgent.Tool.Search.InspectBodyCandidates).Invoke(tCtx, tArgs, .tResult)
+    Do $$$AssertStatusOK(tSC, "InspectBodyCandidates.Invoke (regex mode) returns $$$OK")
+    Do $$$AssertEquals(+tResult.%Get("isError"), 0, "isError NOT set on happy regex path")
+    Do $$$AssertEquals(+tResult.structuredContent.%Get("pattern_is_regex"), 1, "pattern_is_regex = true (echoed)")
+    Do $$$AssertEquals(tResult.structuredContent.%Get("pattern"), "E1[12]", "regex pattern echoed verbatim")
+
+    ; PCRE "E1[12]" matches "E11" AND "E12" — total 4 matches:
+    ; +60 "E11.9 ...", +61 "E12.0 ...", +63 "Patient ... E11.9", +64 "E11 short ...".
+    Do $$$AssertEquals(+tResult.structuredContent.%Get("match_count"), 4, "regex 'E1[12]' matches 4 fixture bodies (3 E11 + 1 E12)")
+
+    ; Verify the regex picked up E12 too (proves it's not just substring).
+    Set tFoundE12 = 0
+    Set tMatches = tResult.structuredContent.%Get("matches")
+    Set tMIter = tMatches.%GetIterator()
+    While tMIter.%GetNext(.tMKey, .tMatch) {
+        If tMatch.%Get("body_excerpt") [ "E12" Set tFoundE12 = 1
+    }
+    Do $$$AssertEquals(tFoundE12, 1, "regex matched 'E12' row (proves PCRE [12] character class fired)")
+
+    ; Negative — invalid regex returns structured error envelope.
+    Set tBadArgs = {"pattern":"[unclosed", "pattern_is_regex":(1), "prefilter_indexed_column":"SourceConfigName", "prefilter_value":(..#IBCFIXTURESOURCESENTINEL)}
+    Set tBadResult = ""
+    Set tSCb = ##class(SessionAgent.Tool.Search.InspectBodyCandidates).Invoke(tCtx, tBadArgs, .tBadResult)
+    Do $$$AssertStatusOK(tSCb, "Invoke returns $$$OK on bad regex (envelope-based error)")
+    Do $$$AssertEquals(+tBadResult.%Get("isError"), 1, "isError = 1 on bad regex pattern")
+    Do $$$AssertTrue(tBadResult.content.%Get(0).text [ "regex", "error text mentions 'regex'")
+    Quit
+}
+
+/// <p>Story 8.6 AC-11 #3 — AC-2 hard cap rejection. Caller-supplied
+/// <code>candidate_cap=100</code> exceeds NFR-P3's hard maximum of 50;
+/// the tool returns the structured-error envelope BEFORE the prefilter
+/// SQL runs (hard validation, NOT silent clamp). Asserts the
+/// errorCode + maxAllowed fields are populated per the AC-2 contract.</p>
+Method TestInspectBodyCandidatesCapEnforcedAt50()
+{
+    Set tCtx = ..BuildCtx()
+    Set tArgs = {"pattern":"anything", "prefilter_indexed_column":"Status", "prefilter_value":"8", "candidate_cap":(100)}
+    Set tResult = ""
+    Set tSC = ##class(SessionAgent.Tool.Search.InspectBodyCandidates).Invoke(tCtx, tArgs, .tResult)
+    Do $$$AssertStatusOK(tSC, "Invoke returns $$$OK on cap-overflow (envelope-based error)")
+    Do $$$AssertEquals(+tResult.%Get("isError"), 1, "isError = 1 when candidate_cap > 50 (NFR-P3 hard bound)")
+    Do $$$AssertEquals(tResult.structuredContent.%Get("render_strategy"), "validation_error", "render_strategy = validation_error")
+    Do $$$AssertEquals(tResult.structuredContent.%Get("errorCode"), "CandidateCapTooLarge", "errorCode = CandidateCapTooLarge")
+    Do $$$AssertEquals(+tResult.structuredContent.%Get("maxAllowed"), 50, "maxAllowed = 50 (NFR-P3)")
+    Do $$$AssertTrue(tResult.content.%Get(0).text [ "candidate_cap", "error text mentions candidate_cap")
+    Do $$$AssertTrue(tResult.content.%Get(0).text [ "exceeds", "error text mentions 'exceeds'")
+
+    ; Verify a valid cap still works (cap=5 is below hard max).
+    Set tValidArgs = {"pattern":"E11", "prefilter_indexed_column":"SourceConfigName", "prefilter_value":(..#IBCFIXTURESOURCESENTINEL), "candidate_cap":(5)}
+    Set tValidResult = ""
+    Set tSCv = ##class(SessionAgent.Tool.Search.InspectBodyCandidates).Invoke(tCtx, tValidArgs, .tValidResult)
+    Do $$$AssertStatusOK(tSCv, "Invoke with cap=5 returns $$$OK")
+    Do $$$AssertEquals(+tValidResult.%Get("isError"), 0, "cap=5 (under hard max) succeeds")
+    Quit
+}
+
+/// <p>Story 8.6 AC-11 #4 — graceful body-render error. The fixture's
+/// BASESID+65 row has <code>MessageBodyId</code> pointing at a
+/// non-existent <CLASS>Ens.StringRequest</CLASS> id; the inner
+/// <method>GetMessageBody.Invoke</method> returns
+/// <code>render_strategy="body_not_found"</code> per Step 2 of its
+/// dispatch ladder. Per AC-6 the candidate is silently dropped from
+/// the matches list but counted in <code>candidates_inspected</code>.
+/// Test invokes the tool and asserts the missing-body row contributes
+/// to <code>candidates_inspected</code> but not to <code>match_count</code>
+/// (and certainly does NOT propagate as an envelope error).</p>
+Method TestInspectBodyCandidatesGracefulBodyError()
+{
+    Set tCtx = ..BuildCtx()
+    ; Pattern that matches "diagnosis" — present in 3 of the 5 body rows
+    ; (+60 "E11.9 diagnosis ...", +61 "E12.0 diagnosis ...", +63
+    ; "Patient diagnosis E11.9", +64 "E11 short diagnosis"). 4 of 5
+    ; rows match. Plus 1 missing-body row (BASESID+65) — dropped silently
+    ; per AC-6, but counted in candidates_inspected.
+    Set tArgs = {"pattern":"diagnosis", "prefilter_indexed_column":"SourceConfigName", "prefilter_value":(..#IBCFIXTURESOURCESENTINEL)}
+    Set tResult = ""
+    Set tSC = ##class(SessionAgent.Tool.Search.InspectBodyCandidates).Invoke(tCtx, tArgs, .tResult)
+    Do $$$AssertStatusOK(tSC, "Invoke returns $$$OK despite per-candidate body error (no exception escapes)")
+    Do $$$AssertEquals(+tResult.%Get("isError"), 0, "isError NOT set despite per-candidate body-render error")
+
+    ; candidates_inspected counts ALL candidates the tool TRIED (including
+    ; the missing-body one). 5 happy + 1 missing = 6 total. The fixture
+    ; ROW count is what gets counted; whether the inner Invoke succeeds
+    ; or fails, the candidate is "inspected".
+    Do $$$AssertEquals(+tResult.structuredContent.%Get("candidates_inspected"), 6, "candidates_inspected = 6 (5 happy + 1 missing-body, all attempted)")
+
+    ; match_count: 4 (the 4 'diagnosis'-containing rows; the missing-body
+    ; row drops without propagating any error to the envelope; the
+    ; "unrelated text content" row doesn't match).
+    Do $$$AssertEquals(+tResult.structuredContent.%Get("match_count"), 4, "match_count = 4 (4 'diagnosis'-containing rows; missing-body silently dropped per AC-6)")
+
+    ; Verify the matches list does NOT contain a row for the missing-body
+    ; SessionId (BASESID+65). If the missing-body wasn't dropped, it would
+    ; either crash or appear in matches.
+    Set tFoundMissing = 0
+    Set tMatches = tResult.structuredContent.%Get("matches")
+    Set tMIter = tMatches.%GetIterator()
+    While tMIter.%GetNext(.tMKey, .tMatch) {
+        If +tMatch.%Get("session_id") = (..#FIXTUREBASESID + 65) Set tFoundMissing = 1
+    }
+    Do $$$AssertEquals(tFoundMissing, 0, "missing-body row (BASESID+65) NOT present in matches (dropped per AC-6)")
     Quit
 }
 

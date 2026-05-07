@@ -317,23 +317,24 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
         ; BuildBoundedWhereClause picks up this class's DefaultTimeWindowHours
         ; (168) automatically when tWindowHours = 0. Additional predicates
         ; are the (PropId, PropValue) match on the SearchTable side.
+        ;
+        ; Story 8.6 AC-9 sub-3 — pass "mh" as the alias parameter so the
+        ; helper emits "mh.TimeCreated > ?" directly. Replaces the prior
+        ; local $Replace workaround (MEDIUM-8.5-F02 carry-forward closed
+        ; in Story 8.6).
         Set tParams = []
         Set tErr = ""
         Set tFragment = ##class(SessionAgent.Tool.Search.Base).BuildBoundedWhereClause(
             tWindowHours, .tParams, .tErr,
+            "mh",
             "st.PropId = ?", "%EXACT(st.PropValue) = ?")
         If $IsObject(tErr) && (tErr.%Size() > 0) {
             Set pResult = {"isError":(1), "content":[{"type":"text","text":(tErr.%Get("message"))}], "structuredContent":(tErr)}
             Quit
         }
         ; tParams now contains: [tCutoffOdbc] (from BuildBoundedWhereClause's
-        ; default-window mode against mh.TimeCreated). The "TimeCreated > ?"
-        ; predicate refers to mh, but BuildBoundedWhereClause emits an
-        ; unqualified "TimeCreated > ?". Replace with mh.TimeCreated.
-        ; Note: BuildBoundedWhereClause emits "TimeCreated > ?" and stub-
-        ; positive tests (Story 8.2) verify that exact form. Concrete tools
-        ; using JOINs need to qualify it; we do that here.
-        Set tFragment = $Replace(tFragment, "TimeCreated > ?", "mh.TimeCreated > ?")
+        ; default-window mode against mh.TimeCreated, with the "mh." alias
+        ; qualification emitted directly by the helper).
         ; Now push the (PropId, PropValue) bind values onto tParams in
         ; predicate order.
         Do tParams.%Push(tPropId)

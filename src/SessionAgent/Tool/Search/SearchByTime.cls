@@ -134,7 +134,7 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
 
         If (tFromOdbc = "") && (tToOdbc = "") {
             ; Default-window mode — helper emits "TimeCreated > ?" + cutoff.
-            Set tFragment = ##class(SessionAgent.Tool.Search.Base).BuildBoundedWhereClause(tWindowHours, .tParams, .tErr)
+            Set tFragment = ##class(SessionAgent.Tool.Search.Base).BuildBoundedWhereClause(tWindowHours, .tParams, .tErr, "")
             If $IsObject(tErr) && (tErr.%Size() > 0) {
                 Set pResult = {"isError":(1), "content":[{"type":"text","text":(tErr.%Get("message"))}], "structuredContent":(tErr)}
                 Quit
@@ -145,14 +145,14 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
             ; helper's default predicate; we supply the explicit time
             ; predicate(s) as additional predicates and bind the values.
             If (tFromOdbc '= "") && (tToOdbc '= "") {
-                Set tFragment = ##class(SessionAgent.Tool.Search.Base).BuildBoundedWhereClause(..#KeyedLookupSentinel, .tParams, .tErr, "TimeCreated BETWEEN ? AND ?")
+                Set tFragment = ##class(SessionAgent.Tool.Search.Base).BuildBoundedWhereClause(..#KeyedLookupSentinel, .tParams, .tErr, "", "TimeCreated BETWEEN ? AND ?")
                 Do tParams.%Push(tFromOdbc)
                 Do tParams.%Push(tToOdbc)
             } ElseIf (tFromOdbc '= "") {
-                Set tFragment = ##class(SessionAgent.Tool.Search.Base).BuildBoundedWhereClause(..#KeyedLookupSentinel, .tParams, .tErr, "TimeCreated > ?")
+                Set tFragment = ##class(SessionAgent.Tool.Search.Base).BuildBoundedWhereClause(..#KeyedLookupSentinel, .tParams, .tErr, "", "TimeCreated > ?")
                 Do tParams.%Push(tFromOdbc)
             } Else {
-                Set tFragment = ##class(SessionAgent.Tool.Search.Base).BuildBoundedWhereClause(..#KeyedLookupSentinel, .tParams, .tErr, "TimeCreated < ?")
+                Set tFragment = ##class(SessionAgent.Tool.Search.Base).BuildBoundedWhereClause(..#KeyedLookupSentinel, .tParams, .tErr, "", "TimeCreated < ?")
                 Do tParams.%Push(tToOdbc)
             }
             ; tWindowUsed reporting for explicit-bound mode: report 0

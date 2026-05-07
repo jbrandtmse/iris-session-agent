@@ -110,7 +110,7 @@ Class SessionAgent.Tool.Search.InspectBodyCandidates Extends SessionAgent.Tool.S
 
 Parameter ToolName As %String = "inspect_body_candidates";
 
-Parameter Description As %String = "Two-stage body-content search: narrow Ens.MessageHeader by an indexed prefilter (<=50 candidates), then open each body via the GetMessageBody dispatch ladder and filter by a pattern. pattern_is_regex=true uses PCRE/ICU regex; default is case-insensitive substring.";
+Parameter Description As %String = "Two-stage body-content search: narrow Ens.MessageHeader by an indexed prefilter (<=50 candidates), then open each body via the GetMessageBody dispatch ladder and filter by a pattern. pattern_is_regex=true uses PCRE/ICU regex; default is case-insensitive substring. When prefilter_indexed_column='MessageBodyClassName', supply the FULL package-qualified class name (e.g., 'SessionAgent.Sample.Msg.OrderRequest', not the short alias 'OrderRequest'); exact-match semantics — unqualified names will return zero matches.";
 
 Parameter MutatesState As %Boolean = 0;
 

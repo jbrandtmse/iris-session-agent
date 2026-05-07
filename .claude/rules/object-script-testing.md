@@ -266,6 +266,24 @@ Reviewer enforces: any future story that uses the old fragile
 Rule 8 (predicted-bug shape: latest-run picker selects stale earlier
 runs and undercounts the substantive regression-sweep claim).
 
+**Reviewer enforcement (Story 9.0 / Epic 8 retro AI-2).** Any future
+story diff whose test-pass verification probe uses the OLD
+`MAX(ID) GROUP BY %EXACT(Name)` form (without the
+`$PIECE(ID,'||',1)+0` numeric extraction wrapped in the inner
+JOIN-through-TestMethod aggregate) is a **MEDIUM-severity finding per
+Rule 8** — predicted-bug shape: latest-run picker selects stale earlier
+runs and undercounts. The reviewer MUST auto-fix by replacing the
+probe with the canonical numerical-MAX form before sign-off, OR
+explicitly defer with a **Rule-8-test-3 cosmetic-only justification**
+(no predicted-bug shape, e.g., the probe is in a one-off scratch
+script that never gates a story-completion claim). Cited recurrence:
+**Story 8.2 / Story 8.4 / Story 8.6** each surfaced a dev-fallback to
+the lex-MAX form despite the canonical form being codified at
+Story 8.0; the rule is sound, the muscle memory is not yet automatic
+— the reviewer-blocking enforcement is what makes the codification
+load-bearing. After 3 re-discoveries within a single epic, the
+codification needs reviewer-blocking teeth, not just documentation.
+
 **Why ground-truth.** Story 4.7 shipped a HIGH-severity off-by-one bug
 past the dev's "all 8 methods Status=1" claim — the real recorded state was
 9 of 10 methods (one new test added late in the cycle had been truncated

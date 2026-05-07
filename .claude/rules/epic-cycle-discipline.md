@@ -259,6 +259,37 @@ the retro proposal until each bullet's evidence is captured inline:
    verification gate. If the epic added new tests, the count must
    reconcile to the pre-state baseline + new test count.
 
+5. **Per-story functional walkthrough — substantive functional minimum
+   (Story 9.0 / Epic 8 retro AI-1).** The lead MUST invite the user to
+   scope a per-story functional walkthrough — each completed story
+   exercised end-to-end against rich production-shaped data, including
+   Chrome-DevTools chat-panel verification for any UI surface — and
+   execute it BEFORE proposing the retrospective question. The 4 prior
+   bullets establish the structural minimum (artifacts probed, audit
+   triples verified, primary code path lightly exercised, regression
+   sweep clean); this 5th bullet establishes the substantive functional
+   minimum. The user-redirect for comprehensive walkthrough has now
+   recurred across **Epic 1 / Epic 2 / Epic 7 / Epic 8 (4 consecutive
+   cycles)** — the structural checklist is necessary but insufficient
+   without the functional walkthrough. The walkthrough surfaces
+   integration-shaped bugs that the per-story Rule 6 step 4 mock-and-
+   smoke does not — drift between operator-storage paths and live LLM
+   provider wire shapes (Epic 5 chat-panel-only bug class), drift
+   between LLM-side tool discoverability and operator-supplied argument
+   shapes (Epic 8 walkthrough surfaced the `inspect_body_candidates`
+   class-name unqualified-alias gap that 0 unit tests had asserted on),
+   and operator-observable surface drift (Epic 7 task-Description blank
+   column that no test framework probed).
+
+   **Cited Epic 8 retro user-selected headline challenge C-1** as the
+   originating finding: the lead jumped straight to retro-question after
+   emitting the 4-bullet structural checklist; user redirected for
+   comprehensive walkthrough; walkthrough surfaced AI-3 (welcome-message
+   stale capability enumeration — every operator turn since Epic 4 had
+   shipped this drift) and AI-4 (tool-Description discoverability gap)
+   that 326 unit tests had not caught. The 4-bullet checklist is the
+   structural floor; the 5th bullet is the functional ceiling.
+
 **Why a checklist (not just sharpened wording).** Epic 7 retro finding
 C-5 surfaced the lead jumping straight to the retro question without
 emitting the empirical battery transcript inline — third recurrence of

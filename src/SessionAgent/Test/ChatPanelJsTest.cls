@@ -251,18 +251,21 @@ Method TestPriorTranscriptRenderingPresent()
 /// <p>Story 3.3 AC-4 — first-time welcome message rendered. Asserts the
 /// JS source contains the <code>renderWelcomeMessage</code> helper AND
 /// a load-bearing fragment of the welcome-message text. Wording last
-/// refreshed in the Epic 4 user-led empirical battery (2026-05-04) to
-/// describe the now-13-tool catalog at category level rather than
-/// enumerating only the 3 Epic 3 tools — same fix-class as the Story 3.0
-/// system-prompt enumeration anti-pattern, applied to the operator-facing
-/// welcome string. Anchor substring is the opener
-/// <code>"I'm an inspection agent for this session"</code>, which is less
-/// likely to drift than the capability list.</p>
+/// refreshed in the Story 9.0 / Epic 8 retro AI-3 closure (2026-05-07)
+/// to directive form — the welcome string no longer enumerates a
+/// hardcoded capability list (3-tool, 6-category, or any-N drift
+/// vector), and instead points the operator at "ask anything" + an
+/// "I'm read-only" assertion + 3 example questions. Same fix-class as
+/// Story 4.0 system-prompt enumeration anti-pattern, applied to the
+/// operator-facing welcome string for the second time
+/// (Epic 3 / Epic 4 / Epic 8 — three rounds of welcome-message drift
+/// before the directive-form rewrite ended the recurrence).</p>
 Method TestWelcomeMessagePresent()
 {
     Do $$$AssertStatusOK(..LoadFile(), "LoadFile resolved chat-panel.js at " _ ..FilePath)
     Do $$$AssertTrue(..FileContents [ "renderWelcomeMessage", "renderWelcomeMessage helper present (Story 3.3 AC-4)")
-    Do $$$AssertTrue(..FileContents [ "I'm an inspection agent for this session", "welcome message opener present (Epic 4 closing-battery refresh — describes 13-tool catalog at category level, not enumeration)")
+    Do $$$AssertTrue(..FileContents [ "Ask anything about this session", "welcome message directive-form opener present (Story 9.0 / Epic 8 retro AI-3 — directive form replaces stale capability enumeration)")
+    Do $$$AssertTrue(..FileContents [ "I'm read-only", "welcome message read-only assertion present (Story 9.0 / Epic 8 retro AI-3)")
 }
 
 /// <p>Story 3.4 AC-6 — citation-chip click delegation listener

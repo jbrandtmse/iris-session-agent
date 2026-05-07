@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-05-02
-last_updated: 2026-05-07 (Epic 8 COMPLETE + retrospective DONE — all 8 stories done; Search Agent backend foundation shipped (3 vocabulary schemas + 10 search tools + bounded-WHERE invariant 10/10 + comprehensive SearchToolTest); user-led empirical walkthrough including Chrome-DevTools chat-panel integration test surfaced 1 LLM-side discoverability gap bound to Epic 9 vocab digest + Story 9.0 AI-4; 5 action items + 3 carry-forward items captured for Story 9.0; 326/326/0 final SQL ground-truth; 8/10 epics complete in 8 days)
+last_updated: 2026-05-07 (Story 9.0 review — Epic 8 deferred cleanup complete: 5 AI codifications + 3 carry-forward rebinds; regression sweep 326/326)
 project: iris-session-agent
 # Epic 1 complete (retro 2026-05-02); Epic 2 retrospective triage gate (Story 2.0) 2026-05-03
 project_key: NOKEY
@@ -127,7 +127,8 @@ development_status:
   8-7-vocablookup-utility-comprehensive-searchtooltest: done
   epic-8-retrospective: done
 
-  epic-9: backlog
+  epic-9: in-progress
+  9-0-epic-8-deferred-cleanup: review
   9-1-task-0-probes-onaftersave-non-recursion-synthesizealias-determinism: backlog
   9-2-uservocabulary-recordsuccess-recordfailure-recursion-safe-onaftersave: backlog
   9-3-search-vocabularydigest-build: backlog

@@ -24,7 +24,7 @@ Class SessionAgent.Tool.Search.SearchByMessageClass Extends SessionAgent.Tool.Se
 
 Parameter ToolName As %String = "search_by_message_class";
 
-Parameter Description As %String = "Find Ens sessions whose messages have a given MessageBodyClassName (e.g. 'EnsLib.HL7.Message') within an optional TimeCreated window.";
+Parameter Description As %String = "Find Ens sessions whose messages have a given MessageBodyClassName (e.g. 'EnsLib.HL7.Message') within an optional TimeCreated window. Supply the FULL package-qualified class name (e.g., 'EnsLib.HL7.Message' or 'SessionAgent.Sample.Msg.OrderRequest', not the short alias); exact-match semantics — unqualified names will return zero matches.";
 
 Parameter MutatesState As %Boolean = 0;
 

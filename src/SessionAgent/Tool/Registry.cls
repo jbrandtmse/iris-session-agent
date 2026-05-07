@@ -56,7 +56,17 @@ ClassMethod ListTools() As %DynamicArray
         ; the production registry. They live under src/SessionAgent/Test/
         ; for compile-deploy convenience but must never appear to operators
         ; or LLM callers as discoverable tools.
-        Set tSC = tStmt.%Prepare("SELECT %EXACT(Name) AS ClassName FROM %Dictionary.ClassDefinition WHERE %EXACT(Super) = 'SessionAgent.Tool.Base' AND Abstract = 0 AND NOT (%EXACT(Name) %STARTSWITH 'SessionAgent.Test.') ORDER BY %EXACT(Name)")
+        ;
+        ; Story 8.3 fix-now — also discover search tools via the
+        ; Tool.Search.Base intermediate abstract. Tool.Search.Base extends
+        ; Tool.Base; concrete search tools (e.g., SearchByTime) declare
+        ; their immediate Super as Tool.Search.Base, NOT Tool.Base, so the
+        ; flat Super-equality filter would have missed all 6 search tools.
+        ; The OR clause closes that gap. Future intermediate abstract
+        ; bases (e.g., Tool.Vocab.Base if added in Story 8.7+) would
+        ; require a parallel OR entry — the alternative is a recursive
+        ; Super-chain walk, which is heavier and not yet warranted.
+        Set tSC = tStmt.%Prepare("SELECT %EXACT(Name) AS ClassName FROM %Dictionary.ClassDefinition WHERE (%EXACT(Super) = 'SessionAgent.Tool.Base' OR %EXACT(Super) = 'SessionAgent.Tool.Search.Base') AND Abstract = 0 AND NOT (%EXACT(Name) %STARTSWITH 'SessionAgent.Test.') ORDER BY %EXACT(Name)")
         If $$$ISERR(tSC) Quit
         Set tRs = tStmt.%Execute()
         While tRs.%Next() {
@@ -286,7 +296,13 @@ ClassMethod ResolveToolName(pToolName As %String) As %String
     Set tFound = ""
     Try {
         Set tStmt = ##class(%SQL.Statement).%New()
-        Set tSC = tStmt.%Prepare("SELECT %EXACT(Name) AS ClassName FROM %Dictionary.ClassDefinition WHERE %EXACT(Super) = 'SessionAgent.Tool.Base' AND Abstract = 0")
+        ; Story 8.3 fix-now — also dispatch via the Tool.Search.Base
+        ; intermediate abstract. NOTE: this method does NOT filter out
+        ; SessionAgent.Test.* fixtures (unlike ListTools, which does);
+        ; ToolRegistryTest's stub-throwing-tool dispatch path depends on
+        ; resolution working for fixture classes. Operators only see
+        ; tools through ListTools, so the exclusion happens there.
+        Set tSC = tStmt.%Prepare("SELECT %EXACT(Name) AS ClassName FROM %Dictionary.ClassDefinition WHERE (%EXACT(Super) = 'SessionAgent.Tool.Base' OR %EXACT(Super) = 'SessionAgent.Tool.Search.Base') AND Abstract = 0")
         If $$$ISERR(tSC) Quit
         Set tRs = tStmt.%Execute()
         While tRs.%Next() {

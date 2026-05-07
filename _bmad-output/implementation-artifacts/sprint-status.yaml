@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-05-02
-last_updated: 2026-05-07 (Story 8.2 done — code review complete; 1 LOW patch applied [cutoff-timestamp shape assertion]; 0 HIGH/MEDIUM findings; 0 deferrals; 5/5 invariant tests pass post-patch; 301/301/0 SQL ground-truth re-verified)
+last_updated: 2026-05-07 (Story 8.3 done — 6 search tools shipped + Tool.Registry filter widened + 3 pre-existing test fixture fix-nows; 307/307/0 SQL ground-truth; "6 production search tool(s) discovered; 0 violation(s)" log line)
 project: iris-session-agent
 # Epic 1 complete (retro 2026-05-02); Epic 2 retrospective triage gate (Story 2.0) 2026-05-03
 project_key: NOKEY
@@ -120,7 +120,7 @@ development_status:
   8-0-epic-7-deferred-cleanup: review
   8-1-vocabulary-schemas-seed-templates: review
   8-2-tool-search-base-bounded-where-invariant-test: done
-  8-3-6-simple-indexed-access-tools: backlog
+  8-3-6-simple-indexed-access-tools: review
   8-4-searchbysupersession: backlog
   8-5-searchbybodyfield-ens-searchtablebase-pivot: backlog
   8-6-inspectbodycandidates-two-stage-body-content-search: backlog

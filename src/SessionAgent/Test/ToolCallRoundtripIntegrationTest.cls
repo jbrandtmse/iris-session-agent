@@ -318,6 +318,13 @@ ClassMethod BuildMinimalToolArgs(pToolName As %String) As %String
     ; multi-arg specialty tools.
     If pToolName = "find_sessions_by_body" Quit "{""search_table_class"":""EnsLib.HL7.SearchTable"",""prop_name"":""MRN"",""prop_value"":""12345""}"
     If pToolName = "explain_error" Quit "{""status_or_error_string"":""<PROTECT>""}"
+    ; Story 8.3 — six search tools.
+    If pToolName = "search_by_time" Quit "{""limit"":3}"
+    If pToolName = "search_by_status" Quit "{""status_in"":[""Error""],""limit"":3}"
+    If pToolName = "search_by_source" Quit "{""source_config_name"":""SyntheticTestSrc_NoMatch"",""limit"":3}"
+    If pToolName = "search_by_target" Quit "{""target_config_name"":""SyntheticTestTgt_NoMatch"",""limit"":3}"
+    If pToolName = "search_by_message_class" Quit "{""message_body_class_name"":""Synthetic.NoMatch.Msg"",""limit"":3}"
+    If pToolName = "search_by_session" Quit "{""session_id"":""1""}"
     ; Unknown tool — empty object. Will produce a tool-error envelope but
     ; the dispatch round-trip still happens.
     Quit "{}"
@@ -685,14 +692,16 @@ ClassMethod RunMatrix() As %DynamicObject
 }
 
 /// <p><b>AC-2 — Cardinality lock.</b> Asserts the matrix has the
-/// expected 4 × 13 = 52 cardinality at Epic 5 close. When a 5th provider
-/// or 14th tool is added, this assertion auto-fails so the maintainer
-/// updates the expected count + acknowledges the matrix grew. Defensive
-/// against silent shrinkage too (a regression deleting a tool).</p>
+/// expected 4 × N cardinality at the current epic close. Locked at
+/// 4 × 13 = 52 for Epic 5; Story 8.3 grew the count to 4 × 19 = 76
+/// (13 inspection + 6 search). When a 5th provider or 20th tool is
+/// added, this assertion auto-fails so the maintainer updates the
+/// expected count + acknowledges the matrix grew. Defensive against
+/// silent shrinkage too (a regression deleting a tool).</p>
 Method TestMatrixCardinalityIs52()
 {
     Set tMatrix = ..EnumerateMatrix()
-    Do $$$AssertEquals(tMatrix.%Size(), 52, "Matrix cardinality at Epic 5 close = 4 providers × 13 tools = 52 pairs (got: " _ tMatrix.%Size() _ ")")
+    Do $$$AssertEquals(tMatrix.%Size(), 76, "Matrix cardinality at Story 8.3 close = 4 providers × 19 tools (13 inspection + 6 search) = 76 pairs (got: " _ tMatrix.%Size() _ ")")
 }
 
 /// <p><b>AC-5 — Dispatch policy gate.</b> Structurally verify that every

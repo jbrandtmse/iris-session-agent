@@ -58,7 +58,14 @@ Class SessionAgent.Test.InspectionSuiteVerificationTest Extends %UnitTest.TestCa
 /// Future stories incrementing the catalog must update this constant +
 /// the named-tool list in
 /// <method>TestRegistryListsExactlyThirteenTools</method>.</p>
-Parameter EXPECTEDTOOLCOUNT As %Integer = 13;
+/// <p>Expected production tool count surfaced by
+/// <method>SessionAgent.Tool.Registry.ListTools</method>. As of Story 8.3
+/// this is <b>19</b> — 13 inspection tools (Stories 2.11 + 4.x) + 6
+/// search tools (Story 8.3: <code>search_by_time</code>,
+/// <code>search_by_status</code>, <code>search_by_source</code>,
+/// <code>search_by_target</code>, <code>search_by_message_class</code>,
+/// <code>search_by_session</code>). Stories 8.4–8.7 will increment further.</p>
+Parameter EXPECTEDTOOLCOUNT As %Integer = 19;
 
 /// <p>Synthetic session id well outside any realistic Ens production
 /// range. Used by every "not found" / "validation error" envelope assertion
@@ -96,7 +103,10 @@ ClassMethod GetConcreteToolClasses() As %DynamicArray
 {
     Set tList = []
     Set tStmt = ##class(%SQL.Statement).%New()
-    Set tSC = tStmt.%Prepare("SELECT %EXACT(Name) AS ClassName FROM %Dictionary.ClassDefinition WHERE %EXACT(Super) = 'SessionAgent.Tool.Base' AND Abstract = 0 AND NOT (%EXACT(Name) %STARTSWITH 'SessionAgent.Test.') ORDER BY %EXACT(Name)")
+    ; Story 8.3 — also discover concrete search tools that extend the
+    ; Tool.Search.Base intermediate abstract. Keep this filter in
+    ; lockstep with SessionAgent.Tool.Registry's discovery filter.
+    Set tSC = tStmt.%Prepare("SELECT %EXACT(Name) AS ClassName FROM %Dictionary.ClassDefinition WHERE (%EXACT(Super) = 'SessionAgent.Tool.Base' OR %EXACT(Super) = 'SessionAgent.Tool.Search.Base') AND Abstract = 0 AND NOT (%EXACT(Name) %STARTSWITH 'SessionAgent.Test.') ORDER BY %EXACT(Name)")
     If $$$ISERR(tSC) Quit tList
     Set tRs = tStmt.%Execute()
     While tRs.%Next() {
@@ -141,6 +151,31 @@ ClassMethod GetRepresentativeArgs(pToolName As %String) As %DynamicObject
         Do tArgs.%Set("value", "9799911999")
     } ElseIf pToolName = "explain_error" {
         Do tArgs.%Set("status_or_error_string", "<UNDEFINED>")
+    } ElseIf pToolName = "search_by_time" {
+        ; Story 8.3 — empty time-window inputs trigger the helper's
+        ; default 24h mode; small limit avoids large result sets.
+        Do tArgs.%Set("limit", 5, "number")
+    } ElseIf pToolName = "search_by_status" {
+        ; Story 8.3 — at least one valid status enum value satisfies the
+        ; required-field contract.
+        Set tStatusArr = ##class(%DynamicArray).%New()
+        Do tStatusArr.%Push("Error")
+        Do tArgs.%Set("status_in", tStatusArr)
+        Do tArgs.%Set("limit", 5, "number")
+    } ElseIf pToolName = "search_by_source" {
+        ; Story 8.3 — synthetic SourceConfigName that won't match
+        ; production rows (returns empty result set, avoiding fixture
+        ; coupling).
+        Do tArgs.%Set("source_config_name", "SyntheticTestSrc_NoMatch")
+        Do tArgs.%Set("limit", 5, "number")
+    } ElseIf pToolName = "search_by_target" {
+        Do tArgs.%Set("target_config_name", "SyntheticTestTgt_NoMatch")
+        Do tArgs.%Set("limit", 5, "number")
+    } ElseIf pToolName = "search_by_message_class" {
+        Do tArgs.%Set("message_body_class_name", "Synthetic.NoMatch.Msg")
+        Do tArgs.%Set("limit", 5, "number")
+    } ElseIf pToolName = "search_by_session" {
+        Do tArgs.%Set("session_id", ..#SYNTHETICSESSIONID, "number")
     }
     Quit tArgs
 }
@@ -209,11 +244,12 @@ Method TestAllThirteenToolsExerciseAgainstFixture()
     Quit
 }
 
-/// <p>AC-5 (companion) — every tool's empty-args path returns the
-/// standard validation error envelope. Tools without required fields
-/// (none in the v1 catalog) MAY return success-shape; this test asserts
-/// only that no tool throws an exception when given empty args. Closes
-/// the FR37 conformance gate for the whole 13-tool catalog.</p>
+/// <p>AC-5 (companion) — every tool's empty-args path returns either a
+/// success or error envelope (NEVER throws). Tools with at least one
+/// required field MUST emit <code>isError=1</code>; tools without
+/// required fields (Story 8.3 added <code>search_by_time</code> — all
+/// inputs optional, default 24h window) MAY return a success envelope
+/// on empty args. Closes the FR37 conformance gate.</p>
 Method TestAllThirteenToolsValidationFailureReturnsEnvelope()
 {
     Set tCtx = ..BuildCtx()
@@ -221,6 +257,11 @@ Method TestAllThirteenToolsValidationFailureReturnsEnvelope()
     Set tIter = tList.%GetIterator()
     Set tIsErrorCount = 0
     Set tDispatchCount = 0
+    ; Tools whose entire input schema is optional — empty args returns
+    ; a success envelope, not an isError envelope. Story 8.3 adds
+    ; search_by_time (default 24h window when no bounds supplied).
+    Set tNoRequiredArgs = $ListBuild("search_by_time")
+    Set tNoRequiredCount = 0
     While tIter.%GetNext(.tKey, .tEntry) {
         Set tToolName = tEntry.%Get("name")
         Set tEmptyArgs = {}
@@ -230,13 +271,21 @@ Method TestAllThirteenToolsValidationFailureReturnsEnvelope()
         Do $$$AssertTrue($IsObject(tResult), tToolName _ ": pResult populated even on empty args")
         Do $$$AssertTrue($IsObject(tResult.content), tToolName _ ": pResult.content present even on empty args")
         Set tDispatchCount = tDispatchCount + 1
-        ; All 13 v1 tools have at least one required arg; they MUST emit isError.
-        If +tResult.%Get("isError") = 1 {
-            Set tIsErrorCount = tIsErrorCount + 1
+        If $ListFind(tNoRequiredArgs, tToolName) > 0 {
+            Set tNoRequiredCount = tNoRequiredCount + 1
+            ; Tools with no required args MUST return success envelope
+            ; on empty args (proves the optional-only schema honors empty
+            ; input as the default-mode trigger).
+            Do $$$AssertEquals(+tResult.%Get("isError"), 0, tToolName _ ": no required args → empty args returns success envelope")
+        } Else {
+            ; All other tools have at least one required arg; they MUST emit isError.
+            If +tResult.%Get("isError") = 1 {
+                Set tIsErrorCount = tIsErrorCount + 1
+            }
         }
     }
     Do $$$AssertEquals(tDispatchCount, ..#EXPECTEDTOOLCOUNT, "all " _ ..#EXPECTEDTOOLCOUNT _ " tools dispatched on empty args")
-    Do $$$AssertEquals(tIsErrorCount, ..#EXPECTEDTOOLCOUNT, "all " _ ..#EXPECTEDTOOLCOUNT _ " tools returned isError=1 on empty args (FR37)")
+    Do $$$AssertEquals(tIsErrorCount, ..#EXPECTEDTOOLCOUNT - tNoRequiredCount, "(" _ (..#EXPECTEDTOOLCOUNT - tNoRequiredCount) _ ") tools with required args returned isError=1 on empty args (FR37)")
     Quit
 }
 
@@ -248,7 +297,7 @@ Method TestRegistryListsExactlyThirteenTools()
     Do $$$AssertEquals(tList.%Size(), ..#EXPECTEDTOOLCOUNT, "exactly " _ ..#EXPECTEDTOOLCOUNT _ " tools registered")
 
     ; Verify every expected name is present (order-independent).
-    Set tExpected = $ListBuild("session_summary", "session_timeline", "message_headers", "event_log", "rule_log", "get_message_body", "get_message_detail", "get_business_process_source", "get_business_process_instance", "list_business_process_methods", "find_related_sessions", "find_sessions_by_body", "explain_error")
+    Set tExpected = $ListBuild("session_summary", "session_timeline", "message_headers", "event_log", "rule_log", "get_message_body", "get_message_detail", "get_business_process_source", "get_business_process_instance", "list_business_process_methods", "find_related_sessions", "find_sessions_by_body", "explain_error", "search_by_time", "search_by_status", "search_by_source", "search_by_target", "search_by_message_class", "search_by_session")
     Set tFound = ""
     Set tIter = tList.%GetIterator()
     While tIter.%GetNext(.tKey, .tEntry) {

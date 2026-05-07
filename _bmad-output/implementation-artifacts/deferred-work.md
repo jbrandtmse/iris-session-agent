@@ -1018,4 +1018,26 @@ This file accumulates findings, follow-ups, and architect-decision items that ar
   - **Owner:** None reserved. Natural carrier is the v1.5 / Vision-tier vocabulary hardening pass (the same epic that also activates `NamespaceVocabulary` aggregation logic).
   - **Blocking?** Not blocking. Operator-observable break only under unsupported concurrent-install workflow.
 
+---
+
+## Deferred from: code review of story-8-3-6-simple-indexed-access-tools (2026-05-07)
+
+- **LOW-8.3-F01 — `SELECT DISTINCT TOP ?` is redundant after `GROUP BY mh.SessionId` in all 6 search-tool SQL constructions.**
+  - **Source:** Story 8.3 code review (Acceptance Auditor layer).
+  - **Severity:** LOW (cosmetic; no behavioral or performance impact).
+  - **Observation:** [`src/SessionAgent/Tool/Search/SearchByTime.cls:164`](../../src/SessionAgent/Tool/Search/SearchByTime.cls#L164), and identical lines in `SearchByStatus.cls`, `SearchBySource.cls`, `SearchByTarget.cls`, `SearchByMessageClass.cls`, `SearchBySession.cls`. Each SQL leads with `SELECT DISTINCT TOP ? mh.SessionId AS sid, MIN(mh.TimeCreated) AS tc, ... FROM Ens.MessageHeader mh WHERE ... GROUP BY mh.SessionId`. After `GROUP BY mh.SessionId` each group already produces exactly one row, so the leading `DISTINCT` is a no-op. The optimizer likely strips it but the query plan would be cleaner without it.
+  - **Why deferred (Rule 8 review):** Test 3 (cosmetic / no predicted-bug shape) — fits cleanly. The SQL is correct and produces the documented result shape; removing `DISTINCT` is a one-character edit per tool that doesn't change behavior. Not worth the test-class re-run cost in this story.
+  - **Recommendation when picked up:** Drop the `DISTINCT` keyword from all 6 SQL constructions in a follow-up cleanup story (or as a drive-by fix in any story that touches these classes).
+  - **Owner:** None reserved. Natural carrier is any Story 8.x or future story that meaningfully edits the search-tool SQL.
+  - **Blocking?** Not blocking. No operator-observable difference.
+
+- **LOW-8.3-F02 — `time_window_used: 0` in SearchByTime explicit-bound mode may confuse operators reading the envelope.**
+  - **Source:** Story 8.3 code review (Edge Case Hunter layer).
+  - **Severity:** LOW (operator-observable but documented in Completion Notes; no functional bug).
+  - **Observation:** [`src/SessionAgent/Tool/Search/SearchByTime.cls:160`](../../src/SessionAgent/Tool/Search/SearchByTime.cls#L160) — when the caller supplies `from_time` and/or `to_time` (explicit-bound mode), the envelope reports `time_window_used: 0`. An operator reading the structured envelope sees `time_window_used: 0` and may interpret it as "0 hours = no window applied = empty results" rather than "explicit bounds drove the query, no helper-default applied". The existing AC-6 keyed-lookup mode uses JSON `null` for the same semantic ("no window applied"); the explicit-bound mode could be unified to also emit `null` for consistency.
+  - **Why deferred (Rule 8 review):** Test 3 (cosmetic / no predicted-bug shape) — fits. The 0 sentinel is documented in the dev's Completion Notes design-decisions block, the LLM is informed of the canonical semantics via system prompt + tool description, and the test class asserts the 0 value explicitly. Switching to `null` would touch the test class + the SearchByTime tool; the value is non-zero churn for an operator-readability nicety.
+  - **Recommendation when picked up:** Standardize the "no window applied" signal across `SearchByTime` explicit-bound mode AND `SearchBySession` keyed-lookup mode by emitting `null` in both cases. Update the test assertion accordingly.
+  - **Owner:** None reserved. Natural carrier is Story 8.4/8.5/8.6/8.7 (extending the Search Agent tool suite — likely encounters the same envelope-shape question for vocabulary-driven tools).
+  - **Blocking?** Not blocking. Operator-observable but ergonomic-not-functional.
+
 

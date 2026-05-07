@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-05-02
-last_updated: 2026-05-07 (Story 8.7 review pass — VocabLookup shipped + 8 SearchToolTest methods (4 vocab-specific + 2 comprehensive iterating tests + 2 reviewer-added regression-guard tests for HIGH-F02 pair-probe + MEDIUM-F03 list-limit) + sibling fix-nows for InspectionSuiteVerificationTest 22→23 and ToolCallRoundtripIntegrationTest 88→92; reviewer auto-fixed 2 HIGH (description-silently-dropped → audit-detail capture; probe-vs-pair-unique-index drift) + 1 MEDIUM (hardcoded list limit → operator-supplied limit input); 326/326/0 SQL ground-truth via numerical-MAX form; "10 production search tool(s) discovered; 0 violation(s)" log line; AC-13 live smoke captured 3 verbatim envelopes for list/save/search modes against `_system` PortalUser + audit-row probe via iris_audit_events MCP confirms (SessionAgent, VocabWrite, explicit) row written; Epic 8 acceptance gate CLOSED — 23 tools registered (13 inspection + 10 search))
+last_updated: 2026-05-07 (Epic 8 COMPLETE + retrospective DONE — all 8 stories done; Search Agent backend foundation shipped (3 vocabulary schemas + 10 search tools + bounded-WHERE invariant 10/10 + comprehensive SearchToolTest); user-led empirical walkthrough including Chrome-DevTools chat-panel integration test surfaced 1 LLM-side discoverability gap bound to Epic 9 vocab digest + Story 9.0 AI-4; 5 action items + 3 carry-forward items captured for Story 9.0; 326/326/0 final SQL ground-truth; 8/10 epics complete in 8 days)
 project: iris-session-agent
 # Epic 1 complete (retro 2026-05-02); Epic 2 retrospective triage gate (Story 2.0) 2026-05-03
 project_key: NOKEY
@@ -116,16 +116,16 @@ development_status:
   7-3-1000-session-integration-test: done
   epic-7-retrospective: done
 
-  epic-8: in-progress
-  8-0-epic-7-deferred-cleanup: review
-  8-1-vocabulary-schemas-seed-templates: review
+  epic-8: done
+  8-0-epic-7-deferred-cleanup: done
+  8-1-vocabulary-schemas-seed-templates: done
   8-2-tool-search-base-bounded-where-invariant-test: done
-  8-3-6-simple-indexed-access-tools: review
-  8-4-searchbysupersession: review
-  8-5-searchbybodyfield-ens-searchtablebase-pivot: review
-  8-6-inspectbodycandidates-two-stage-body-content-search: review
-  8-7-vocablookup-utility-comprehensive-searchtooltest: review
-  epic-8-retrospective: optional
+  8-3-6-simple-indexed-access-tools: done
+  8-4-searchbysupersession: done
+  8-5-searchbybodyfield-ens-searchtablebase-pivot: done
+  8-6-inspectbodycandidates-two-stage-body-content-search: done
+  8-7-vocablookup-utility-comprehensive-searchtooltest: done
+  epic-8-retrospective: done
 
   epic-9: backlog
   9-1-task-0-probes-onaftersave-non-recursion-synthesizealias-determinism: backlog

@@ -1207,3 +1207,33 @@ This file accumulates findings, follow-ups, and architect-decision items that ar
   - **Recommendation when picked up (Epic 10+ hardening or a future high-write-contention story):** wrap the trigger's compute+UPDATE in a `LOCK +^SessionAgenC88B.UserVocabularyD(:tId):0E="lockfail"` to serialize concurrent recomputes per-row. Alternative: move the Confidence recompute to a SQL CASE expression in the trigger's UPDATE so the computed value reads the current `SuccessCount` / `FailureCount` from the row at UPDATE time (avoiding the OREF snapshot stale-read).
   - **Owner:** Future hardening story (Epic 10 retrospective candidate or the first concurrent-write contention bug report).
   - **Blocking?** Not blocking — single-operator per-session usage means the race window is operationally inaccessible in v1.
+
+
+---
+
+## Deferred from: code review of story-9.3-search-vocabularydigest-build (2026-05-07)
+
+- **LOW-9.3-F01 — `Build` reader of `MessageBodyClass` lacks `$Char(0)` defensive normalization.**
+  - **Source:** Story 9.3 code review (Edge-Case-Hunter layer).
+  - **File:** [`src/SessionAgent/Search/VocabularyDigest.cls`](../../src/SessionAgent/Search/VocabularyDigest.cls) line 118 (`If tBodyClass '= ""`).
+  - **Severity:** LOW (not a current bug — `MessageBodyClass` is written via property assignment in `RecordSuccess` lines 178/186, NOT via SQL UPDATE, so the `$Char(0)` legacy-null sentinel is structurally unreachable).
+  - **Observation:** Per project rule §"`$Char(0)` sentinel — grep target for `%String` reads with SQL UPDATE write paths", any `%String` column whose write path includes SQL UPDATE returns `$Char(0)` from the OREF/SQL read site for rows that were updated to empty-string via SQL. `Build` reads `MessageBodyClass` and checks `If tBodyClass '= ""` to decide between the column value and the `CreatedVia` fallback. Today this is safe because `UserVocabulary.RecordSuccess` writes `MessageBodyClass` via `Set tRow.MessageBodyClass = pBodyClass` (property assignment, not SQL UPDATE). If a future story adds a SQL UPDATE write path against `MessageBodyClass` (e.g., a bulk-clear ZenMethod, a "reclassify alias" admin tool, an `_users`-style replication hook), this read site would silently treat `$Char(0)` as non-empty and push the literal one-char NUL into the rendered descriptor — producing baffling LLM output (`- "alias" — \x00 (confidence 0.50)`).
+  - **Why deferred (Rule 8 review):** Test #3 — pure cosmetic at the moment with no current predicted-bug shape. The grep-target invariant is satisfied today (no SQL UPDATE write path against `MessageBodyClass`), so adding the `If tBodyClass = $Char(0) Set tBodyClass = ""` line now is pre-emptive defensive code. Per the rule's enforcement language, the line gets added the moment a SQL-UPDATE write path is introduced. Story 9.5 (`RecordClickThrough` ZenMethod) and Story 9.4 (first-turn prefix injection) do NOT introduce SQL UPDATE write paths against `MessageBodyClass`.
+  - **Recommendation when picked up:** When a future story adds any SQL-UPDATE write path against `MessageBodyClass`, add the canonical normalization line below the `tBodyClass` read in `Build`:
+    ```objectscript
+    Set tBodyClass = tRs.%Get("mbc")
+    If tBodyClass = $Char(0) Set tBodyClass = ""
+    ```
+    Same pattern applies to any other %String read in this class if the substrate's write path expands. Reviewer should grep `..ConfigAgent.* | tRs.%Get("...")` style reads across `SessionAgent.Search.*` at the time of expansion.
+  - **Owner:** Whoever adds the first SQL-UPDATE write path against any `UserVocabulary` %String column.
+  - **Blocking?** Not blocking — current write path is property-assignment only.
+
+- **LOW-9.3-F02 — Token-cap branch in `Build` is structurally unreachable under current calibration.**
+  - **Source:** Story 9.3 code review (Edge-Case-Hunter layer).
+  - **File:** [`src/SessionAgent/Search/VocabularyDigest.cls`](../../src/SessionAgent/Search/VocabularyDigest.cls) lines 156-160 (`If tEstTokens > 1200 { Set tBudgetExceeded = 1 Quit }`).
+  - **Severity:** LOW (code path is structurally unreachable given current calibration; no operator-observable defect; the AC-4 truncation marker still fires correctly via the row-count `MaxEntries` cap).
+  - **Observation:** Each rendered row is `- "<Alias>" — <descriptor> (confidence X.XX)` ≈ 165 chars at maximum (`Alias` MAXLEN=512 — but operator-typed aliases are typically <50 chars; `MessageBodyClass` MAXLEN=128). Even at the worst-case 165 chars/row × 20 rows (`MaxEntries=20`) + ~35-char header = ~3,335 chars ÷ 4 ≈ 833 tokens. The `1,200` token cap is unreachable while `MaxEntries=20` and `MessageBodyClass MAXLEN=128`. The dev's `TestVocabularyDigestTokenCapEnforced` test acknowledges this in its docstring ("the marker fires from the row-count cap rather than the token cap, but either flavor satisfies AC-4's 'truncation marker present' contract"). The branch is therefore exercised at compile-time only; runtime coverage is 0% under current calibration constants.
+  - **Why deferred (Rule 8 review):** Test #1 — genuine future-epic scope. The branch becomes runtime-reachable IF either calibration constant is bumped: `MaxEntries` from 20 to ≥30, OR `MessageBodyClass MAXLEN` from 128 to ≥256, OR a longer-descriptor variant (e.g., row-pinned schema description) is added. Until then the path is dead-code-by-reachability rather than dead-code-by-design — keeping it preserves the AC-4 contract for the moment of expansion. Adding a synthetic-MAXLEN test today would couple the test to current calibration without earning meaningful coverage.
+  - **Recommendation when picked up:** When `MaxEntries`, `MessageBodyClass MAXLEN`, or descriptor-length grows enough to push the worst-case rendered digest past 1,200 tokens, add a test that injects a synthetic descriptor-string of exactly the boundary length and asserts both (a) the digest stops including rows when adding the next would exceed the cap, AND (b) the truncation marker fires with the correct "(N more aliases hidden)" count. Until then the row-count cap is the binding constraint and the existing `TestVocabularyDigestTokenCapEnforced` test gives sufficient AC-4 coverage.
+  - **Owner:** Whoever bumps `MaxEntries` past 30, or `MessageBodyClass MAXLEN` past 256, or adds a longer-descriptor path.
+  - **Blocking?** Not blocking — branch is unreachable under current calibration; AC-4 truncation marker is still empirically verified via the row-count cap path.

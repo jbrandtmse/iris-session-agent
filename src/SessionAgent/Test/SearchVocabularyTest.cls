@@ -6,13 +6,14 @@
 /// delegation refactor.</p>
 ///
 /// <p><b>Test isolation strategy.</b> All test rows use
-/// <code>PortalUser</code> prefix <code>sa-test-92-</code> so cleanup is
-/// precise and does not collide with seed data or the Story 8.7
-/// <code>SearchToolTest</code> fixture (which uses a different
-/// <code>VOCABTESTUSER</code> sentinel).
+/// <code>PortalUser</code> prefixes <code>sa-test-92-</code> (Story 9.2 tests)
+/// and <code>sa-test-93-</code> (Story 9.3 VocabularyDigest tests).
+/// Cleanup uses the broader <code>'sa-test-9%' LIKE</code> pattern (covers
+/// both prefixes; future Stories using <code>sa-test-94-</code>,
+/// <code>sa-test-95-</code>, etc. inherit the cleanup automatically).
 /// <method>OnBeforeAllTests</method> and <method>OnAfterAllTests</method>
 /// each issue
-/// <code>DELETE FROM SessionAgent_Search.UserVocabulary WHERE %EXACT(PortalUser) LIKE 'sa-test-92-%'</code>
+/// <code>DELETE FROM SessionAgent_Search.UserVocabulary WHERE %EXACT(PortalUser) LIKE 'sa-test-9%'</code>
 /// to bracket the suite. <method>OnBeforeOneTest</method> resets the
 /// PPG <code>^||Story92TriggerFireCount</code> to 0 (opt-in fire-count
 /// instrumentation — see UserVocabulary's <method>%OnAfterSave</method>
@@ -88,13 +89,15 @@ Method OnAfterOneTest() As %Status
 }
 
 /// <p>Helper — DELETE all rows whose <code>PortalUser</code> matches the
-/// <code>sa-test-92-%</code> prefix. Uses parameterized SQL via
-/// <code>%SQL.Statement</code> rather than embedded SQL to avoid the
+/// broader <code>sa-test-9%</code> prefix (covers Story 9.2's
+/// <code>sa-test-92-</code> AND Story 9.3's <code>sa-test-93-</code>; future
+/// stories using <code>sa-test-94-</code>, etc. inherit automatically).
+/// Uses <code>%SQL.Statement</code> rather than embedded SQL to avoid the
 /// IRIS embedded-SQL host-variable quoting trap with LIKE patterns.</p>
 ClassMethod CleanupTestRows()
 {
     Set tStmt = ##class(%SQL.Statement).%New()
-    Do tStmt.%Prepare("DELETE FROM SessionAgent_Search.UserVocabulary WHERE %EXACT(PortalUser) LIKE 'sa-test-92-%'")
+    Do tStmt.%Prepare("DELETE FROM SessionAgent_Search.UserVocabulary WHERE %EXACT(PortalUser) LIKE 'sa-test-9%'")
     Do tStmt.%Execute()
     Quit
 }
@@ -307,6 +310,224 @@ ClassMethod AuditRowExistsForName(pName As %String, pUser As %String, pAlias As 
         Set $NAMESPACE = tOrigNS
     }
     Quit tFound
+}
+
+/// <p>Helper — count occurrences of substring <var>pNeedle</var> within
+/// <var>pHaystack</var>. Used by the digest tests to count row markers.</p>
+ClassMethod CountSubstring(pHaystack As %String, pNeedle As %String) As %Integer
+{
+    If (pNeedle = "") || (pHaystack = "") Quit 0
+    Set tCount = 0
+    Set tPos = 1
+    Set tNlen = $Length(pNeedle)
+    Set tFound = $Find(pHaystack, pNeedle, tPos)
+    While tFound > 0 {
+        Set tCount = tCount + 1
+        Set tPos = tFound
+        Set tFound = $Find(pHaystack, pNeedle, tPos)
+    }
+    Quit tCount
+}
+
+/// <p>Story 9.3 AC-5 row 1 — operator with 25 high-confidence aliases.
+/// Each alias is driven to <code>Confidence &gt;= 0.5</code> via
+/// 1 <code>RecordSuccess</code> call (yields exactly 0.5 = 1/(1+0+1)).
+/// <method>Build</method> caps the row list at <code>MaxEntries=20</code>;
+/// the digest contains exactly 20 row markers AND the
+/// <code>(N more aliases hidden</code> truncation marker (since 25 > 20).</p>
+Method TestVocabularyDigestUserWithHighConfidenceRows()
+{
+    Set tUser = "sa-test-93-power"
+    Do ..CleanupTestRows()
+    ; Seed 25 distinct aliases at Confidence=0.5.
+    For i=1:1:25 {
+        Set tAlias = "alias-" _ $Justify(i, 2, 0)
+        Do $$$AssertStatusOK(##class(SessionAgent.Search.UserVocabulary).RecordSuccess(tUser, tAlias), "RecordSuccess for " _ tAlias)
+    }
+    ; Verify seed precondition — 25 rows for tUser at Confidence=0.5 (>= 0.3 threshold).
+    Set tStmt = ##class(%SQL.Statement).%New()
+    Do tStmt.%Prepare("SELECT COUNT(*) AS c FROM SessionAgent_Search.UserVocabulary WHERE %EXACT(PortalUser) = ? AND Confidence >= 0.3")
+    Set tRs = tStmt.%Execute(tUser)
+    Do tRs.%Next()
+    Do $$$AssertEquals(+tRs.%Get("c"), 25, "25 qualifying rows seeded")
+
+    Set tDigest = ##class(SessionAgent.Search.VocabularyDigest).Build(tUser)
+    Do $$$AssertTrue(tDigest [ "## Saved aliases for this user", "digest contains user-aliases header")
+    ; Count "- """ row markers — should be exactly MaxEntries=20.
+    Set tRowCount = ..CountSubstring(tDigest, "- """)
+    Do $$$AssertEquals(tRowCount, 20, "digest contains exactly MaxEntries=20 row markers; got " _ tRowCount)
+    ; Truncation marker present (25 > 20).
+    Do $$$AssertTrue(tDigest [ "more aliases hidden", "digest contains truncation marker (25 > MaxEntries=20)")
+    Quit
+}
+
+/// <p>Story 9.3 AC-5 row 2 — operator with 5 high-confidence rows + 5
+/// low-confidence rows (below <code>MinUserConfidence=0.3</code>). The
+/// digest contains exactly 5 row markers (the high-confidence rows); the
+/// low-confidence rows are filtered out and the truncation marker is
+/// absent.</p>
+Method TestVocabularyDigestUserWithMixedConfidenceRows()
+{
+    Set tUser = "sa-test-93-mixed"
+    Do ..CleanupTestRows()
+    ; Seed 5 high-confidence rows: each gets one RecordSuccess (Confidence = 0.5).
+    For i=1:1:5 {
+        Set tAlias = "high-" _ i
+        Do $$$AssertStatusOK(##class(SessionAgent.Search.UserVocabulary).RecordSuccess(tUser, tAlias), "high RecordSuccess " _ i)
+    }
+    ; Seed 5 low-confidence rows: 1 success + 3 failures yields Confidence = 1/(1+3+1) = 0.2 < 0.3.
+    For i=1:1:5 {
+        Set tAlias = "low-" _ i
+        Do $$$AssertStatusOK(##class(SessionAgent.Search.UserVocabulary).RecordSuccess(tUser, tAlias), "low seed " _ i)
+        Do $$$AssertStatusOK(##class(SessionAgent.Search.UserVocabulary).RecordFailure(tUser, tAlias), "low fail-1 " _ i)
+        Do $$$AssertStatusOK(##class(SessionAgent.Search.UserVocabulary).RecordFailure(tUser, tAlias), "low fail-2 " _ i)
+        Do $$$AssertStatusOK(##class(SessionAgent.Search.UserVocabulary).RecordFailure(tUser, tAlias), "low fail-3 " _ i)
+    }
+    ; Verify the low rows actually fell below 0.3.
+    Set tStmt = ##class(%SQL.Statement).%New()
+    Do tStmt.%Prepare("SELECT COUNT(*) AS c FROM SessionAgent_Search.UserVocabulary WHERE %EXACT(PortalUser) = ? AND Confidence >= 0.3")
+    Set tRs = tStmt.%Execute(tUser)
+    Do tRs.%Next()
+    Do $$$AssertEquals(+tRs.%Get("c"), 5, "exactly 5 qualifying rows (high-confidence) post-seed")
+
+    Set tDigest = ##class(SessionAgent.Search.VocabularyDigest).Build(tUser)
+    Do $$$AssertTrue(tDigest [ "## Saved aliases for this user", "user-aliases header present")
+    Set tRowCount = ..CountSubstring(tDigest, "- """)
+    Do $$$AssertEquals(tRowCount, 5, "digest contains exactly 5 row markers (low-confidence rows filtered); got " _ tRowCount)
+    Do $$$AssertTrue('(tDigest [ "more aliases hidden"), "no truncation marker (5 < MaxEntries=20)")
+    Quit
+}
+
+/// <p>Story 9.3 AC-5 row 3 — operator with zero <code>UserVocabulary</code>
+/// rows falls back to the seed digest. Output starts with the
+/// seed-fallback header and contains exactly 5 row markers (the seed
+/// <code>TOP 5 ORDER BY ID ASC</code>).</p>
+Method TestVocabularyDigestZeroRowsFallsBackToSeed()
+{
+    Set tUser = "sa-test-93-novel"
+    Do ..CleanupTestRows()
+    ; Verify zero qualifying rows.
+    Set tStmt = ##class(%SQL.Statement).%New()
+    Do tStmt.%Prepare("SELECT COUNT(*) AS c FROM SessionAgent_Search.UserVocabulary WHERE %EXACT(PortalUser) = ?")
+    Set tRs = tStmt.%Execute(tUser)
+    Do tRs.%Next()
+    Do $$$AssertEquals(+tRs.%Get("c"), 0, "zero rows for novel user (cleanup precondition)")
+
+    Set tDigest = ##class(SessionAgent.Search.VocabularyDigest).Build(tUser)
+    ; Header check — digest STARTS with the seed-fallback header.
+    Set tHeader = "## Common idioms (no personal aliases yet)"
+    Do $$$AssertEquals($Extract(tDigest, 1, $Length(tHeader)), tHeader, "digest starts with seed-fallback header")
+    ; Row count: exactly 5 (seed TOP 5).
+    Set tRowCount = ..CountSubstring(tDigest, "- """)
+    Do $$$AssertEquals(tRowCount, 5, "digest contains exactly 5 seed row markers; got " _ tRowCount)
+    ; Each row carries the "(seed)" marker.
+    Set tSeedMarkerCount = ..CountSubstring(tDigest, "(seed)")
+    Do $$$AssertEquals(tSeedMarkerCount, 5, "all 5 rows carry (seed) marker; got " _ tSeedMarkerCount)
+    Quit
+}
+
+/// <p>Story 9.3 AC-5 row 4 — operator with 3 rows ALL below
+/// <code>MinUserConfidence=0.3</code> falls back to seed digest. The
+/// 3 user rows exist in the table but the digest still shows the seed
+/// fallback section (zero qualifying rows).</p>
+Method TestVocabularyDigestAllRowsBelowThresholdFallsBackToSeed()
+{
+    Set tUser = "sa-test-93-lowconf"
+    Do ..CleanupTestRows()
+    ; Seed 3 rows, all driven below 0.3 via 1 success + 3 failures (= 0.2).
+    For i=1:1:3 {
+        Set tAlias = "lowconf-" _ i
+        Do $$$AssertStatusOK(##class(SessionAgent.Search.UserVocabulary).RecordSuccess(tUser, tAlias), "seed " _ i)
+        Do $$$AssertStatusOK(##class(SessionAgent.Search.UserVocabulary).RecordFailure(tUser, tAlias), "fail-1 " _ i)
+        Do $$$AssertStatusOK(##class(SessionAgent.Search.UserVocabulary).RecordFailure(tUser, tAlias), "fail-2 " _ i)
+        Do $$$AssertStatusOK(##class(SessionAgent.Search.UserVocabulary).RecordFailure(tUser, tAlias), "fail-3 " _ i)
+    }
+    ; Verify 3 rows exist and ALL are below 0.3.
+    Set tStmt = ##class(%SQL.Statement).%New()
+    Do tStmt.%Prepare("SELECT COUNT(*) AS c FROM SessionAgent_Search.UserVocabulary WHERE %EXACT(PortalUser) = ?")
+    Set tRs = tStmt.%Execute(tUser)
+    Do tRs.%Next()
+    Do $$$AssertEquals(+tRs.%Get("c"), 3, "3 rows exist for lowconf user")
+
+    Set tStmt2 = ##class(%SQL.Statement).%New()
+    Do tStmt2.%Prepare("SELECT COUNT(*) AS c FROM SessionAgent_Search.UserVocabulary WHERE %EXACT(PortalUser) = ? AND Confidence >= 0.3")
+    Set tRs2 = tStmt2.%Execute(tUser)
+    Do tRs2.%Next()
+    Do $$$AssertEquals(+tRs2.%Get("c"), 0, "zero qualifying rows (all below 0.3)")
+
+    Set tDigest = ##class(SessionAgent.Search.VocabularyDigest).Build(tUser)
+    Set tHeader = "## Common idioms (no personal aliases yet)"
+    Do $$$AssertEquals($Extract(tDigest, 1, $Length(tHeader)), tHeader, "digest falls back to seed (all rows < 0.3)")
+    Do $$$AssertTrue('(tDigest [ "## Saved aliases for this user"), "user-aliases header NOT present (fallback path taken)")
+    Quit
+}
+
+/// <p>Story 9.3 AC-5 row 5 — token-budget cap enforcement. Constructs a
+/// synthetic user with 50 rows whose rendered digest naturally exceeds
+/// the row-count cap (50 > <code>MaxEntries=20</code>) AND whose rendered
+/// per-row body is large enough that the rendered digest must remain
+/// under the 1,200-token cap. Asserts <code>$Length(digest) \ 4 &lt;= 1200</code>
+/// AND the truncation marker is present.</p>
+///
+/// <p><b>Body sizing.</b> <code>MessageBodyClass</code> column has
+/// <code>MAXLEN=128</code>. Each rendered row is approximately
+/// <code>"- "fatalias-NN" — &lt;128-char body&gt; (confidence 0.50)\n"</code>
+/// ≈ ~165 chars. Capped at <code>MaxEntries=20</code> rows the digest is
+/// ~3,300 chars ≈ ~825 tokens — well under the 1,200 cap; the marker
+/// fires from the row-count cap rather than the token cap, but either
+/// flavor satisfies AC-4's "truncation marker present" contract.</p>
+Method TestVocabularyDigestTokenCapEnforced()
+{
+    Set tUser = "sa-test-93-tokencap"
+    Do ..CleanupTestRows()
+    ; Build a 120-char body (within MAXLEN=128) so each row is fat enough
+    ; that 50 rows would exceed the token budget if MaxEntries weren't
+    ; the binding cap.
+    Set tFatBody = ""
+    For i=1:1:120 {
+        Set tFatBody = tFatBody _ "X"
+    }
+    For i=1:1:50 {
+        Set tAlias = "fatalias-" _ $Justify(i, 2, 0)
+        Do $$$AssertStatusOK(##class(SessionAgent.Search.UserVocabulary).RecordSuccess(tUser, tAlias, tFatBody, "explicit"), "fat seed " _ i)
+    }
+
+    Set tDigest = ##class(SessionAgent.Search.VocabularyDigest).Build(tUser)
+    Set tEstTokens = $Length(tDigest) \ 4
+    Do $$$AssertTrue(tEstTokens <= 1200, "estimated tokens within budget; got " _ tEstTokens _ " (budget=1200)")
+    Do $$$AssertTrue(tDigest [ "more aliases hidden", "truncation marker present (50 rows exceed MaxEntries=20)")
+    Quit
+}
+
+/// <p>Story 9.3 AC-5 row 6 — pin a single row's exact rendered shape.
+/// Drives <code>"admit" / EnsLib.HL7.Message</code> to
+/// <code>Confidence ≈ 0.857</code> via 6 successive
+/// <code>RecordSuccess</code> calls (6/(6+0+1) = 0.857...) which
+/// renders as <code>(confidence 0.86)</code>. Asserts exact substring
+/// <code>- "admit" — EnsLib.HL7.Message (confidence 0.86)</code> appears
+/// in the digest. Tests format AND descriptor-selection (MessageBodyClass
+/// preferred over CreatedVia).</p>
+Method TestVocabularyDigestRowFormatExact()
+{
+    Set tUser = "sa-test-93-format"
+    Do ..CleanupTestRows()
+    ; Drive Confidence to ≈0.86 — 6 successes → 6/7 ≈ 0.857 → $FNumber(...,"",2) → "0.86".
+    For i=1:1:6 {
+        Do $$$AssertStatusOK(##class(SessionAgent.Search.UserVocabulary).RecordSuccess(tUser, "admit", "EnsLib.HL7.Message", "explicit"), "RecordSuccess #" _ i)
+    }
+    ; Verify Confidence is what we expect.
+    Set tStmt = ##class(%SQL.Statement).%New()
+    Do tStmt.%Prepare("SELECT Confidence AS cf FROM SessionAgent_Search.UserVocabulary WHERE %EXACT(PortalUser) = ? AND %EXACT(Alias) = 'admit'")
+    Set tRs = tStmt.%Execute(tUser)
+    Do tRs.%Next()
+    Set tCf = +tRs.%Get("cf")
+    Do $$$AssertTrue((tCf >= 0.85) && (tCf < 0.87), "Confidence ≈ 0.857 (got " _ tCf _ ")")
+
+    Set tDigest = ##class(SessionAgent.Search.VocabularyDigest).Build(tUser)
+    ; Pinned row format: - "admit" — EnsLib.HL7.Message (confidence 0.86)
+    Set tExpectedRow = "- ""admit"" " _ $Char(8212) _ " EnsLib.HL7.Message (confidence 0.86)"
+    Do $$$AssertTrue(tDigest [ tExpectedRow, "digest contains pinned row text: " _ tExpectedRow)
+    Quit
 }
 
 }

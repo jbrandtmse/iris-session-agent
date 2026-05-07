@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-05-02
-last_updated: 2026-05-07 (Story 9.2 review — AC-1/2/3 RecordSuccess/RecordFailure/%OnAfterSave shipped on UserVocabulary; AC-4 VocabLookup.InvokeSave delegates -24 net lines; AC-5 SearchVocabularyTest 8/8 PASS; AC-6 regression 346/346 via canonical numerical-MAX SQL probe; all four VocabWrite audit triples pre-registered)
+last_updated: 2026-05-07 (Story 9.3 done — VocabularyDigest.Build + SeedFallback shipped; code review applied 2 patches (catch-block exception capture via ^||SessionAgent.VocabDigest.LastError; removed unused DriveAliasToConfidence helper) + 2 LOW defers logged to deferred-work.md (F01 $Char(0) future-proofing; F02 token-cap branch unreachable under current calibration); 14/14 SearchVocabularyTest PASS; 352/352 regression via canonical numerical-MAX SQL probe; Rule 12 content-correctness sanity-invocation digest captured verbatim)
 project: iris-session-agent
 # Epic 1 complete (retro 2026-05-02); Epic 2 retrospective triage gate (Story 2.0) 2026-05-03
 project_key: NOKEY
@@ -130,8 +130,8 @@ development_status:
   epic-9: in-progress
   9-0-epic-8-deferred-cleanup: done
   9-1-task-0-probes-onaftersave-non-recursion-synthesizealias-determinism: done
-  9-2-uservocabulary-recordsuccess-recordfailure-recursion-safe-onaftersave: review
-  9-3-search-vocabularydigest-build: backlog
+  9-2-uservocabulary-recordsuccess-recordfailure-recursion-safe-onaftersave: done
+  9-3-search-vocabularydigest-build: done
   9-4-agentloop-integration-first-user-message-prefix-injection: backlog
   9-5-recordclickthrough-zenmethod-hyperevent-stub: backlog
   epic-9-retrospective: optional

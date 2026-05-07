@@ -116,6 +116,70 @@ When an epic adds tools, providers, agents, or other shipped capabilities, the s
 
 **Apply at story start.** When a story adds a capability, the lead's Task 0 stale-reference scan MUST `grep` for capability enumerations across `*.js` (UI assets), `*.cls` (doc comments + Description parameters), `*.md` (README, deferred-work, planning artifacts) and update each reference in the same commit. The scan keywords are the capability-list terms, not just the dependency names: e.g., for a new tool `find_x`, grep for the existing tool names that appear together in lists (`session_summary`, `session_timeline`, etc.) — wherever an enumeration appears, that's a candidate for stale-reference correction.
 
+### Operator-observable surface enumeration at story-spec time (Story 8.0 / Epic 7 retro AI-1)
+
+**Rule.** Any story shipping a Mgmt-Portal-visible artifact — a `%SYS.Task`
+entry, an audit-event triple (`Source`/`Type`/`Name`), an RBAC role, a Web
+Application, a Zen page page-name, a system-shipped resource, a Production
+item, or any other operator-observable surface — MUST enumerate **at story-
+spec time** the descriptive text fields the artifact exposes (the Mgmt-
+Portal `Description` column, the audit-event description, the role
+doc-comment, the Web App description, the Zen page `%OnGetPageName`
+return, etc.) and confirm each is populated with operator-readable text.
+An empty `Description` field on a shipped artifact is a HIGH-severity
+finding per Rule 8 (predicted-bug shape: operator opens Mgmt Portal,
+sees a blank entry, cannot self-orient — the same operator-UX gap that
+Epic 7 user-led empirical battery surfaced).
+
+**Originating finding.** Story 7.2 shipped the
+`SessionAgent.PurgeOrphanedChatHistory` `%SYS.Task` row (ID 1007) with
+an **empty Description** column — the dev correctly populated `Name`,
+`TaskClass`, and frequency fields, but never copied the implementing
+class's class-level `Description` doc-comment into the task entry's
+`Description` field. An operator opening Task Manager saw a blank
+description column for the new sweep task and could not self-orient
+without grepping the codebase. The fix-now landed in Story 8.0 AC-2
+(`Installer.ScheduleTaskIfClassExists` reads
+`%Dictionary.ClassDefinition.%OpenId(pTaskClass).Description` and assigns
+to `tTask.Description` before `%Save`); this codification prevents the
+recurrence on every future Mgmt-Portal-visible-artifact-shipping story.
+
+**How to apply.**
+
+- At spec-writing time: identify each Mgmt-Portal-visible artifact the
+  story will ship. Enumerate the descriptive text fields (Description
+  column, doc-comment, page-name, etc.) the artifact exposes.
+- For each field, confirm the spec sets the field to operator-readable
+  text. "Operator-readable" means a sentence an operator can read in
+  Mgmt Portal that explains what the artifact is and what touching it
+  does — not a class name, not a placeholder, not blank.
+- The spec MUST cite the specific source the descriptive text comes
+  from (class-level doc-comment, AC text, README pointer, etc.) so the
+  dev does not re-author drift-prone copy.
+- Reviewer enforces: a shipped artifact whose Mgmt-Portal-visible
+  Description / doc-comment / page-name surface is empty is a
+  HIGH-severity finding per Rule 8. Block until populated.
+
+**Surfaces commonly missed (extend this list when a new shape recurs):**
+
+- `%SYS.Task.Description` — shipped via `Installer.ScheduleTaskIfClassExists`
+  (Story 8.0 AC-2 reads from `%Dictionary.ClassDefinition.Description` of
+  the implementing class).
+- `Security.Events.Description` — audit-event triples shipped via
+  `SessionAgent.Audit.Emit.EnsureEvents` must populate the Description
+  column for the Mgmt Portal audit-event browser.
+- `Security.Roles.Description` — RBAC role shipped via
+  `SessionAgent.Security.ReadOnlyRole.Install` populates the Description
+  column.
+- `Security.Applications.Description` — Web App description for Mgmt
+  Portal Web Application listing.
+- `EnsPortal.Template.standardPage` `%OnGetPageName` — Zen page
+  display-name surfaced in the portal banner / breadcrumb.
+- `%Dictionary.ParameterDefinition` `Description` parameter on
+  `Tool.Inspection.*` and `Tool.Search.*` classes — surfaces in
+  `Tool.Registry.ListTools` operator-facing output AND the LLM tool
+  manifest.
+
 ## Rule 5: One-liner check before deferring
 
 **Rule.** When something fails (zpm error, compile error, test failure, MCP error), spend 5–15 minutes on empirical investigation via probes + research BEFORE deferring to a future story.
@@ -154,6 +218,66 @@ If the fix is found in <15 min total: apply it, update affected docs in the same
 
 The battery is the *epic's exit gate* — without passing it, no retrospective conversation begins. If the lead skips the battery, the user redirect is the rule's enforcement mechanism (and that redirect itself is a rule-violation signal worth surfacing in the retro).
 
+### Pre-retro enforcement checklist (lead-self-blocking) (Story 8.0 / Epic 7 retro AI-3)
+
+**Rule.** Before the lead proposes the retrospective, FOUR specific
+bullets MUST appear **verbatim in the conversation transcript**. A bare
+claim "regression sweep passed" is insufficient — the lead self-blocks
+the retro proposal until each bullet's evidence is captured inline:
+
+1. **Task Manager / typed-MCP observability probe output for any new
+   operator-observable artifact shipped this epic.** For every shipped
+   `%SYS.Task` row, audit-event triple, Web App, RBAC role, etc.,
+   capture the typed-MCP envelope showing the artifact in operator-
+   visible state with non-empty Description (`iris_task_list`,
+   `iris_audit_events`, `iris_role_list`, `iris_webapp_list`, etc., per
+   Rule 3). If the epic shipped no operator-observable artifacts, the
+   lead must explicitly note "no operator-observable artifacts shipped
+   this epic" — silence is not acceptable.
+
+2. **Audit-event triple verification.** Run
+   `SELECT %EXACT(EventSource), %EXACT(EventType), %EXACT(EventName)
+   FROM %SYS.Audit_Events WHERE %EXACT(EventSource) = 'SessionAgent'`
+   (or the epic's specific filter) and capture the verbatim row roster
+   showing every triple the epic registered or modified. If the epic
+   added no audit triples, "no audit triples shipped this epic" is the
+   acceptable note.
+
+3. **Rich-data live exercise of the epic's primary code path.** Per
+   Rule 11 if external API is in scope; per Rule 6 step 4 otherwise.
+   Bare-namespace synthetic data does NOT count — the live exercise
+   runs against sample-production fixture data, real captured traffic,
+   or operator-supplied production-shaped state. Capture the verbatim
+   primary output (HTTP envelope, audit row, render envelope, etc.)
+   that proves the path ran end-to-end.
+
+4. **Full regression sweep via SQL ground-truth probe.** Verbatim
+   `Total / Passed / Failed` row from `%UnitTest_Result.TestMethod`
+   (per AC-5 tweaked form below — numeric run-id comparison, not
+   lexicographic `MAX(ID) GROUP BY %EXACT(Name)`). The
+   `iris_execute_tests` envelope is best-effort; the SQL probe is the
+   verification gate. If the epic added new tests, the count must
+   reconcile to the pre-state baseline + new test count.
+
+**Why a checklist (not just sharpened wording).** Epic 7 retro finding
+C-5 surfaced the lead jumping straight to the retro question without
+emitting the empirical battery transcript inline — third recurrence of
+the same failure mode (Epic 1 added Rule 6, Epic 2 sharpened the
+"transcript precondition" wording, Epic 7 still violated). The pattern
+is that "transcript precondition" is too abstract: the lead can
+mentally rationalize "I ran the battery in earlier turns, the user can
+scroll back" and skip the inline emission. Making the four bullets
+**verbatim** + **inline** + **named-checklist** removes the rationalization
+surface — either the four bullets are visible in the latest turns, or
+they are not.
+
+**Apply at retro proposal time.** The lead's retro-proposal message
+MUST contain or directly precede the four bullets. The user redirect is
+the enforcement mechanism: if the lead proposes the retro and the four
+bullets are missing, the user redirects with "where is the battery?"
+and the cycle restarts at this rule. Each redirect is a rule-violation
+signal worth surfacing in the retro itself (meta-self-correction).
+
 ## Rule 7: Operator setup at sprint planning, not at retro
 
 **Rule.** During Step 1 of `/epic-cycle` (sprint planning), the lead identifies every operator-side prerequisite the epic's stories will require — API keys, SSL configurations, env-vars, credential rows, `Enabled=1` toggles, RBAC grants — and asks the user for them upfront. Captured in `_bmad-output/implementation-artifacts/epic-{N}-operator-state.md` so credentials survive cycle resumes.
@@ -189,6 +313,24 @@ mcp__iris-dev-mcp__iris_execute_classmethod  classMethod: Ens.Director.IsProduct
 Returns `1` → state confirmed, no action.
 Returns `0` → run `Bootstrap.Install` + `StartProductionIfStopped` + at least one `RunScenario`, then re-probe.
 Returns error → the production may be uninstalled in this namespace; run full `Bootstrap.Install` from scratch.
+
+**Step-1-time only — NOT per-story (Story 8.0 / Epic 7 retro AI-4).** The
+lead emits ONE `Ens.Director.IsProductionRunning` check + auto-Bootstrap
+(per the probe set above) at /epic-cycle Step 1, **BEFORE any story is
+dispatched**, so the entire epic runs against verified-running
+production. Per-story-time probes are too late: production drifts
+between stories during cycle resumes (server restart, namespace switch,
+user-initiated cleanup, manual scenario reset), and a dev agent that
+finds a stopped or uninstalled production has to break flow to
+re-Bootstrap. The cost is ~10 minutes per occurrence and a Rule 6
+false-negative risk if the dev forgets to re-run scenario data after
+Bootstrap. Verifying once at Step 1 amortizes the check across the
+whole epic. Cited Epic 7 Story 7.2 incident: dev discovered
+`IsProductionRunning=0` mid-story and had to break flow to re-Bootstrap
+before completing AC verification — fourth recurrence across Epic 4
+(Stories 4.3, 4.6, 4.7) → Epic 5 → Epic 6 → Epic 7. The Step-1-time
+amortization is the structural fix; per-story discovery is the
+recurring failure mode.
 
 ## Rule 8: Defer threshold raised — "fix now" is the default
 

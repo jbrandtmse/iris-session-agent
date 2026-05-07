@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-05-02
-last_updated: 2026-05-07 (Epic 7 COMPLETE + retrospective DONE — all 4 stories done; chat-history lifecycle sweep shipped; user-led empirical battery surfaced 1 operator-UX gap (empty %SYS.Task.Description) bound to Story 8.0 AI-1/AI-2; 4 action items captured for Story 8.0 carry-forward; 7/10 epics complete in 6 days)
+last_updated: 2026-05-07 (Story 8.0 review — dev complete; 291/291/0 SQL ground-truth, AC-2 Installer Description propagation verified via iris_task_list envelope, all 8 ACs satisfied)
 project: iris-session-agent
 # Epic 1 complete (retro 2026-05-02); Epic 2 retrospective triage gate (Story 2.0) 2026-05-03
 project_key: NOKEY
@@ -116,7 +116,8 @@ development_status:
   7-3-1000-session-integration-test: done
   epic-7-retrospective: done
 
-  epic-8: backlog
+  epic-8: in-progress
+  8-0-epic-7-deferred-cleanup: review
   8-1-vocabulary-schemas-seed-templates: backlog
   8-2-tool-search-base-bounded-where-invariant-test: backlog
   8-3-6-simple-indexed-access-tools: backlog

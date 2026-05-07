@@ -324,6 +324,26 @@ ClassMethod ScheduleTaskIfClassExists(pTaskName As %String, pTaskClass As %Strin
             Quit
         }
 
+        ; Read the task-class class-level Description doc-comment BEFORE
+        ; switching to %SYS — application class definitions live in the
+        ; mapped (caller) namespace, not in %SYS. Defensive fallback to ""
+        ; if %OpenId returns $$$NULLOREF or the Description is empty.
+        ; Story 8.0 AC-2 / Epic 7 retro AI-1: ensures Mgmt-Portal Task
+        ; Manager Description column is populated with operator-readable
+        ; text instead of shipping blank.
+        ;
+        ; Story 8.0 review fix-now: the raw %Dictionary.ClassDefinition.Description
+        ; carries UDL doc-comment HTML markup (<p>, <code>, <method>, etc.)
+        ; which truncates mid-tag inside %SYS.Task.Description's MAXLEN=100
+        ; window. ..StripDocMarkup() converts the markup-laden source to a
+        ; plain-text sentence so the operator-visible Description satisfies
+        ; AC-1's "operator-readable text" contract.
+        Set tClassDescription = ""
+        Set tClassDef = ##class(%Dictionary.ClassDefinition).%OpenId(pTaskClass)
+        If $IsObject(tClassDef) {
+            Set tClassDescription = ..StripDocMarkup(tClassDef.Description)
+        }
+
         ; Switch to %SYS for the %SYS.Task work; restore at the end.
         Set tCallerNS = tOrigNS
         Set $NAMESPACE = "%SYS"
@@ -354,6 +374,7 @@ ClassMethod ScheduleTaskIfClassExists(pTaskName As %String, pTaskClass As %Strin
             Set tTask.Name = pTaskName
             Set tTask.NameSpace = tCallerNS
             Set tTask.TaskClass = pTaskClass
+            Set tTask.Description = tClassDescription
             Set tTask.DailyFrequency = 0
             Set tTask.DailyStartTime = tStartSeconds
             Set tTask.TimePeriodEvery = 1
@@ -528,6 +549,58 @@ ClassMethod PrintOperatorReminders() [ Private ]
 ClassMethod LogProgress(pMsg As %String) [ Private ]
 {
     Write !,"[iris-session-agent] ", pMsg
+}
+
+/// <p>Strip UDL doc-comment HTML markup from <var>pText</var> so the
+/// resulting string is safe to assign to a Mgmt-Portal-visible
+/// <code>Description</code> column (e.g.,
+/// <CLASS>%SYS.Task</CLASS> <code>Description</code>, MAXLEN=100). Removes
+/// the small set of tags emitted by class-level <code>///</code> doc
+/// comments — <code>&lt;p&gt;</code>, <code>&lt;code&gt;</code>,
+/// <code>&lt;method&gt;</code>, <code>&lt;property&gt;</code>,
+/// <code>&lt;var&gt;</code>, <code>&lt;b&gt;</code>, <code>&lt;i&gt;</code>,
+/// <code>&lt;ul&gt;</code>, <code>&lt;li&gt;</code>, <code>&lt;CLASS&gt;</code>
+/// — by skipping every <code>&lt;...&gt;</code> segment. Also collapses
+/// CR/LF/tab runs to single spaces and trims edge whitespace so the result
+/// reads as a contiguous prose sentence in the operator-visible truncation
+/// window.</p>
+///
+/// <p>Story 8.0 fix-now (Epic 7 retro AI-1 follow-through): AC-2's first
+/// implementation pass assigned the raw <code>%Dictionary.ClassDefinition.Description</code>
+/// directly to <code>%SYS.Task.Description</code>, but the raw value carries
+/// the HTML markup verbatim and the MAXLEN=100 truncation window cuts a
+/// typical doc-comment off mid-tag (e.g.,
+/// <code>"&lt;p&gt;Scheduled sweep task that deletes Inspection-keyed\r\n&lt;code&gt;SessionAgent.Chat.History&lt;/code&gt; rows w"</code>).
+/// AC-1's own definition of "operator-readable text" rules this out — the
+/// reviewer enforces a plain-text contract on shipped artifact descriptions.
+/// This helper is the strip step that closes the gap.</p>
+ClassMethod StripDocMarkup(pText As %String) As %String [ Private ]
+{
+    If pText = "" Quit ""
+    Set tOut = ""
+    Set tLen = $Length(pText)
+    Set tI = 1
+    While tI '> tLen {
+        Set tCh = $Extract(pText, tI)
+        If tCh = "<" {
+            ; Skip to closing '>' (or end of string if malformed).
+            Set tClose = $Find(pText, ">", tI)
+            If tClose = 0 {
+                Set tI = tLen + 1
+            } Else {
+                Set tI = tClose
+            }
+        } Else {
+            Set tOut = tOut _ tCh
+            Set tI = tI + 1
+        }
+    }
+    ; Collapse CR/LF/TAB and any double-space runs to a single space; trim edges.
+    Set tOut = $Translate(tOut, $Char(13, 10, 9), "   ")
+    While tOut [ "  " {
+        Set tOut = $Replace(tOut, "  ", " ")
+    }
+    Quit $ZStrip(tOut, "<>W")
 }
 
 }

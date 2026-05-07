@@ -179,19 +179,43 @@ mask BOTH count discrepancies AND failing-method information when the
 result list is large enough to truncate.
 
 **Recommended SQL.** The schema joins `TestMethod` (per-method) → `TestCase`
-(per-class). Filter to the latest run per class via the most-recent
-`TestCase.ID`:
+(per-class). `%UnitTest_Result.TestCase.ID` is a composite string of the
+form `<runIdx>||<suiteName>||<className>` — picking "the latest run per
+class" via plain `MAX(ID) GROUP BY %EXACT(Name)` performs a
+**lexicographic string compare on the composite ID**, which is fragile
+because IRIS SQL string-collation sorts character-by-character on the
+left-most piece: `'9||...' > '1044||...'` because `'9' (0x39) >
+'1' (0x31)` at character 0. The fix has TWO parts:
+
+1. Extract the numeric run-id from the leftmost piece
+   (`$PIECE(ID,'||',1)+0` for ObjectScript-style numeric coercion, or
+   `CAST($PIECE(ID,'||',1) AS INTEGER)` for SQL-portable equivalent)
+   so the aggregate compares by integer magnitude instead of
+   lexicographic order.
+2. Compute the per-class `MAX(runIdx)` aggregate **inside a JOIN to
+   TestMethod**, not against the TestCase table alone. The TestCase
+   table can carry orphaned rows for runs that were started but never
+   produced TestMethod rows (partial runs, IRIS shutdown mid-suite,
+   manual delete of methods without the carrier). Picking the
+   `MaxRunIdx` from TestCase alone may select a run that has zero
+   methods, producing a 0-row JOIN and an undercount. Filtering to
+   "runs that actually have method rows" via the inner JOIN ensures
+   the picker matches reality.
 
 ```sql
 SELECT %EXACT(tm.Name) AS Method, tm.Status, %EXACT(tc.Name) AS TestClass
 FROM %UnitTest_Result.TestMethod tm
 JOIN %UnitTest_Result.TestCase tc ON tm.TestCase = tc.ID
+JOIN (
+  SELECT %EXACT(tc2.Name) AS ClassName,
+         MAX($PIECE(tc2.ID, '||', 1) + 0) AS MaxRunIdx
+  FROM %UnitTest_Result.TestMethod tm2
+  JOIN %UnitTest_Result.TestCase tc2 ON tm2.TestCase = tc2.ID
+  WHERE %EXACT(tc2.Name) LIKE 'SessionAgent.Test.%'
+  GROUP BY %EXACT(tc2.Name)
+) latest ON %EXACT(tc.Name) = latest.ClassName
+        AND ($PIECE(tc.ID, '||', 1) + 0) = latest.MaxRunIdx
 WHERE %EXACT(tc.Name) LIKE 'SessionAgent.Test.%'
-  AND tc.ID IN (
-    SELECT MAX(ID) FROM %UnitTest_Result.TestCase
-    WHERE %EXACT(Name) LIKE 'SessionAgent.Test.%'
-    GROUP BY %EXACT(Name)
-  )
 ORDER BY %EXACT(tc.Name), %EXACT(tm.Name)
 ```
 
@@ -204,13 +228,43 @@ SELECT COUNT(*) AS Total,
        SUM(CASE WHEN tm.Status=0 THEN 1 ELSE 0 END) AS Failed
 FROM %UnitTest_Result.TestMethod tm
 JOIN %UnitTest_Result.TestCase tc ON tm.TestCase = tc.ID
+JOIN (
+  SELECT %EXACT(tc2.Name) AS ClassName,
+         MAX($PIECE(tc2.ID, '||', 1) + 0) AS MaxRunIdx
+  FROM %UnitTest_Result.TestMethod tm2
+  JOIN %UnitTest_Result.TestCase tc2 ON tm2.TestCase = tc2.ID
+  WHERE %EXACT(tc2.Name) LIKE 'SessionAgent.Test.%'
+  GROUP BY %EXACT(tc2.Name)
+) latest ON %EXACT(tc.Name) = latest.ClassName
+        AND ($PIECE(tc.ID, '||', 1) + 0) = latest.MaxRunIdx
 WHERE %EXACT(tc.Name) LIKE 'SessionAgent.Test.%'
-  AND tc.ID IN (
-    SELECT MAX(ID) FROM %UnitTest_Result.TestCase
-    WHERE %EXACT(Name) LIKE 'SessionAgent.Test.%'
-    GROUP BY %EXACT(Name)
-  )
 ```
+
+**Empirical demonstration — why the original `MAX(ID) GROUP BY` form is
+fragile.** Two live incidents in this codebase confirm the
+lexicographic-collation drift the new form fixes:
+
+- **Story 7.0 verification battery (2026-05-07).** The fragile form
+  returned `260/260` while the truncation-aware ground-truth probe
+  (numeric run-id picker + per-class roster) returned `288/288` —
+  a 28-method discrepancy entirely caused by the fragile picker
+  selecting stale earlier runs for classes whose latest runIdx had
+  more digits than a competing earlier runIdx of a different class.
+- **Epic 7 retro finding C-2.** `MAX(ID) GROUP BY %EXACT(Name)`
+  returned a row whose `MAX` was `'1044||SessionAgent.Test||...'`
+  (run 1044) while the empirically-real latest run for that class
+  was `254` (`'254||...'`). The fragile form picked 1044 because
+  `'1044' > '254'` lexicographically (`'1' compared char-by-char
+  yields nothing decisive until '0' > '5'` at position 1). Numeric
+  comparison correctly picks 254 over 1044 only when 254 is in fact
+  newer; per the live data, the correct latest was the smaller-digit
+  but more recent runIdx, and the lexicographic picker silently
+  selected the older but lexicographically-larger run.
+
+Reviewer enforces: any future story that uses the old fragile
+`MAX(ID) GROUP BY %EXACT(Name)` form is a MEDIUM-severity finding per
+Rule 8 (predicted-bug shape: latest-run picker selects stale earlier
+runs and undercounts the substantive regression-sweep claim).
 
 **Why ground-truth.** Story 4.7 shipped a HIGH-severity off-by-one bug
 past the dev's "all 8 methods Status=1" claim — the real recorded state was

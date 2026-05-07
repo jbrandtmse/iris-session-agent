@@ -103,6 +103,18 @@ Property QueryTemplate As %String(MAXLEN = 2048);
 /// non-search tools leave empty.</p>
 Property IndexUsed As %String;
 
+/// <p>Index on <property>ChatHistoryId</property> — added in Story 7.2 to
+/// support the <code>SessionAgent.Task.PurgeOrphanedChatHistory</code>
+/// sweep's per-orphan
+/// <code>DELETE FROM SessionAgent_Audit.ToolCall WHERE ChatHistoryId = ?</code>
+/// (Story 7.1 Option B audit-cascade implementation). Without this index the
+/// sweep degrades to a full audit-table scan per orphan; with it the DELETE
+/// is O(log n). Story 7.3's 1,000-session integration test exercises the
+/// indexed path. Storage section is auto-generated per project rule
+/// "Storage Sections" — do NOT hand-edit the Storage block to reflect this
+/// index; the compiler maintains it.</p>
+Index ChatHistoryIdIdx On ChatHistoryId;
+
 Storage Default
 {
 <Data name="ToolCallDefaultData">

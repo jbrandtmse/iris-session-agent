@@ -983,4 +983,26 @@ This file accumulates findings, follow-ups, and architect-decision items that ar
   - **Owner:** Future docs polish pass on `.claude/rules/object-script-testing.md` (no specific story slot reserved).
   - **Blocking?** Not blocking. The rule's substantive guidance (any `Test*` prefix triggers the shadow trap) is correct regardless of the example datatype.
 
+---
+
+## Deferred from: code review of story-7-2-purgeorphanedchathistory-task-installer-scheduling (2026-05-06)
+
+- **LOW-7.2-F02 — `tScanRS` not closed if outer Try fails between `%Execute` (line 117) and explicit `%Close` (line 132).**
+  - **Source:** Story 7.2 code review (Edge Case Hunter layer, finding F-02).
+  - **Severity:** LOW (no concrete predicted-bug shape under realistic operating conditions).
+  - **Observation:** [`src/SessionAgent/Task/PurgeOrphanedChatHistory.cls:117-132`](../../src/SessionAgent/Task/PurgeOrphanedChatHistory.cls#L117) opens `tScanRS` at line 117 and explicitly closes it at line 132 after the `%Next()` loop completes. If an exception raises mid-Phase 1 (e.g., a transient %SQL.Statement runtime error during `%Get`), the outer `Catch` at line 195 absorbs it and sets `tSC = ex.AsStatus()`, but the open result-set is not explicitly `%Close()`'d before exit. IRIS GC eventually reclaims the transient handle.
+  - **Why deferred (Rule 8 review):** Test 1 (future-epic scope) — not a fit; the fix would land in Story 7.2 if pursued. Test 2 (external-dependency blocker) — not a fit. Test 3 (cosmetic / no predicted-bug shape) — borderline; under realistic operating conditions (`%SYS.Task` daily-2am sweep + IRIS GC + per-orphan sub-Try absorbing all the predictable failure modes), the leak shape doesn't materialize. The outer-Catch path is reached only on Phase 1 fatal errors that imply a deeper IRIS-side issue (Ens.MessageHeader scan failure, statement-cache exhaustion) where the unreleased RS handle is the least of the operator's concerns.
+  - **Recommendation when picked up:** Wrap `tScanRS = tScanStmt.%Execute()` in its own try/finally-equivalent block that calls `%Close()` on the outer-catch path. The cleanest pattern is `If $IsObject(tScanRS) Do tScanRS.%Close()` as the first line of the outer Catch, before `Set tSC = ex.AsStatus()`.
+  - **Owner:** None reserved. Optional polish for any future story that touches `PurgeOrphanedChatHistory.OnTask()` for unrelated reasons.
+  - **Blocking?** Not blocking.
+
+- **LOW-7.2-F03 — `tLlmRS` / `tToolRS` not closed if `%Execute` raises mid-DELETE inside Phase 3 sub-Try.**
+  - **Source:** Story 7.2 code review (Edge Case Hunter layer, finding F-03).
+  - **Severity:** LOW (sub-Try absorbs; transient RS handle is GC'd).
+  - **Observation:** [`src/SessionAgent/Task/PurgeOrphanedChatHistory.cls:165-175`](../../src/SessionAgent/Task/PurgeOrphanedChatHistory.cls#L165) per-orphan sub-Try executes `tLlmStmt.%Execute(tChatId)` → counter advance → `Do tLlmRS.%Close()`. Same shape for `tToolRS`. If `%Execute` itself raises, the partially-bound RS object is never `%Close()`'d. The sub-Try at line 186 `Catch exOrphan { ... }` absorbs the exception and the loop continues with the next orphan; the orphan that triggered the exception is silently skipped.
+  - **Why deferred (Rule 8 review):** Same rationale as F-02. The forward-progress design (per AC-4 commit-per-orphan) explicitly accepts per-orphan failure as silent skip. Adding `If $IsObject(tLlmRS) Do tLlmRS.%Close()` and the equivalent for `tToolRS` inside the sub-Try's catch block would be belt-and-suspenders cleanup; the cost (4 extra lines) vs the benefit (transient handle released ~0.001s sooner per failed orphan) doesn't move the needle for a daily 2am sweep.
+  - **Recommendation when picked up:** Same pattern as F-02 — `If $IsObject(tLlmRS) Do tLlmRS.%Close()` and `If $IsObject(tToolRS) Do tToolRS.%Close()` as the first lines of the per-orphan sub-Try's catch block.
+  - **Owner:** None reserved. Same optional-polish bucket as F-02.
+  - **Blocking?** Not blocking.
+
 

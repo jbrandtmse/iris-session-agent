@@ -27,10 +27,12 @@ If the prereqs are in place, you'll see all six IPM lifecycle phases SUCCESS. Th
 
 ```
 [HSCUSTOM|iris-session-agent]   Configure START
-[iris-session-agent] SessionAgent.Task.PurgeOrphanedChatHistory not yet implemented; sweep deferred
+[iris-session-agent] Scheduled SessionAgent.PurgeOrphanedChatHistory (Daily at 2:00)
 [iris-session-agent] SessionAgent.Task.PurgeStaleSearchChat not yet implemented; sweep deferred
 [iris-session-agent] SessionAgent.Task.UserVocabularyDecay not yet implemented; sweep deferred
-[iris-session-agent] SessionAgent.Config.Agent not yet implemented; default configs deferred
+[iris-session-agent] Config.Agent present — seeding default rows
+[iris-session-agent] session-inspection: row already present; skipping
+[iris-session-agent] message-search: row already present; skipping
 === iris-session-agent install reminders ===
 Bookmark URLs (HealthShare):
   /csp/healthshare/HSCUSTOM/SessionAgent.EnsPortal.VisualTrace.zen
@@ -43,7 +45,7 @@ See README "Operator Prerequisites" for one-time setup (Web Gateway timeout 60->
 [HSCUSTOM|iris-session-agent]   Configure SUCCESS
 ```
 
-The four `not yet implemented; sweep/configs deferred` lines are **expected** in the Epic 1 build — those classes ship in later stories (sweep tasks in Epics 7 + 10, default configs in Epic 2). The single `<CSPApplication>` deprecation warning above the lifecycle output is informational, not an error.
+The two remaining `not yet implemented; sweep deferred` lines are **expected** in the post-Epic-7 build — those classes ship in Epic 10 (`PurgeStaleSearchChat` + `UserVocabularyDecay`). Story 7.2 added `SessionAgent.Task.PurgeOrphanedChatHistory` and the Configure phase now schedules it on first install (the `Scheduled SessionAgent.PurgeOrphanedChatHistory (Daily at 2:00)` line). Re-running `zpm install` is idempotent — the scheduler logs `Task SessionAgent.PurgeOrphanedChatHistory already scheduled (ID=N); skipped`. The single `<CSPApplication>` deprecation warning above the lifecycle output is informational, not an error.
 
 ## 3. Bookmark a known-failed session
 

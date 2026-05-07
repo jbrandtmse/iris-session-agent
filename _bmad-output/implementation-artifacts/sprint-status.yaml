@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-05-02
-last_updated: 2026-05-06 (Story 7.3 done — code review APPROVED; 3 findings auto-resolved (1 MEDIUM dangling-TSTART defense in OnBeforeAllTests outer Catch, 2 LOW: stale method-name comment + dead-code cleanup); post-patch class-level run TestInstance 253: 3/3 PASS Duration 0.068s; independent leftover-row probe 0/0/0/0; **Epic 7 acceptance gate met**)
+last_updated: 2026-05-07 (Epic 7 COMPLETE + retrospective DONE — all 4 stories done; chat-history lifecycle sweep shipped; user-led empirical battery surfaced 1 operator-UX gap (empty %SYS.Task.Description) bound to Story 8.0 AI-1/AI-2; 4 action items captured for Story 8.0 carry-forward; 7/10 epics complete in 6 days)
 project: iris-session-agent
 # Epic 1 complete (retro 2026-05-02); Epic 2 retrospective triage gate (Story 2.0) 2026-05-03
 project_key: NOKEY
@@ -109,12 +109,12 @@ development_status:
   6-4-multi-namespace-install-support: done
   epic-6-retrospective: done
 
-  epic-7: in-progress
+  epic-7: done
   7-0-epic-6-deferred-cleanup: done
   7-1-task-0-probe-audit-fk-cascade-design: done
   7-2-purgeorphanedchathistory-task-installer-scheduling: done
   7-3-1000-session-integration-test: done
-  epic-7-retrospective: optional
+  epic-7-retrospective: done
 
   epic-8: backlog
   8-1-vocabulary-schemas-seed-templates: backlog

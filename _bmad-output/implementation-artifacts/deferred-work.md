@@ -943,4 +943,24 @@ This file accumulates findings, follow-ups, and architect-decision items that ar
   - **Owner:** Epic 6 lead — process-level (Rule 5.0 AC-1 query refinement); not blocking Story 6.2.
   - **Blocking?** Not blocking — substantive "all pass" claim is correct.
 
+---
+
+## Deferred from: Story 6.4 (Multi-Namespace Install Support, 2026-05-06)
+
+- **`SessionAgent.Installer:CopyConfigBetweenNamespaces(pSrc, pDst)` cross-namespace config copy helper.**
+  - **Source:** Story 6.4 AC-5 architectural-decision documentation.
+  - **Severity:** Backend tweak — pure-cosmetic operator convenience (Rule 8 test #3: "no bug shape").
+  - **Justification (Rule 8 test #3):** the per-namespace `Config.Agent` decision recorded in AC-5 is the safer default for v1 — operators with cross-namespace identical config maintain the rows manually (or copy via SQL `INSERT ... SELECT FROM ...` cross-namespace) until a future helper ships. There is no predicted-bug shape — the helper is a usability nicety, not a correctness gap.
+  - **Recommendation when picked up:** ship as a peer ClassMethod on `SessionAgent.Installer` mirroring the `InstallIntoNamespace` pattern (3-tier validation: pSrc empty / equals pDst / pSrc-or-pDst nonexistent + package-mapped check on both, then a transactional cross-namespace `Config.Agent` row copy with the destination's existing rows replaced atomically). Should be additive — must NOT retroactively flip the per-namespace default to a shared-config default.
+  - **Owner:** Future Epic 6.x story (no specific story slot reserved — pick up when an operator surfaces the need).
+  - **Blocking?** Not blocking. Story 6.4 ships the multi-namespace install path; cross-namespace copy is a usability follow-up.
+
+- **`MultiNamespaceInstallTest` test-method-order coupling — TestInstallIntoNamespaceCreatesPerNamespaceState mutates SATEST64 Provider before TestInstallIntoNamespaceIdempotency runs.** (LOW — Story 6.4 reviewer-found, 2026-05-06)
+  - **Source:** Story 6.4 code review (Edge Case Hunter layer) — `src/SessionAgent/Test/MultiNamespaceInstallTest.cls:280` (`Do ..SetSessionInspectionProvider("anthropic")`) followed by `:308` (`TestInstallIntoNamespaceIdempotency`).
+  - **Severity:** LOW — passes today; predicted-bug shape is hypothetical and contingent on future test refactoring.
+  - **Justification (Rule 8 test #3 "no bug shape"):** `TestInstallIntoNamespaceCreatesPerNamespaceState` flips SATEST64's `session-inspection.Provider` to "anthropic" as the cross-namespace independence assertion. `TestInstallIntoNamespaceIdempotency` runs after (alphabetical method-order in `%UnitTest`), and the second `InstallIntoNamespace` does NOT overwrite the existing row (per the `AgentNameIdxExists` guard in `Installer.SeedOneAgent`). The idempotency test only counts rows, so the cross-test coupling does not affect today's pass/fail outcome. If a future test reorder swaps these methods, or adds an intermediate test that depends on the seed Provider being "openai", the seed-shape coupling could surface as a flaky test.
+  - **Recommendation when picked up:** add an explicit `Reset` step in `OnBeforeOneTest` (or a new `OnBeforeOneTest` per-method discriminator) that re-seeds SATEST64 to the canonical seed shape via direct SQL `DELETE FROM SessionAgent_Config.Agent` + re-run `..Install("")`. Alternatively, parameterize the `SetSessionInspectionProvider` mutation to roll back at the end of the test method. Either approach removes the cross-test order dependency.
+  - **Owner:** Future Epic 6.x or Epic 7.x test-isolation pass (no specific story slot reserved).
+  - **Blocking?** Not blocking. Story 6.4 ships with all 6 tests passing on the current method order.
+
 

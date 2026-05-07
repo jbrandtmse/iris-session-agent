@@ -126,6 +126,151 @@ ClassMethod Install(pVars) As %Status
     Quit tSC
 }
 
+/// <p>Multi-namespace install entry point — runs the full
+/// <method>Install</method> orchestration scoped to the operator-supplied
+/// <var>pNamespace</var>. Story 6.4 ships this as the documented path for
+/// installing iris-session-agent into a non-<code>HSCUSTOM</code> interop
+/// namespace on the same IRIS instance (e.g., a per-tenant namespace, a
+/// dedicated test namespace, or a second production interop namespace).</p>
+///
+/// <p><b>Why a separate method (vs. extending <method>Install</method>):</b>
+/// the IPM <code>&lt;Invoke&gt;</code> contract calls <method>Install</method>
+/// with a <var>pVars</var> hash and runs in the install-target namespace
+/// already; this is the single-namespace path and must not change. The
+/// multi-namespace path is operator-driven (<i>"after the IPM install in
+/// HSCUSTOM, also configure namespace OTHERNS"</i>), so it sits as a peer
+/// method that wraps <method>Install</method> with namespace
+/// validation + package-mapping pre-check + explicit save/restore.</p>
+///
+/// <p><b>Three-tier validation</b> (AC-1):</p>
+/// <ol>
+/// <li>Empty string → <code>$$$ERROR</code> with explicit "cannot be empty"
+/// text.</li>
+/// <li><code>"%SYS"</code> → <code>$$$ERROR</code> with operator guidance
+/// to pick the interop namespace.</li>
+/// <li>Namespace doesn't exist → <code>$$$ERROR</code> referencing the
+/// missing namespace name and the <code>Config.Namespaces</code> SQL probe
+/// for diagnosis.</li>
+/// </ol>
+///
+/// <p><b>Spec-drift note (Story 6.4 Task 0):</b> the spec referenced
+/// <code>Config.Namespaces.%ExistsId</code> for the existence check — that
+/// API returns <code>0</code> even for existing namespaces (verified
+/// empirically). The correct API on IRIS 2024.1 is
+/// <code>Config.Namespaces.Exists(pNamespace)</code>, which is what this
+/// implementation uses.</p>
+///
+/// <p><b>Package-mapping pre-check</b> (AC-2): verifies
+/// <code>SessionAgent.PKG</code> is mapped to <var>pNamespace</var> via
+/// <code>Config.MapPackages.Exists(pNamespace, "SessionAgent")</code>. If
+/// not mapped, returns a <code>$$$ERROR</code> whose text contains the
+/// operator-runnable <code>Config.MapPackages.Create(...)</code> invocation
+/// verbatim — copy-paste solves the operator's problem.</p>
+///
+/// <p><b>Interop-enabled namespace prerequisite (Story 6.4 Task 0):</b>
+/// <var>pNamespace</var> must be an <b>interop-enabled</b> namespace
+/// (i.e., <code>%Library.EnsembleMgr.IsEnsembleNamespace</code> returns 1)
+/// before this method is invoked. The chained
+/// <method>SessionAgent.Security.ReadOnlyRole.Install</method> call
+/// performs an SQL <code>GRANT</code> on <code>Ens.MessageHeader</code>;
+/// without interop enabled, the table is not projected and the grant
+/// fails with SQLCODE -30. Operators using a freshly-created
+/// <code>Config.Namespaces.Create</code>-only namespace must call
+/// <code>##class(%Library.EnsembleMgr).EnableNamespace(pNamespace, 0)</code>
+/// from <code>%SYS</code> before
+/// <method>InstallIntoNamespace</method>. The README's "Multi-Namespace
+/// Install" walkthrough (Step 1) documents this explicitly.</p>
+///
+/// <p><b>Idempotency (NFR-R5):</b> inherited from <method>Install</method>
+/// (which is itself idempotent per Story 1.5). Running
+/// <method>InstallIntoNamespace</method> twice on the same namespace
+/// returns <code>$$$OK</code> without duplicating Task Manager entries,
+/// <code>Config.Agent</code> rows, or audit-event registrations.</p>
+///
+/// <p><b>Architectural decision (AC-5):</b> <code>Config.Agent</code> rows
+/// are <b>per-namespace</b>. Each namespace's
+/// <code>SessionAgent_Config.Agent</code> table is independent —
+/// <method>SeedDefaultAgentConfigs</method> is called once per
+/// <method>InstallIntoNamespace</method> invocation and seeds rows scoped
+/// to <var>pNamespace</var>. The rationale: per-namespace is the safer
+/// default — no cross-namespace coupling, no risk of one namespace's
+/// <code>Enabled=1</code> flip affecting another's RBAC scope, no operator
+/// confusion about which namespace's <code>Provider</code> is "the"
+/// provider. A future <method>CopyConfigBetweenNamespaces</method> helper
+/// is documented in <code>deferred-work.md</code> for operators with
+/// cross-namespace identical config.</p>
+///
+/// <p><b>Project rules honored:</b> <code>tOrigNS</code> save/restore (per
+/// project rule §"Namespace Switching in REST Handlers"); catch block
+/// restores <code>$NAMESPACE</code> as its first line; argumentless
+/// <code>Quit</code> inside the Try/Catch (per project rule §"QUIT
+/// Statement Restrictions in Try/Catch Blocks"); structured
+/// <code>%Status</code> for all error returns — operator-error path is
+/// always a returned status, never an exception bubble.</p>
+ClassMethod InstallIntoNamespace(pNamespace As %String) As %Status
+{
+    Set tSC = $$$OK
+    Set tOrigNS = $NAMESPACE
+
+    ; (1) Three-tier validation BEFORE any namespace switch — input
+    ; validation is cheapest when done first; per project rule "Do all
+    ; input validation BEFORE switching to %SYS where possible."
+    If pNamespace = "" {
+        Quit $$$ERROR($$$GeneralError, "InstallIntoNamespace: pNamespace cannot be empty")
+    }
+    If pNamespace = "%SYS" {
+        Quit $$$ERROR($$$GeneralError, "InstallIntoNamespace: cannot install into %SYS — pick the operator's interop namespace (typically HSCUSTOM)")
+    }
+
+    Try {
+        ; (2) Namespace existence check — must run from %SYS because
+        ; Config.* lives in %SYS. Save/restore via tOrigNS local variable.
+        ; Per Story 6.4 Task 0 finding: Config.Namespaces.%ExistsId is
+        ; broken on IRIS 2024.1 — Config.Namespaces.Exists is the right
+        ; API and returns 1/0 correctly.
+        Set $NAMESPACE = "%SYS"
+        Set tNsExists = ##class(Config.Namespaces).Exists(pNamespace)
+        Set $NAMESPACE = tOrigNS
+
+        If 'tNsExists {
+            Set tSC = $$$ERROR($$$GeneralError, "InstallIntoNamespace: namespace '" _ pNamespace _ "' does not exist on this IRIS instance — verify via SELECT Nsp FROM Config.Namespaces")
+            Quit
+        }
+
+        ; (3) Package-mapping pre-check — verify SessionAgent.PKG is
+        ; mapped to pNamespace. If not, return a structured-status error
+        ; whose text contains the operator-runnable Create(...) line.
+        Set $NAMESPACE = "%SYS"
+        Set tMapExists = ##class(Config.MapPackages).Exists(pNamespace, "SessionAgent")
+        Set $NAMESPACE = tOrigNS
+
+        If 'tMapExists {
+            ; Operator-runnable error text — the Config.MapPackages.Create
+            ; signature is (Namespace, Name, .Properties) where Properties
+            ; is a byref array carrying Properties("Database") = source.
+            ; The example below is in copy-paste-runnable %SYS-shell form;
+            ; the operator runs the four lines verbatim.
+            Set tSC = $$$ERROR($$$GeneralError, "InstallIntoNamespace: SessionAgent.PKG is not mapped to namespace '" _ pNamespace _ "'. From %SYS, run: Set props(""Database"")=""HSCUSTOM"" Set sc=##class(Config.MapPackages).Create(""" _ pNamespace _ """, ""SessionAgent"", .props) (substitute the source database for your install topology) before retrying InstallIntoNamespace.")
+            Quit
+        }
+
+        ; (4) Delegation — switch to pNamespace and call the existing
+        ; Install() orchestrator. The orchestrator handles its own
+        ; chained %SYS switching for Audit/RBAC/Task Manager work.
+        Set $NAMESPACE = pNamespace
+        Set tSC = ..Install("")
+        Set $NAMESPACE = tOrigNS
+        ; tSC propagates unchanged — operator sees the same actionable
+        ; text the single-namespace Install() path would produce.
+    }
+    Catch ex {
+        Set $NAMESPACE = tOrigNS
+        Set tSC = ex.AsStatus()
+    }
+    Set $NAMESPACE = tOrigNS
+    Quit tSC
+}
+
 /// <p>Defensive task-scheduler helper. Creates an IRIS Task Manager entry
 /// for <var>pTaskName</var> if and only if (a) the implementing class
 /// <var>pTaskClass</var> exists in the dictionary, and (b) no existing task

@@ -155,6 +155,53 @@ The Search Agent path is for the operator's "find the session I care about" entr
 
 The installer schedules `SessionAgent.Task.PurgeOrphanedChatHistory` to run daily at 02:00 UTC (this task ships in [Epic 7 Story 7.2](_bmad-output/planning-artifacts/epics.md)). Verify it's enabled in **Task Manager** after install. The task removes chat-history rows whose linked `Ens.MessageHeader` session has been purged, so no orphaned conversations accumulate.
 
+## Multi-Namespace Install
+
+By default, the IPM `<Invoke>` install path scopes all install-time work to the **single** namespace named in `module.xml` (typically `HSCUSTOM`). Operators running multiple interop namespaces on the same IRIS instance — for example, a dedicated test namespace, a per-tenant namespace, or a second production interop namespace — can install iris-session-agent into each of them independently using the `InstallIntoNamespace` entry point.
+
+**Architectural decision: `Config.Agent` rows are PER-NAMESPACE.** Each namespace's `SessionAgent_Config.Agent` table is independent — flipping `Enabled=1` or changing `Provider` in one namespace does not affect any other namespace. This is the safer default (no cross-namespace coupling, no operator confusion about which namespace's `Provider` is "the" provider). If you maintain identical config across namespaces today, you re-enter it in each one. A future `CopyConfigBetweenNamespaces(pSrc, pDst)` helper is tracked in `_bmad-output/implementation-artifacts/deferred-work.md` for operators with cross-namespace identical config.
+
+**Operator walkthrough.** Run these steps once per additional target namespace. Substitute `OTHERNS` with the actual namespace name and `HSCUSTOM` with the source database where the SessionAgent.PKG `.cls` files live (the source database that already has the package — typically `HSCUSTOM` if you installed via the IPM `<Invoke>` path).
+
+1. **Identify the target namespace.** It must be an existing **interop-enabled** namespace (i.e., `Ens.*` tables are projected). Create one via the **Mgmt Portal → System Administration → Configuration → System Configuration → Namespaces** if needed; ensure the "Make this an interoperability-enabled namespace" checkbox is set. The agent reads `Ens.MessageHeader` and other `Ens.*` tables in the target namespace, so a non-interop namespace is rejected by the chained RBAC grant.
+
+2. **Map `SessionAgent.PKG` to the target namespace.** From `%SYS`:
+
+   ```objectscript
+   %SYS> Set props("Database") = "HSCUSTOM"
+   %SYS> Set sc = ##class(Config.MapPackages).Create("OTHERNS", "SessionAgent", .props)
+   %SYS> If 'sc Write !,$System.Status.GetErrorText(sc)
+   ```
+
+   Substitute the source database for your install topology (typically the database you originally installed the package into).
+
+3. **Run `InstallIntoNamespace`.** From any namespace (the method handles `%SYS` save/restore internally):
+
+   ```objectscript
+   USER> Set sc = ##class(SessionAgent.Installer).InstallIntoNamespace("OTHERNS")
+   USER> If 'sc Write !,$System.Status.GetErrorText(sc)
+   ```
+
+   The method validates the namespace (rejects empty / `%SYS` / non-existent / unmapped-package), then delegates to the existing `Install()` orchestrator scoped to `OTHERNS`. On idempotent re-runs the method returns `$$$OK` without duplicating any rows or task entries.
+
+4. **Verify per-namespace install.** From `OTHERNS`:
+
+   ```objectscript
+   OTHERNS> Set $NAMESPACE = "%SYS"
+   %SYS> Write ##class(Security.Roles).Exists("SessionAgent_ReadOnly")
+   1
+   %SYS> Set $NAMESPACE = "OTHERNS"
+   OTHERNS> Do $SYSTEM.SQL.Shell()
+   [SQL]OTHERNS>>SELECT %EXACT(AgentName), Provider FROM SessionAgent_Config.Agent
+   ; expect 2 rows: session-inspection / message-search, both Provider=openai (seed shape)
+   ```
+
+   The SessionAgent ChatPanel asset is automatically available at `/csp/<lower-namespace>/SessionAgent.UI.ChatPanelAsset.cls` for any namespace where the package is mapped (no separate static-asset deployment per the Story 3.6 asset-class pivot).
+
+5. **Configure each namespace separately.** Browse to the Story 6.1 Zen form at `/csp/<lower-namespace>/SessionAgent.UI.AgentConfig.zen` (substitute the actual lowercase namespace name in the URL — e.g., `/csp/otherns/SessionAgent.UI.AgentConfig.zen`). The same form layout, but the saved values are scoped to the namespace you accessed it from. Set `Provider`, `EnvVarName`, `Model`, etc., and check `Enabled` to flip the agent on for that namespace.
+
+**API key supply.** API keys are looked up via `Ens.Config.Credentials` rows scoped to the namespace where the agent runs (per Story 2.3). Each target namespace must have its own credential rows installed; see [§ "6. LLM provider API keys"](#6-llm-provider-api-keys) above for the credential-row creation steps, and run them once per target namespace.
+
 ## Browser support (MVP)
 
 For the MVP scope (Epics 1–4), the supported and actively-tested browser is **Google Chrome (latest two stable versions)**. The Inspection Agent chat panel is built on the InterSystems Management Portal's Zen framework + standards-compliant DOM and ARIA, so Firefox, Safari, and Edge are *expected* to work via Mgmt Portal inheritance — but they are **not actively smoke-tested** at MVP.

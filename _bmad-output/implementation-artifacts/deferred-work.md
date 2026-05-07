@@ -1197,6 +1197,7 @@ This file accumulates findings, follow-ups, and architect-decision items that ar
     Same shape applies to any future direct caller. The persistence helpers (`RecordSuccess` / `RecordFailure`) stay as low-validation primitives so callers can compose them.
   - **Owner:** Story 9.5 dev (when authoring `RecordClickThrough` ZenMethod).
   - **Blocking?** Not blocking — Story 9.2 ships safely because all current callers guard at their own entry points.
+  - **Carry-forward update (Story 9.5, 2026-05-07):** The caller-side input-validation guard ships in `SessionAgent.Search.VocabCapture.RecordClickThrough` (Story 9.5) — empty `pPortalUser` returns a structured `{"success": false, "error": "pPortalUser required", ...}` envelope at the public-surface boundary, satisfying FR37's "never throw" guarantee. `TestRecordClickThroughInvokeTimeExceptionReturnsErrorEnvelope` covers this path. The persistence-layer guard on `RecordSuccess` / `RecordFailure` themselves remains deferred — those primitives stay low-validation so callers can compose them, and the front-line check now lives at the click-through entry point. If a future story (9.6+, Epic 11+) adds another direct caller of `RecordSuccess` / `RecordFailure` that does NOT guard at its own entry point, this entry should be revisited and the persistence-layer guard should be added.
 
 - **LOW-9.2-F08 — `%OnAfterSave` Confidence-recompute race under concurrent saves on the same row.**
   - **Source:** Story 9.2 code review (Edge-Case-Hunter layer).

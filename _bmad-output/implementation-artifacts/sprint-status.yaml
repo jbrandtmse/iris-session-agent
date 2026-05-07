@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-05-02
-last_updated: 2026-05-07 (Story 9.4 done — AgentLoop digest-injection + two-array invariant code-review clean; 6/6 AgentLoopVocabDigestTest PASS; 358/358 regression via canonical numerical-MAX SQL probe; AC-2 SQL probe of Chat.History.TurnsJson confirms canonical user text persisted (no digest prefix); zero HIGH/MEDIUM/LOW findings)
+last_updated: 2026-05-07 (Story 9.5 done — code review clean, zero findings; SessionAgent.Search.VocabCapture.RecordClickThrough + 8-method SearchVocabCaptureTest 8/8 PASS; regression 366/366 via canonical numerical-MAX SQL probe; Epic 9 acceptance gate met)
 project: iris-session-agent
 # Epic 1 complete (retro 2026-05-02); Epic 2 retrospective triage gate (Story 2.0) 2026-05-03
 project_key: NOKEY
@@ -133,7 +133,7 @@ development_status:
   9-2-uservocabulary-recordsuccess-recordfailure-recursion-safe-onaftersave: done
   9-3-search-vocabularydigest-build: done
   9-4-agentloop-integration-first-user-message-prefix-injection: done
-  9-5-recordclickthrough-zenmethod-hyperevent-stub: backlog
+  9-5-recordclickthrough-zenmethod-hyperevent-stub: done
   epic-9-retrospective: optional
 
   epic-10: backlog

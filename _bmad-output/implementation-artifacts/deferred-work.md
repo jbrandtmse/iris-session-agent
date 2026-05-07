@@ -1251,3 +1251,29 @@ This file accumulates findings, follow-ups, and architect-decision items that ar
   - **Why deferred (Rule 8 test #3 — pure flake-fix; no current production-bug shape):** the flake is operationally inaccessible to operators (test-only state leak), all 4 classes pass green on retry, and the fix surface (per-class `OnBeforeOneTest` reset hooks across 4 classes) doesn't naturally belong inside any Epic 10 functional story. Story 10.9 PRD-v1-validation-walkthrough is the natural triage point.
   - **Owner:** Story 10.9 (PRD v1 Completion Validation Walkthrough) — bound by Story 10.0 / Epic 9 retro AI-5 per Rule 9 (named-successor-binding). Story 10.9's lead MUST grep deferred-work.md for "Story 10.9" mentions and incorporate.
   - **Blocking?** Not blocking. Pattern surfaces 1-in-5 concurrent runs; sequential per-class invocation per `object-script-testing.md` §"MCP iris_execute_tests Truncation Workaround" sidesteps the flake during normal cycle operations.
+
+---
+
+## Deferred from: code review of story-10-1-ensportal-messageviewer-subclass-chat-tab-zenmethod-wiring (2026-05-07)
+
+- **Step-1 credential-resolvability matrix probe shape — `Util.EnvSecret.IsResolvable` returns 1 even when `Config.Agent.<agent>.CredentialName` is `$Char(0)`.**
+
+  - **Source:** Story 10.1 code review (special review item flagged by lead).
+  - **Severity:** MEDIUM (predicted-bug shape: false-positive Step-1 readiness check; not a current shipped bug — operator-state drift surfaced once during Story 10.1 live exercise and was fix-now'd via SQL UPDATE).
+  - **The gap:** `Util.EnvSecret.IsResolvable("OPENAI_API_KEY", "SessionAgentOpenAI")` returns 1 (truthy) when **either** the environment variable rung **OR** the credential rung resolves. It does NOT inspect the per-agent `Config.Agent.<agent>.CredentialName` row, which is a separate ladder rung the agent's runtime path uses to look up its preferred credential reference. Story 10.1 dev hit this: env-var rung resolved → `IsResolvable` returned 1 → Step-1 matrix marked the agent "ready" → live exercise then failed because `Config.Agent.message-search.CredentialName=$Char(0)` made the agent's per-row credential lookup fall through to a NUL string. Dev applied a runtime SQL UPDATE fix (`UPDATE SessionAgent_Config.Agent SET CredentialName='SessionAgentOpenAI' WHERE %EXACT(AgentName)='message-search'`) and the live exercise then succeeded.
+  - **Why deferring is acceptable (Rule 8 test #1 — genuine future-epic scope):** Story 10.9 is the PRD v1 validation walkthrough story; the natural carrier for sharpening the Step-1 resolvability matrix probe shape so it includes a per-agent-row `CredentialName` presence check (with the standard `$Char(0) → ""` normalization per the project rule). Fixing now in Story 10.1 would require either (a) sharpening `Util.EnvSecret.IsResolvable` to inspect Config.Agent rows by agent name (out-of-scope: changes ladder semantics for a single-incident operator-state issue) or (b) introducing a new `IsResolvableForAgent(pAgentName)` helper + updating the Step-1 matrix probe in `epic-10-operator-state.md` (out-of-scope: cross-cutting).
+  - **What needs to happen in Story 10.9:** add a `IsResolvableForAgent(pAgentName)` helper to `SessionAgent.Util.EnvSecret` that (1) opens the `Config.Agent` row by agent name, (2) inline-normalizes `EnvVarName` and `CredentialName` per the `$Char(0)` sentinel rule, (3) returns 1 only if both the agent's preferred credential rung resolves AND a per-row credential reference is non-empty (or the env-var rung resolves and the agent has no per-row credential reference). Update `epic-10-operator-state.md` Step-1 matrix probe to call the new helper for each agent enumerated in `Config.Agent`.
+  - **Owner:** Story 10.9 (PRD v1 Completion Validation Walkthrough). Story 10.9's lead MUST grep deferred-work.md for "Story 10.1" / "Story 10.9" mentions and incorporate this.
+  - **Blocking?** Not blocking — the runtime path's existing credential-ladder fallback handles the NUL case correctly (logs "Credential resolution failed"); the gap is operator-UX (Step-1 false-positive readiness signal), not a runtime correctness bug.
+  - **Triage 2026-05-07 (Story 10.1 review): owner reassigned to Story 10.9 — Rule 9 binding-successor enforcement applies. The Step-1 matrix probe in `epic-10-operator-state.md` and the `Util.EnvSecret` ladder both need the per-agent-row check.**
+
+- **Spec-length governance — Story 10.1 spec exceeded Rule 1's ≤ 250-line target (was 281 lines vs dev's 247-line estimate).**
+
+  - **Source:** Story 10.1 code review.
+  - **Severity:** LOW (cosmetic — per Rule 8 test #3, no predicted-bug shape; the spec was complete and the dev produced clean code on the first pass).
+  - **The miss:** Rule 1 target is ≤ 250 lines for story specs. The drafted spec estimated ~210-230 lines but the final landed at 281 lines (the spec self-checked at "~210-230 lines" inline at line 154 — drift of ~30-50 lines between estimate and reality). Most of the overrun came from the verbatim copy-from-Story-3.3 line-number guidance in the Patterns to Follow Verbatim section (intentional padding to make the dev's effort focused) and the inline `%session.Data` lookup-or-create idiom example.
+  - **Why deferring is acceptable:** Per Rule 8 test #3 (cosmetic, no predicted-bug shape) — the spec produced clean code on the first dev pass with no rework cycles, the overrun did not measurably change token cost or quality. Document as a Step-1 lesson for the Epic 10 retrospective so the lead's next /epic-cycle Step-1 re-tunes the spec estimator.
+  - **Owner:** Epic 10 retrospective. No code action.
+  - **Blocking?** Not blocking.
+  - **Triage 2026-05-07 (Story 10.1 review): logged for Epic 10 retro Action Item consideration; no Story 10.x successor binding required.**
+

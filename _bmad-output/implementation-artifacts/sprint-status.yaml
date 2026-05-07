@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-05-02
-last_updated: 2026-05-07 (Story 10.0 code review complete — zero findings across all 3 reviewer layers; AC-1 through AC-7 all verbatim-verified; Rule 1 / 8 / 9 all satisfied; status flipped to done)
+last_updated: 2026-05-07 (Story 10.1 done — code review complete; 9/9 ACs PASS; 1 MEDIUM defer to Story 10.9 [Step-1 credential-resolvability probe-shape sharpening]; 1 LOW defer to Epic 10 retro [spec-length governance overrun])
 project: iris-session-agent
 # Epic 1 complete (retro 2026-05-02); Epic 2 retrospective triage gate (Story 2.0) 2026-05-03
 project_key: NOKEY
@@ -138,7 +138,7 @@ development_status:
 
   epic-10: in-progress
   10-0-epic-9-deferred-cleanup: done
-  10-1-ensportal-messageviewer-subclass-chat-tab-zenmethod-wiring: backlog
+  10-1-ensportal-messageviewer-subclass-chat-tab-zenmethod-wiring: done
   10-2-search-agent-ui-rendering-sa-search-result-entry-curated-list: backlog
   10-3-click-through-capture-navigation-to-visual-trace: backlog
   10-4-sa-from-search-stripe-inspection-side-from-search-handling: backlog

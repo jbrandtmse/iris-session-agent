@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-05-02
-last_updated: 2026-05-07 (Story 9.3 done — VocabularyDigest.Build + SeedFallback shipped; code review applied 2 patches (catch-block exception capture via ^||SessionAgent.VocabDigest.LastError; removed unused DriveAliasToConfidence helper) + 2 LOW defers logged to deferred-work.md (F01 $Char(0) future-proofing; F02 token-cap branch unreachable under current calibration); 14/14 SearchVocabularyTest PASS; 352/352 regression via canonical numerical-MAX SQL probe; Rule 12 content-correctness sanity-invocation digest captured verbatim)
+last_updated: 2026-05-07 (Story 9.4 done — AgentLoop digest-injection + two-array invariant code-review clean; 6/6 AgentLoopVocabDigestTest PASS; 358/358 regression via canonical numerical-MAX SQL probe; AC-2 SQL probe of Chat.History.TurnsJson confirms canonical user text persisted (no digest prefix); zero HIGH/MEDIUM/LOW findings)
 project: iris-session-agent
 # Epic 1 complete (retro 2026-05-02); Epic 2 retrospective triage gate (Story 2.0) 2026-05-03
 project_key: NOKEY
@@ -132,7 +132,7 @@ development_status:
   9-1-task-0-probes-onaftersave-non-recursion-synthesizealias-determinism: done
   9-2-uservocabulary-recordsuccess-recordfailure-recursion-safe-onaftersave: done
   9-3-search-vocabularydigest-build: done
-  9-4-agentloop-integration-first-user-message-prefix-injection: backlog
+  9-4-agentloop-integration-first-user-message-prefix-injection: done
   9-5-recordclickthrough-zenmethod-hyperevent-stub: backlog
   epic-9-retrospective: optional
 

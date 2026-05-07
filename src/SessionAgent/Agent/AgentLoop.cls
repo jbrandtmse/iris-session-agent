@@ -30,6 +30,35 @@
 /// keeps the orchestration entry point identical between production and
 /// tests; only the provider-construction call is overridable.</p>
 ///
+/// <p><b>Two-array invariant (Story 9.4 — vocabulary digest first-user-
+/// message prefix injection).</b> When the search agent
+/// (<code>pAgentName = "message-search"</code>) handles its first turn
+/// (<code>tTurns.%Size() = 0</code> at Step 4 entry),
+/// <method>SessionAgent.Search.VocabularyDigest.Build</method> assembles a
+/// per-user vocabulary digest that gets prepended to the user message
+/// sent to the LLM (so the LLM has the operator's saved aliases as
+/// grounding) — but the digest MUST NOT be persisted on
+/// <CLASS>SessionAgent.Chat.History</CLASS> because (1) it would balloon
+/// storage on every turn replay, (2) the digest is per-turn-evolving
+/// (built fresh each first-user-message), and (3) persisting it would
+/// re-inject the digest into <method>LoadTurns</method> on the next turn
+/// and corrupt the canonical history. The contract is enforced by
+/// maintaining <i>two</i> turn arrays in <method>RunTurn</method>:
+/// <code>tTurns</code> (canonical — persisted to
+/// <property>SessionAgent.Chat.History.TurnsJson</property>) and
+/// <code>tTurnsForLlm</code> (provider-bound — digest-prefixed user-block
+/// text on the FIRST user turn only). Assistant turns and tool_result
+/// turns from Step 7 are pushed to BOTH arrays via the same OREF so they
+/// share content; only the first-turn user-block <code>text</code> field
+/// differs. When digest injection does not apply (inspection agent, or
+/// search-agent second turn onward), <code>tTurnsForLlm</code> is set to
+/// the same OREF as <code>tTurns</code> so the dual-push cost collapses
+/// to zero. Per architecture §"Vocabulary digest in <i>uncached</i>
+/// first-user-message prefix" + NFR-P6 prompt-cache discipline: placing
+/// the digest in the <code>messages[0].content[0].text</code> segment
+/// keeps the cached <code>system + tools</code> prefix bit-identical
+/// across turns, preserving Anthropic prompt-cache hit rate.</p>
+///
 /// <p><b>References.</b></p>
 /// <ul>
 /// <li><a href="../../../_bmad-output/planning-artifacts/epics.md">epics.md
@@ -178,6 +207,40 @@ ClassMethod RunTurn(pAgentName As %String, pSessionKey As %String, pPortalUser A
         ; Step 4 — Append user message to TurnsJson.
         ; ─────────────────────────────────────────────────────────────
         Set tTurns = ..LoadTurns(tHist)
+
+        ; Story 9.4 — search-agent first-user-message vocabulary digest
+        ; injection. Compute the digest BEFORE building the user-turn
+        ; OREFs so we can decide whether two parallel turn arrays are
+        ; needed (digest applies) or one shared array suffices (no
+        ; digest applies). Guards:
+        ;   1. Search-agent only — pAgentName = "message-search". The
+        ;      inspection-agent path is unchanged from Story 2.12 / 4.x.
+        ;   2. First turn only — tTurns.%Size() = 0 means no prior user
+        ;      or assistant turns persisted (replay through LoadTurns).
+        ; When both guards pass, build a digest-prefixed user-block for
+        ; the LLM array and a canonical user-block for the persistence
+        ; array. See class doc-comment §"Two-array invariant".
+        Set tInjectDigest = 0
+        Set tInjectedUserText = pUserText
+        If (pAgentName = "message-search") && (tTurns.%Size() = 0) {
+            Set tDigest = ##class(SessionAgent.Search.VocabularyDigest).Build(pPortalUser)
+            ; Empty-digest edge case (AC-3 row 5): if VocabularyDigest
+            ; ever returns "" (defensive — Build's seed-fallback path
+            ; should always return non-empty, but the empty case must
+            ; not orphan a delimiter). We still flag tInjectDigest=1 so
+            ; the two-array machinery wires through, but tInjectedUserText
+            ; collapses to "User: " + pUserText with no prefix block.
+            If tDigest '= "" {
+                Set tInjectedUserText = tDigest _ $Char(10) _ $Char(10) _ "---" _ $Char(10) _ $Char(10) _ "User: " _ pUserText
+            } Else {
+                Set tInjectedUserText = "User: " _ pUserText
+            }
+            Set tInjectDigest = 1
+        }
+
+        ; Build the canonical (persisted) user turn — text = pUserText
+        ; verbatim. This OREF goes into tTurns and is what
+        ; ..StoreTurns(tHist, tTurns) writes to the chat-history stream.
         Set tUserTurn = ##class(%DynamicObject).%New()
         Do tUserTurn.%Set("role", "user")
         Set tUserContent = ##class(%DynamicArray).%New()
@@ -187,6 +250,37 @@ ClassMethod RunTurn(pAgentName As %String, pSessionKey As %String, pPortalUser A
         Do tUserContent.%Push(tUserBlock)
         Do tUserTurn.%Set("content", tUserContent)
         Do tTurns.%Push(tUserTurn)
+
+        ; Build tTurnsForLlm — the array sent to the provider. When
+        ; digest injection does not apply (inspection agent OR
+        ; search-agent non-first turn), reuse the same OREF as tTurns
+        ; so the assistant/tool_result pushes in Step 7 land on a
+        ; single shared array (zero dual-push cost). When digest
+        ; injection applies, fork a parallel array that shares all
+        ; pre-user history OREFs but has its own digest-prefixed
+        ; user-turn OREF as the final element. Subsequent assistant /
+        ; tool_result turns are pushed to BOTH arrays.
+        If tInjectDigest = 0 {
+            Set tTurnsForLlm = tTurns
+        } Else {
+            Set tTurnsForLlm = ##class(%DynamicArray).%New()
+            ; tTurns at this point = [<just-pushed canonical user turn>]
+            ; (because the first-turn guard required tTurns.%Size()=0
+            ; before the user push; pre-user history is empty by
+            ; definition on a first turn). Build the LLM-bound user
+            ; turn with the digest-prefixed text and push it as the
+            ; only element. The shared-OREF discipline for assistant /
+            ; tool_result turns is enforced in Step 7 below.
+            Set tUserTurnLlm = ##class(%DynamicObject).%New()
+            Do tUserTurnLlm.%Set("role", "user")
+            Set tUserContentLlm = ##class(%DynamicArray).%New()
+            Set tUserBlockLlm = ##class(%DynamicObject).%New()
+            Do tUserBlockLlm.%Set("type", "text")
+            Do tUserBlockLlm.%Set("text", tInjectedUserText)
+            Do tUserContentLlm.%Push(tUserBlockLlm)
+            Do tUserTurnLlm.%Set("content", tUserContentLlm)
+            Do tTurnsForLlm.%Push(tUserTurnLlm)
+        }
 
         ; ─────────────────────────────────────────────────────────────
         ; Step 5 — Tool definitions for the loop.
@@ -280,7 +374,10 @@ ClassMethod RunTurn(pAgentName As %String, pSessionKey As %String, pPortalUser A
                 Do tCacheCfg.%Set("SystemEnabled", 1)
                 Do tCacheCfg.%Set("ToolsEnabled", 1)
             }
-            Set tInvokeSC = tProvider.Invoke(tTurns, tToolDefs, tSysPrompt, tCacheCfg, tConfig, tCtx, .tProvResp)
+            ; Story 9.4 — provider sees tTurnsForLlm (digest-prefixed
+            ; user turn on first search-agent turn; identical to tTurns
+            ; otherwise — same OREF, no extra cost).
+            Set tInvokeSC = tProvider.Invoke(tTurnsForLlm, tToolDefs, tSysPrompt, tCacheCfg, tConfig, tCtx, .tProvResp)
             If $$$ISERR(tInvokeSC) {
                 ; Provider abstract returned hard %Status error (rare —
                 ; the template is supposed to populate the error envelope).
@@ -295,10 +392,18 @@ ClassMethod RunTurn(pAgentName As %String, pSessionKey As %String, pPortalUser A
 
             ; Step 7c — append the assistant turn (with the canonical
             ; Content array verbatim) to the in-memory history.
+            ; Story 9.4 two-array invariant: the assistant turn OREF is
+            ; identical between persistence and provider — push to BOTH
+            ; arrays. When tInjectDigest=0, tTurnsForLlm IS the same OREF
+            ; as tTurns, so the second push would double-write the same
+            ; turn to the same array. Use the explicit flag to suppress.
             Set tAssistantTurn = ##class(%DynamicObject).%New()
             Do tAssistantTurn.%Set("role", "assistant")
             Do tAssistantTurn.%Set("content", tProvResp.Content)
             Do tTurns.%Push(tAssistantTurn)
+            If tInjectDigest = 1 {
+                Do tTurnsForLlm.%Push(tAssistantTurn)
+            }
 
             ; Step 7d — branch on stop reason.
             If tProvResp.StopReason = "tool_use" {
@@ -407,10 +512,15 @@ ClassMethod RunTurn(pAgentName As %String, pSessionKey As %String, pPortalUser A
                 }
 
                 ; Append the tool_result turn to the canonical history.
+                ; Story 9.4 two-array invariant: shared OREF, dual-push
+                ; only when arrays diverge (digest-injected first turn).
                 Set tToolResultTurn = ##class(%DynamicObject).%New()
                 Do tToolResultTurn.%Set("role", "user")
                 Do tToolResultTurn.%Set("content", tToolResultBlocks)
                 Do tTurns.%Push(tToolResultTurn)
+                If tInjectDigest = 1 {
+                    Do tTurnsForLlm.%Push(tToolResultTurn)
+                }
 
                 ; Continue the loop — provider gets another round-trip
                 ; with the tool_result included in history.

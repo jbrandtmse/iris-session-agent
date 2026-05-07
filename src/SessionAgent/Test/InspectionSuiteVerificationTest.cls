@@ -59,15 +59,16 @@ Class SessionAgent.Test.InspectionSuiteVerificationTest Extends %UnitTest.TestCa
 /// the named-tool list in
 /// <method>TestRegistryListsExactlyThirteenTools</method>.</p>
 /// <p>Expected production tool count surfaced by
-/// <method>SessionAgent.Tool.Registry.ListTools</method>. As of Story 8.4
-/// this is <b>20</b> — 13 inspection tools (Stories 2.11 + 4.x) + 7
+/// <method>SessionAgent.Tool.Registry.ListTools</method>. As of Story 8.5
+/// this is <b>21</b> — 13 inspection tools (Stories 2.11 + 4.x) + 8
 /// search tools (Story 8.3: <code>search_by_time</code>,
 /// <code>search_by_status</code>, <code>search_by_source</code>,
 /// <code>search_by_target</code>, <code>search_by_message_class</code>,
 /// <code>search_by_session</code>; Story 8.4:
-/// <code>search_by_super_session</code>). Stories 8.5–8.7 will
+/// <code>search_by_super_session</code>; Story 8.5:
+/// <code>search_by_body_field</code>). Stories 8.6–8.7 will
 /// increment further.</p>
-Parameter EXPECTEDTOOLCOUNT As %Integer = 20;
+Parameter EXPECTEDTOOLCOUNT As %Integer = 21;
 
 /// <p>Synthetic session id well outside any realistic Ens production
 /// range. Used by every "not found" / "validation error" envelope assertion
@@ -182,6 +183,15 @@ ClassMethod GetRepresentativeArgs(pToolName As %String) As %DynamicObject
         ; Story 8.4 — synthetic super-session key won't match production
         ; rows (returns empty result set, avoiding fixture coupling).
         Do tArgs.%Set("super_session_key", "Synthetic.NoMatch.SuperSession")
+        Do tArgs.%Set("limit", 5, "number")
+    } ElseIf pToolName = "search_by_body_field" {
+        ; Story 8.5 — synthetic SearchTable class triggers AC-3
+        ; "search_table_not_installed" envelope (isError:1; structured
+        ; error path exercised without depending on installed
+        ; HealthShare SearchTables).
+        Do tArgs.%Set("search_table_class", "Synthetic.NoMatch.SearchTable")
+        Do tArgs.%Set("prop_name", "MRN")
+        Do tArgs.%Set("prop_value", "synthetic-no-match-12345")
         Do tArgs.%Set("limit", 5, "number")
     }
     Quit tArgs
@@ -304,7 +314,7 @@ Method TestRegistryListsExactlyThirteenTools()
     Do $$$AssertEquals(tList.%Size(), ..#EXPECTEDTOOLCOUNT, "exactly " _ ..#EXPECTEDTOOLCOUNT _ " tools registered")
 
     ; Verify every expected name is present (order-independent).
-    Set tExpected = $ListBuild("session_summary", "session_timeline", "message_headers", "event_log", "rule_log", "get_message_body", "get_message_detail", "get_business_process_source", "get_business_process_instance", "list_business_process_methods", "find_related_sessions", "find_sessions_by_body", "explain_error", "search_by_time", "search_by_status", "search_by_source", "search_by_target", "search_by_message_class", "search_by_session", "search_by_super_session")
+    Set tExpected = $ListBuild("session_summary", "session_timeline", "message_headers", "event_log", "rule_log", "get_message_body", "get_message_detail", "get_business_process_source", "get_business_process_instance", "list_business_process_methods", "find_related_sessions", "find_sessions_by_body", "explain_error", "search_by_time", "search_by_status", "search_by_source", "search_by_target", "search_by_message_class", "search_by_session", "search_by_super_session", "search_by_body_field")
     Set tFound = ""
     Set tIter = tList.%GetIterator()
     While tIter.%GetNext(.tKey, .tEntry) {

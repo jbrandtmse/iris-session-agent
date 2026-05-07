@@ -1062,4 +1062,30 @@ This file accumulates findings, follow-ups, and architect-decision items that ar
   - **Owner:** None reserved. Natural carrier is Epic 8 retrospective / Story 8.7 close-out.
   - **Blocking?** Not blocking. Process-improvement item.
 
+---
+
+## Deferred from: code review of story-8.5-searchbybodyfield-ens-searchtablebase-pivot (2026-05-07)
+
+- **LOW-8.5-F01 — AC-3 spec wording drift: `%IsA` → `%Extends` (lead-attention spec correction; no code change).**
+  - **Source:** Story 8.5 code review (informational-only finding for the lead).
+  - **Severity:** LOW (no operator-observable defect — the dev's `%Extends` form is the empirically-correct one and is verbatim-reused from Story 4.6 [`FindSessionsByBody.cls:217`](../../src/SessionAgent/Tool/Inspection/FindSessionsByBody.cls#L217); Story 4.6's class-doc comment §"Class validation idiom" lines 37–61 documents WHY `%IsA` was rejected during Task-0 probing and `%Extends` chosen instead).
+  - **Observation:** AC-3 in [Story 8.5 spec](8-5-searchbybodyfield-ens-searchtablebase-pivot.md) (line 26) reads *"...via `$ClassMethod(class, "%IsA", "Ens.SearchTableBase")` (per Story 4.6's verified pattern...)"*. The verified Story 4.6 pattern is `%Extends`, not `%IsA`. The dev correctly followed the verbatim-reuse instruction in Dev Notes ("Reuse 3 patterns verbatim from Story 4.6, do NOT re-derive") which overrides the AC-3 wording, and `SearchByBodyField.cls:241` uses `%Extends`. The story spec drift is in epics.md Story 8.5 source text — the lead authoring AC-3 from epics.md picked up the wrong API name.
+  - **Why deferred (Rule 8 review):** Test 3 — pure spec/doc cosmetic with no predicted-bug shape. The shipped code is correct. The deferral exists to surface the spec-drift to the lead for a one-line correction in `epics.md` Story 8.5 (and any planning artifact that propagated AC-3 verbatim) so future authors of body-field-pivot tools don't re-derive `%IsA` from a stale AC.
+  - **Recommendation when picked up:** Lead correction to [`epics.md` §"Story 8.5"](../planning-artifacts/epics.md) AC-3 — change `%IsA` → `%Extends`. Add a parenthetical citing Story 4.6 Task-0 finding so the rationale is preserved. No code change, no test change.
+  - **Owner:** Lead (one-line `epics.md` edit on next planning-artifact pass; or rolls into Epic 8 retrospective close-out alongside the LOW-8.4-F02 sharpening).
+  - **Blocking?** Not blocking. Spec-drift cosmetic; the live code is correct.
+
+- **MEDIUM-8.5-F02 — `Tool.Search.Base.BuildBoundedWhereClause` lacks an optional alias parameter for JOIN-form callers; Story 8.5 carries a local `$Replace` workaround that future search-tool authors will re-inherit.**
+  - **Source:** Story 8.5 code review (predicted-recurrence pattern).
+  - **Severity:** MEDIUM. The shipped workaround at [`SearchByBodyField.cls:336`](../../src/SessionAgent/Tool/Search/SearchByBodyField.cls#L336) — `Set tFragment = $Replace(tFragment, "TimeCreated > ?", "mh.TimeCreated > ?")` — is functionally correct (the substring is unique to `BuildBoundedWhereClause`'s emitted output, no SQL-injection risk because no operator input flows through it, no aliasing collision possible). But it sets a precedent: any future search tool that needs a JOIN form will re-inherit the same `$Replace`. Story 8.6 (`InspectBodyCandidates`) is the next consumer that will hit this exact shape.
+  - **Why deferred (Rule 8 review):** Test 1 — genuine future-epic scope. The natural binding successor is **Story 8.6** (`InspectBodyCandidates`), which also pivots through SearchTable + JOIN and will be the second consumer of the workaround. The refactor is a backward-compatible additive parameter change that fits naturally inside Story 8.6's scope rather than retrofitting Story 8.5 in isolation.
+  - **Predicted-bug shape (Rule 9 binding):** if `BuildBoundedWhereClause`'s emitted-output substring drifts in a future Story 8.6+ change (e.g., emits `"TimeCreated >= ?"` or `"TimeCreated > ? AND ..."`), Story 8.5's local `$Replace` will silently fail to qualify the alias and the SQL will reference the unqualified `TimeCreated` against an ambiguous column on the JOIN — `<SQLCODE>` -29 or similar will surface at runtime. The refactor closes the latent failure mode.
+  - **Recommendation when picked up (Story 8.6 binding):**
+    1. Extend `Tool.Search.Base.BuildBoundedWhereClause` signature with optional `pTimeColumnAlias As %String = ""` parameter; when non-empty, emit `pTimeColumnAlias _ "." _ "TimeCreated > ?"` instead of the bare form.
+    2. Update Story 8.2 stub-positive tests (`TestStubFixtureBoundedWhereDefaultsTo24h`) to assert the bare form when `pTimeColumnAlias = ""` (default backward-compatible) AND add a positive-test asserting `"mh.TimeCreated > ?"` when `pTimeColumnAlias = "mh"`.
+    3. Refactor `SearchByBodyField.Invoke` Step 7 to pass `"mh"` as the alias parameter and remove the `$Replace` workaround.
+    4. `InspectBodyCandidates` (Story 8.6) uses the new alias parameter directly, never inheriting the workaround.
+  - **Owner:** Story 8.6 dev. **Story 8.6 spec author MUST grep `deferred-work.md` for "Story 8.6" mentions per Rule 9 and incorporate the refactor into Story 8.6's ACs as a sub-task.**
+  - **Blocking?** Not blocking Story 8.5 (workaround is correct + documented). Becomes blocking on Story 8.6 entering dev — that story MUST address the alias-parameter refactor as part of its scope.
+
 

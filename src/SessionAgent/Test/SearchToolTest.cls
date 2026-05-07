@@ -20,6 +20,24 @@
 /// auto-cascades, plus belt-and-suspenders explicit
 /// <code>Ens.SuperSessionIndex</code> cleanup by SuperSession value.</p>
 ///
+/// <p>Story 8.5 extends this class with 3 additional test methods for
+/// <CLASS>SessionAgent.Tool.Search.SearchByBodyField</CLASS>
+/// (<method>TestSearchByBodyFieldHappyPath</method>,
+/// <method>TestSearchByBodyFieldUnknownPropNameReturnsError</method>,
+/// <method>TestSearchByBodyFieldUnknownClassReturnsError</method>).
+/// Fixture extension: <code>OnBeforeAllTests</code> seeds 1
+/// <CLASS>Ens.Config.SearchTableProp</CLASS> mapping +
+/// <code>BASESID+50..52</code> 3 <CLASS>SessionAgent.Test.FsbFixtureSearchTable</CLASS>
+/// rows + 3 matching <CLASS>Ens.MessageHeader</CLASS> rows whose
+/// <code>MessageBodyId</code> points at the fixture-SearchTable
+/// <code>DocId</code>s. Fresh-time rows (within the 168h default
+/// window). The <CLASS>SessionAgent.Test.FsbFixtureSearchTable</CLASS>
+/// class extends <CLASS>Ens.CustomSearchTable</CLASS> which extends
+/// <CLASS>Ens.SearchTableBase</CLASS>, so the production tool's
+/// <code>%Extends "Ens.SearchTableBase"</code> validation gate passes
+/// against this fixture. <code>OnAfterAllTests</code> deletes the seeded
+/// SearchTable rows + Ens.Config.SearchTableProp row.</p>
+///
 /// <p>Nine test methods total (six from Story 8.3 + three from Story 8.4):</p>
 /// <ol>
 /// <li><b>TestSearchByTimeReturnsTimeBoundedSessions</b> — fixture
@@ -82,6 +100,31 @@ Class SessionAgent.Test.SearchToolTest Extends %UnitTest.TestCase
 /// (e.g., InspectionToolTest uses 999911).</p>
 Parameter FIXTUREBASESID As %Integer = 998800;
 
+/// <p>Story 8.5 — fixture SearchTable subclass for body-field tests.
+/// Reuses the <CLASS>SessionAgent.Test.FsbFixtureSearchTable</CLASS>
+/// (Story 4.6's fixture, which extends <CLASS>Ens.CustomSearchTable</CLASS>
+/// → <CLASS>Ens.SearchTableBase</CLASS>). Direct-SQL INSERT seeds rows
+/// without invoking VDoc IndexDoc dispatch.</p>
+Parameter BFFIXTURECLASS As %String = "SessionAgent.Test.FsbFixtureSearchTable";
+
+/// <p>Story 8.5 — body-field fixture prop_name registered in
+/// <CLASS>Ens.Config.SearchTableProp</CLASS>. Distinct from
+/// <CLASS>SessionAgent.Test.FindSessionsByBodyTest</CLASS>'s "MRN" prop
+/// to avoid clashing if both test classes run concurrently.</p>
+Parameter BFFIXTUREPROPNAME As %String = "Story85PID3";
+
+/// <p>Story 8.5 — body-field fixture PropID. Disjoint range from
+/// FindSessionsByBodyTest's 99046001.</p>
+Parameter BFFIXTUREPROPID As %Integer = 85046001;
+
+/// <p>Story 8.5 — body-field fixture PropValue.</p>
+Parameter BFFIXTUREPROPVALUE As %String = "MATCH-12345";
+
+/// <p>Story 8.5 — sentinel SourceConfigName so cleanup can sweep any
+/// orphaned MessageHeader rows. Random enough to avoid clashing with
+/// any real production row or the Story 4.6 fixture sentinel.</p>
+Parameter BFFIXTURESOURCESENTINEL As %String = "BfFixtureSrc-85";
+
 /// <p>Constructor — accepts <code>initvalue</code> from
 /// <CLASS>%UnitTest.TestCase</CLASS> and forwards via <code>##super</code>
 /// (project rule §"Critical Constructor Requirements").</p>
@@ -115,6 +158,7 @@ Method OnBeforeAllTests() As %Status
 {
     Kill ^||SessionAgentSearchTestIds
     Kill ^||SessionAgentSearchSuperSessionTestIds
+    Kill ^||SessionAgentSearchBodyFieldTestIds
     Set tBase = ..#FIXTUREBASESID
 
     ; Defensive sweep — clear any prior-run debris in our SessionId range.
@@ -128,6 +172,14 @@ Method OnBeforeAllTests() As %Status
     }
     If $$$ISOK(tCleanup.%Prepare("DELETE FROM Ens.MessageHeader WHERE SessionId BETWEEN ? AND ?")) {
         Do tCleanup.%Execute(tBase, tBase + 100)
+    }
+    ; Story 8.5 — sweep body-field fixture SearchTable rows + the
+    ; SearchTableProp row in case prior-run debris exists.
+    If $$$ISOK(tCleanup.%Prepare("DELETE FROM SessionAgent_Test.FsbFixtureSearchTable WHERE PropId = ?")) {
+        Do tCleanup.%Execute(..#BFFIXTUREPROPID)
+    }
+    If $$$ISOK(tCleanup.%Prepare("DELETE FROM Ens_Config.SearchTableProp WHERE %EXACT(ClassExtent) = ? AND %EXACT(Name) = ?")) {
+        Do tCleanup.%Execute(..#BFFIXTURECLASS, ..#BFFIXTUREPROPNAME)
     }
 
     ; Helper closure-style: build an ODBC timestamp N hours offset from
@@ -305,6 +357,56 @@ Method OnBeforeAllTests() As %Status
     Set tRowSeq = tRowSeq + 1
     Set ^||SessionAgentSearchTestIds(tRowSeq) = tHdr.%Id()
 
+    ; ---- BODY-FIELD fixture (Story 8.5): 1 Ens.Config.SearchTableProp
+    ; row mapping (BFFIXTURECLASS, BFFIXTUREPROPNAME) → BFFIXTUREPROPID;
+    ; 3 SearchTable rows in SessionAgent.Test.FsbFixtureSearchTable with
+    ; (PropId=BFFIXTUREPROPID, PropValue=BFFIXTUREPROPVALUE,
+    ; DocId="BF-DOC-<sid>"); 3 matching Ens.MessageHeader rows whose
+    ; MessageBodyId points at those DocIds. Sessions BASESID+50..52.
+    ; Fresh time (-30 minutes) — well inside the 168h default window.
+    ;
+    ; The Ens.Config.SearchTableProp row uses the same ~-delimited
+    ; ClassDerivation chain shape as FindSessionsByBodyTest's seed.
+    Kill ^||SessionAgentSearchBodyFieldTestIds
+    Set tBfDerivation = "~" _ ..#BFFIXTURECLASS _ "~Ens.CustomSearchTable~Ens.SearchTableBase~"
+    Set tBfPropStmt = ##class(%SQL.Statement).%New()
+    If $$$ISOK(tBfPropStmt.%Prepare("INSERT INTO Ens_Config.SearchTableProp (Name, ClassExtent, ClassDerivation, PropId, IsImplicit) VALUES (?, ?, ?, ?, ?)")) {
+        Do tBfPropStmt.%Execute(..#BFFIXTUREPROPNAME, ..#BFFIXTURECLASS, tBfDerivation, ..#BFFIXTUREPROPID, 0)
+    }
+
+    Set tBfStSeq = 0
+    For tBfOffset = 50, 51, 52 {
+        Set tBfShiftedSecs = tNowSecs - 1800
+        Set tBfShiftedDays = tNowDays
+        If tBfShiftedSecs < 0 Set tBfShiftedSecs = tBfShiftedSecs + 86400, tBfShiftedDays = tBfShiftedDays - 1
+        Set tBfTime = $ZDateTime(tBfShiftedDays _ "," _ tBfShiftedSecs, 3, 1, 0)
+        Set tBfSid = tBase + tBfOffset
+        Set tBfDocId = "BF-DOC-" _ tBfSid
+
+        ; SearchTable row.
+        Set tBfStStmt = ##class(%SQL.Statement).%New()
+        If $$$ISOK(tBfStStmt.%Prepare("INSERT INTO SessionAgent_Test.FsbFixtureSearchTable (PropId, PropValue, DocId) VALUES (?, ?, ?)")) {
+            Do tBfStStmt.%Execute(..#BFFIXTUREPROPID, ..#BFFIXTUREPROPVALUE, tBfDocId)
+        }
+
+        ; MessageHeader row pointing at the SearchTable DocId.
+        Set tBfHdr = ##class(Ens.MessageHeader).%New()
+        Set tBfHdr.SessionId = tBfSid
+        Set tBfHdr.TimeCreated = tBfTime
+        Set tBfHdr.MessageBodyId = tBfDocId
+        Set tBfHdr.SourceConfigName = ..#BFFIXTURESOURCESENTINEL _ "-Src"
+        Set tBfHdr.TargetConfigName = ..#BFFIXTURESOURCESENTINEL _ "-Tgt"
+        Set tBfHdr.MessageBodyClassName = "BfFixture.Msg"
+        Set tBfHdr.Status = 9
+        Set tSCbf = tBfHdr.%Save()
+        If $$$ISOK(tSCbf) {
+            Set tRowSeq = tRowSeq + 1
+            Set ^||SessionAgentSearchTestIds(tRowSeq) = tBfHdr.%Id()
+            Set tBfStSeq = tBfStSeq + 1
+            Set ^||SessionAgentSearchBodyFieldTestIds(tBfStSeq) = tBfDocId
+        }
+    }
+
     Quit $$$OK
 }
 
@@ -334,6 +436,34 @@ Method OnAfterAllTests() As %Status
     Set tStmtSsi = ##class(%SQL.Statement).%New()
     If $$$ISOK(tStmtSsi.%Prepare("DELETE FROM Ens.SuperSessionIndex WHERE %EXACT(SuperSession) = ?")) {
         Do tStmtSsi.%Execute("SS-TEST-001")
+    }
+
+    ; Story 8.5 — delete body-field fixture SearchTable rows by DocId
+    ; (captured in ^||SessionAgentSearchBodyFieldTestIds during seeding)
+    ; AND delete the seeded Ens.Config.SearchTableProp row. The
+    ; MessageHeader rows pointing at these DocIds are deleted below via
+    ; the SessionId BETWEEN sweep.
+    Set tBfIdx = ""
+    Set tBfStmt = ##class(%SQL.Statement).%New()
+    If $$$ISOK(tBfStmt.%Prepare("DELETE FROM SessionAgent_Test.FsbFixtureSearchTable WHERE %EXACT(DocId) = ?")) {
+        For  {
+            Set tBfIdx = $Order(^||SessionAgentSearchBodyFieldTestIds(tBfIdx))
+            Quit:tBfIdx=""
+            Set tBfDocId = $Get(^||SessionAgentSearchBodyFieldTestIds(tBfIdx))
+            If tBfDocId '= "" Do tBfStmt.%Execute(tBfDocId)
+        }
+    }
+    Kill ^||SessionAgentSearchBodyFieldTestIds
+    ; Delete the seeded Ens.Config.SearchTableProp mapping row.
+    Set tBfPropStmt = ##class(%SQL.Statement).%New()
+    If $$$ISOK(tBfPropStmt.%Prepare("DELETE FROM Ens_Config.SearchTableProp WHERE %EXACT(ClassExtent) = ? AND %EXACT(Name) = ?")) {
+        Do tBfPropStmt.%Execute(..#BFFIXTURECLASS, ..#BFFIXTUREPROPNAME)
+    }
+    ; Belt-and-suspenders — sweep any orphan FsbFixtureSearchTable rows
+    ; pointing at our fixture PropId (catches crashed-run debris).
+    Set tBfStSweep = ##class(%SQL.Statement).%New()
+    If $$$ISOK(tBfStSweep.%Prepare("DELETE FROM SessionAgent_Test.FsbFixtureSearchTable WHERE PropId = ?")) {
+        Do tBfStSweep.%Execute(..#BFFIXTUREPROPID)
     }
 
     Set tIdx = ""
@@ -658,6 +788,106 @@ Method TestSearchBySuperSessionXorRequired()
     Do $$$AssertStatusOK(tSCb, "Invoke returns $$$OK on both args (envelope-based error)")
     Do $$$AssertEquals(+tBothResult.%Get("isError"), 1, "isError = 1 when both super_session_key AND seed_session_id provided")
     Do $$$AssertTrue(tBothResult.%Get("content").%Get(0).%Get("text") [ "both", "error text mentions 'both'")
+    Quit
+}
+
+/// <p>Story 8.5 AC-9 #1 — happy path. Fixture: 3 SearchTable rows in
+/// <CLASS>SessionAgent.Test.FsbFixtureSearchTable</CLASS>
+/// (PropId=BFFIXTUREPROPID, PropValue=BFFIXTUREPROPVALUE) +
+/// 3 matching <CLASS>Ens.MessageHeader</CLASS> rows whose
+/// <code>MessageBodyId</code> matches the fixture-SearchTable
+/// <code>DocId</code>s. Sessions BASESID+50..52 (fresh time, well
+/// within the 168h default window). The
+/// <CLASS>Ens.Config.SearchTableProp</CLASS> mapping was seeded by
+/// <method>OnBeforeAllTests</method>.</p>
+///
+/// <p>Asserts the tool returns all 3 sessions,
+/// <code>render_strategy="matched_sessions"</code>,
+/// <code>indexed_lead_column="PropValue"</code>, and
+/// <code>time_window_used=168</code> (this tool's default override).</p>
+Method TestSearchByBodyFieldHappyPath()
+{
+    Set tCtx = ..BuildCtx()
+    Set tArgs = {"search_table_class": (..#BFFIXTURECLASS), "prop_name": (..#BFFIXTUREPROPNAME), "prop_value": (..#BFFIXTUREPROPVALUE)}
+    Set tResult = ""
+    Set tSC = ##class(SessionAgent.Tool.Search.SearchByBodyField).Invoke(tCtx, tArgs, .tResult)
+    Do $$$AssertStatusOK(tSC, "SearchByBodyField.Invoke returns $$$OK")
+    Do $$$AssertEquals(+tResult.%Get("isError"), 0, "isError NOT set on happy path")
+    Do $$$AssertEquals(tResult.structuredContent.%Get("indexed_lead_column"), "PropValue", "indexed_lead_column = PropValue (canonical placeholder)")
+    Do $$$AssertEquals(tResult.structuredContent.%Get("render_strategy"), "matched_sessions", "render_strategy = matched_sessions")
+    Do $$$AssertEquals(+tResult.structuredContent.%Get("session_count"), 3, "session_count = 3 (3 fixture rows)")
+    Do $$$AssertEquals(+tResult.structuredContent.%Get("time_window_used"), 168, "time_window_used = 168 (this tool's default, override of base 24h)")
+
+    ; Verify all 3 fixture sessions present.
+    Set tFound50 = 0, tFound51 = 0, tFound52 = 0
+    Set tIter = tResult.structuredContent.%Get("sessions").%GetIterator()
+    While tIter.%GetNext(.tKey, .tEntry) {
+        Set tSid = +tEntry.%Get("session_id")
+        If tSid = (..#FIXTUREBASESID + 50) Set tFound50 = 1
+        If tSid = (..#FIXTUREBASESID + 51) Set tFound51 = 1
+        If tSid = (..#FIXTUREBASESID + 52) Set tFound52 = 1
+    }
+    Do $$$AssertTrue(tFound50, "fixture session BASESID+50 present")
+    Do $$$AssertTrue(tFound51, "fixture session BASESID+51 present")
+    Do $$$AssertTrue(tFound52, "fixture session BASESID+52 present")
+
+    ; Echo of search_table_class + prop_name + prop_value in envelope.
+    Do $$$AssertEquals(tResult.structuredContent.%Get("search_table_class"), ..#BFFIXTURECLASS, "search_table_class echoed")
+    Do $$$AssertEquals(tResult.structuredContent.%Get("prop_name"), ..#BFFIXTUREPROPNAME, "prop_name echoed")
+    Do $$$AssertEquals(tResult.structuredContent.%Get("prop_value"), ..#BFFIXTUREPROPVALUE, "prop_value echoed")
+
+    ; Operator-readable summary text mentions the operator-supplied prop_name.
+    Set tSummary = tResult.content.%Get(0).text
+    Do $$$AssertTrue(tSummary [ ..#BFFIXTUREPROPNAME, "summary text mentions operator-supplied prop_name (got: " _ tSummary _ ")")
+    Do $$$AssertTrue(tSummary [ ..#BFFIXTUREPROPVALUE, "summary text mentions operator-supplied prop_value")
+    Do $$$AssertTrue(tSummary [ ..#BFFIXTURECLASS, "summary text mentions search_table_class")
+    Quit
+}
+
+/// <p>Story 8.5 AC-9 #2 — unknown prop_name. Same fixture, but invoke
+/// with a prop_name that does NOT exist in
+/// <CLASS>Ens.Config.SearchTableProp</CLASS> for this SearchTable. The
+/// tool returns the <code>no_matches</code> envelope with
+/// <code>isError:1</code> and operator-readable text
+/// "<i>Property '...' is not indexed by SearchTable '...'</i>".</p>
+Method TestSearchByBodyFieldUnknownPropNameReturnsError()
+{
+    Set tCtx = ..BuildCtx()
+    Set tArgs = {"search_table_class": (..#BFFIXTURECLASS), "prop_name": "NotARegisteredProp", "prop_value": (..#BFFIXTUREPROPVALUE)}
+    Set tResult = ""
+    Set tSC = ##class(SessionAgent.Tool.Search.SearchByBodyField).Invoke(tCtx, tArgs, .tResult)
+    Do $$$AssertStatusOK(tSC, "Invoke returns $$$OK on unknown prop_name (envelope-based error)")
+    Do $$$AssertEquals(+tResult.%Get("isError"), 1, "isError = 1 on unknown prop_name")
+    Do $$$AssertEquals(tResult.structuredContent.%Get("render_strategy"), "no_matches", "render_strategy = no_matches (graceful — prop_name not registered)")
+    Do $$$AssertEquals(+tResult.structuredContent.%Get("session_count"), 0, "session_count = 0")
+
+    Set tSummary = tResult.content.%Get(0).text
+    Do $$$AssertTrue(tSummary [ "not indexed", "summary text mentions 'not indexed' (got: " _ tSummary _ ")")
+    Do $$$AssertTrue(tSummary [ "NotARegisteredProp", "summary text mentions the unknown prop_name")
+    Do $$$AssertTrue(tSummary [ ..#BFFIXTURECLASS, "summary text mentions the SearchTable class")
+    Quit
+}
+
+/// <p>Story 8.5 AC-9 #3 — unknown search_table_class. Invoke with a
+/// fully-qualified class name that does NOT exist in this namespace.
+/// The tool returns the <code>search_table_not_installed</code>
+/// envelope with <code>isError:1</code> and the AC-3 mandated
+/// operator-readable text mentioning install guidance.</p>
+Method TestSearchByBodyFieldUnknownClassReturnsError()
+{
+    Set tCtx = ..BuildCtx()
+    Set tArgs = {"search_table_class": "My.NotARealSearchTable", "prop_name": (..#BFFIXTUREPROPNAME), "prop_value": (..#BFFIXTUREPROPVALUE)}
+    Set tResult = ""
+    Set tSC = ##class(SessionAgent.Tool.Search.SearchByBodyField).Invoke(tCtx, tArgs, .tResult)
+    Do $$$AssertStatusOK(tSC, "Invoke returns $$$OK on unknown class (envelope-based error)")
+    Do $$$AssertEquals(+tResult.%Get("isError"), 1, "isError = 1 on unknown class")
+    Do $$$AssertEquals(tResult.structuredContent.%Get("render_strategy"), "search_table_not_installed", "render_strategy = search_table_not_installed")
+    Do $$$AssertEquals(+tResult.structuredContent.%Get("session_count"), 0, "session_count = 0")
+
+    Set tSummary = tResult.content.%Get(0).text
+    Do $$$AssertTrue(tSummary [ "is not an installed Ens.SearchTableBase subclass", "summary text matches AC-3 wording (got: " _ tSummary _ ")")
+    Do $$$AssertTrue(tSummary [ "My.NotARealSearchTable", "summary text echoes the unknown class name")
+    Do $$$AssertTrue(tSummary [ "search_by_message_class", "summary text mentions fallback tool 'search_by_message_class'")
     Quit
 }
 

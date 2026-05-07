@@ -329,6 +329,12 @@ ClassMethod BuildMinimalToolArgs(pToolName As %String) As %String
     ; (returns empty result set, not isError, ensuring the round-trip
     ; exercises the happy-path envelope shape).
     If pToolName = "search_by_super_session" Quit "{""super_session_key"":""Synthetic.NoMatch.SuperSession"",""limit"":3}"
+    ; Story 8.5 — body-field search via Ens.SearchTableBase pivot. Use
+    ; the real EnsLib.HL7.SearchTable class (installed in HSCUSTOM); a
+    ; synthetic prop_name/prop_value pair returns the no_matches envelope
+    ; (the prop-name-not-indexed graceful path), preserving the canonical
+    ; envelope shape for the round-trip.
+    If pToolName = "search_by_body_field" Quit "{""search_table_class"":""EnsLib.HL7.SearchTable"",""prop_name"":""SyntheticNoMatchProp"",""prop_value"":""synthetic-12345"",""limit"":3}"
     ; Unknown tool — empty object. Will produce a tool-error envelope but
     ; the dispatch round-trip still happens.
     Quit "{}"
@@ -699,14 +705,15 @@ ClassMethod RunMatrix() As %DynamicObject
 /// expected 4 × N cardinality at the current epic close. Locked at
 /// 4 × 13 = 52 for Epic 5; Story 8.3 grew the count to 4 × 19 = 76
 /// (13 inspection + 6 search); Story 8.4 grew it to 4 × 20 = 80
-/// (13 inspection + 7 search). When a 5th provider or 21st tool is
+/// (13 inspection + 7 search); Story 8.5 grew it to 4 × 21 = 84
+/// (13 inspection + 8 search). When a 5th provider or 22nd tool is
 /// added, this assertion auto-fails so the maintainer updates the
 /// expected count + acknowledges the matrix grew. Defensive against
 /// silent shrinkage too (a regression deleting a tool).</p>
 Method TestMatrixCardinalityIs52()
 {
     Set tMatrix = ..EnumerateMatrix()
-    Do $$$AssertEquals(tMatrix.%Size(), 80, "Matrix cardinality at Story 8.4 close = 4 providers × 20 tools (13 inspection + 7 search) = 80 pairs (got: " _ tMatrix.%Size() _ ")")
+    Do $$$AssertEquals(tMatrix.%Size(), 84, "Matrix cardinality at Story 8.5 close = 4 providers × 21 tools (13 inspection + 8 search) = 84 pairs (got: " _ tMatrix.%Size() _ ")")
 }
 
 /// <p><b>AC-5 — Dispatch policy gate.</b> Structurally verify that every

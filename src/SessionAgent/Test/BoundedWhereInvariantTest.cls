@@ -200,14 +200,24 @@ Method TestUnboundedFixtureWouldBeRejected()
     Quit
 }
 
-/// <p>Helper — populate the documented Ens.MessageHeader indexed-set as
-/// a multidim local keyed by column name. Caller passes a <var>pSet</var>
-/// by reference; membership check is <code>If $Data(pSet(colName))</code>.
-/// Architecture §"AR11" lists <code>TimeCreated</code>,
-/// <code>Status</code>, <code>SourceConfigName</code>,
-/// <code>TargetConfigName</code>, <code>MessageBodyClassName</code>,
-/// <code>SessionId</code>; <code>SuperSessionKey</code> is added for OD8
-/// keyed-lookup mode (the SuperSession-index tools land in Story 8.4).</p>
+/// <p>Helper — populate the documented Ens.MessageHeader (and adjacent
+/// indexed-extent) indexed-set as a multidim local keyed by column name.
+/// Caller passes a <var>pSet</var> by reference; membership check is
+/// <code>If $Data(pSet(colName))</code>. Architecture §"AR11" lists
+/// <code>TimeCreated</code>, <code>Status</code>,
+/// <code>SourceConfigName</code>, <code>TargetConfigName</code>,
+/// <code>MessageBodyClassName</code>, <code>SessionId</code>;
+/// <code>SuperSessionKey</code> is added for OD8 keyed-lookup mode (the
+/// SuperSession-index tools land in Story 8.4).
+/// <code>PropValue</code> is added for Story 8.5
+/// (<CLASS>SessionAgent.Tool.Search.SearchByBodyField</CLASS>) — the
+/// canonical indexed column on every <CLASS>Ens.SearchTableBase</CLASS>
+/// subclass extent (the <code>(PropId, PropValue, DocId)</code> row
+/// shape's middle column). The body-field-search tool's
+/// <method>GetIndexedLeadColumns</method> returns
+/// <code>["PropValue"]</code> as a stable canonical placeholder
+/// (operator's per-call <code>prop_name</code> is the LOGICAL name; the
+/// PHYSICAL indexed column is always <code>PropValue</code>).</p>
 ClassMethod BuildIndexedColumnSet(ByRef pSet)
 {
     Set pSet("TimeCreated") = 1
@@ -217,6 +227,7 @@ ClassMethod BuildIndexedColumnSet(ByRef pSet)
     Set pSet("MessageBodyClassName") = 1
     Set pSet("SessionId") = 1
     Set pSet("SuperSessionKey") = 1
+    Set pSet("PropValue") = 1
     Quit
 }
 

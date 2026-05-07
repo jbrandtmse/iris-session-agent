@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-05-02
-last_updated: 2026-05-06 (Story 7.2 ready-for-review — SessionAgent.Task.PurgeOrphanedChatHistory created (Story 7.1 Option B cascade), ChatHistoryIdIdx added to Audit.LlmCall + Audit.ToolCall (Rule 8 fix-now), Installer hook end-to-end verified with idempotent re-run + %SYS.Task SQL probe single-row, OnTask smoke returned $$$OK with one audit event landed, regression sweep 288/288 PASS via SQL ground-truth probe TestInstance 249, Rule 4 stale-ref fix in docs/operator-quickstart.md)
+last_updated: 2026-05-06 (Story 7.3 done — code review APPROVED; 3 findings auto-resolved (1 MEDIUM dangling-TSTART defense in OnBeforeAllTests outer Catch, 2 LOW: stale method-name comment + dead-code cleanup); post-patch class-level run TestInstance 253: 3/3 PASS Duration 0.068s; independent leftover-row probe 0/0/0/0; **Epic 7 acceptance gate met**)
 project: iris-session-agent
 # Epic 1 complete (retro 2026-05-02); Epic 2 retrospective triage gate (Story 2.0) 2026-05-03
 project_key: NOKEY
@@ -113,7 +113,7 @@ development_status:
   7-0-epic-6-deferred-cleanup: done
   7-1-task-0-probe-audit-fk-cascade-design: done
   7-2-purgeorphanedchathistory-task-installer-scheduling: done
-  7-3-1000-session-integration-test: backlog
+  7-3-1000-session-integration-test: done
   epic-7-retrospective: optional
 
   epic-8: backlog

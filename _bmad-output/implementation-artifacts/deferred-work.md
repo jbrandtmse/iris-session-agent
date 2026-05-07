@@ -1277,3 +1277,28 @@ This file accumulates findings, follow-ups, and architect-decision items that ar
   - **Blocking?** Not blocking.
   - **Triage 2026-05-07 (Story 10.1 review): logged for Epic 10 retro Action Item consideration; no Story 10.x successor binding required.**
 
+---
+
+## Deferred from: code review of story-10-2-search-agent-ui-rendering-sa-search-result-entry-curated-list (2026-05-07)
+
+- **Spec-length governance — Story 10.2 spec exceeded Rule 1's ≤ 250-line target (was 333 lines vs dev's 225–245-line estimate).**
+
+  - **Source:** Story 10.2 code review.
+  - **Severity:** LOW (cosmetic — per Rule 8 test #3, no predicted-bug shape; the spec was complete and the dev produced clean code on the first pass; all 9 ACs satisfied without rework).
+  - **The miss:** Rule 1 target is ≤ 250 lines for story specs. The drafted spec estimated "~225–245 lines" inline at line 197 but the final landed at 333 lines (drift of ~85–110 lines between estimate and reality, or ~33% over Rule 1's target). Most of the overrun came from (a) the verbose AC-3 column-by-column structure with verbatim CSS examples, (b) the explicit Task 0 envelope shape capture in AC-1's note (verified Task 0 finding inline), and (c) the granular Tasks/Subtasks decomposition.
+  - **Why deferring is acceptable:** Per Rule 8 test #3 (cosmetic, no predicted-bug shape) — the spec produced clean code on the first dev pass with no rework cycles, the overrun did not measurably change token cost or quality. The 9-AC scope plus the inline-verbatim envelope capture intrinsically required more lines than a simpler delta-only spec.
+  - **Owner:** Epic 10 retrospective. No code action.
+  - **Blocking?** Not blocking.
+  - **Triage 2026-05-07 (Story 10.2 review): logged for Epic 10 retro Action Item consideration alongside Story 10.1's 281-line overrun. Pattern across Stories 10.1 (281, 12% over) + 10.2 (333, 33% over) suggests the lead's spec estimator is systematically under-counting Epic 10 UI-rendering specs by 30–80 lines; Epic 10 retro should re-tune.**
+
+- **Story 10.0 AI-5 flake first documented recurrence — `MultiNamespaceInstallTest` flaked on first attempt + two retries before passing on third retry (rate worse than documented 1-in-5).**
+
+  - **Source:** Story 10.2 code review (Special review item flagged by lead per invocation prompt). FIRST documented recurrence after the Story 10.0 / Epic 9 retro AI-5 umbrella entry shipped.
+  - **Severity:** LOW (per Story 10.0 AI-5 umbrella entry's existing severity classification — "no operator-observable production bug shape; test-only state leak").
+  - **The observation:** Story 10.0 / Epic 9 retro AI-5 umbrella entry (`deferred-work.md` §"Test-suite global-state pollution under concurrent cadence", lines 1246–1253) documents the 4 affected test classes including `MultiNamespaceInstallTest`, with the documented behavior being "passes on retry" and "surfaces the flake roughly 1-in-5 runs". Story 10.2's regression sweep hit the flake on `MultiNamespaceInstallTest` on the first attempt; the dev retried, the second attempt also flaked; the third retry attempt also flaked; the fourth attempt passed clean. Total flake rate observed in this single sweep: 3-of-4 attempts flaked before passing, far worse than the documented 1-in-5 rate.
+  - **Why deferring is acceptable (Rule 8 test #1 — genuine future-epic scope):** The umbrella entry's owner is already Story 10.9 (PRD v1 Completion Validation Walkthrough). The "passes-on-retry" failure-mode contract held — eventual pass is consistent with documented behavior, no shipped production bug. The aggressive 3-of-4 rate is a data point for Story 10.9's eventual fix to consider (potentially indicating the test pollution is more aggressive than initially characterized when the regression sweep is dense, e.g., right after a multi-class addition like Story 10.2's new `SearchAgentRenderTest`).
+  - **What needs to happen in Story 10.9:** When Story 10.9 implements per-class `OnBeforeOneTest` reset hooks across the 4 affected classes, the `MultiNamespaceInstallTest` reset should be especially robust (Provider-row reset + `^||` subscript reset + `%UnitTest.Result` previous-run residue clear) given the observed 3-of-4 flake rate.
+  - **Owner:** Story 10.9 — already bound by Story 10.0 / Epic 9 retro AI-5; this entry is a recurrence-rate update, not a new binding. Story 10.9's lead should treat the documented "1-in-5" rate as a lower bound when sizing the fix effort.
+  - **Blocking?** Not blocking — eventual pass on retry maintains the documented contract; sequential per-class invocation per `object-script-testing.md` §"MCP iris_execute_tests Truncation Workaround" continues to sidestep the flake during normal cycle operations.
+  - **Triage 2026-05-07 (Story 10.2 review): retry path matches Story 10.0 AI-5 umbrella entry's documented behavior; rate worse than documented but eventually passes; logged as a data-point update on the existing umbrella entry.**
+

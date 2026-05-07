@@ -106,6 +106,28 @@
         }
     };
 
+    /* Story 10.2 AC-1 / AC-3 — IRIS Ens message-status enum mapped to
+     * display labels for the search-result list rendering. The values are
+     * the integers emitted by Epic 8 search tools' `structuredContent.sessions[].status`
+     * field (verified Task 0 against SearchByStatus.cls:194). The Status:
+     * column on each sa-search-result-entry shows the label, and entries
+     * with status === 5 (Error) get the .sa-search-result-status-error
+     * CSS class for the existing --sa-tool-card-status-error tint. Other
+     * status values render with the default text color. The map is
+     * declared at IIFE scope so it is shared by the renderer and the
+     * aria-label builder. */
+    var ENS_STATUS_LABEL = {
+        1: 'Created',
+        2: 'Queued',
+        3: 'Delivered',
+        4: 'Completed',
+        5: 'Error',
+        6: 'Aborted',
+        7: 'Discarded',
+        8: 'Suspended',
+        9: 'Deferred'
+    };
+
     /* ------------------------------------------------------------------ */
     /* Init: wait for DOMContentLoaded if needed, then wire handlers.      */
     /* ------------------------------------------------------------------ */
@@ -258,6 +280,18 @@
      * fixture pattern, mirroring the submitTurn() fallback).
      */
     function onTranscriptClick(event) {
+        // Story 10.2 AC-4 — search-result-entry click delegation. Parallel
+        // to the existing .sa-citation-chip branch below: detect clicks
+        // on any .sa-search-result-entry anchor and dispatch to the stub
+        // handler. Story 10.3 will replace the stub body with the actual
+        // RecordClickThrough hyperevent + navigation. The function-name
+        // boundary `onSearchResultClick` is the load-bearing contract.
+        var entry = event.target && event.target.closest && event.target.closest('.sa-search-result-entry');
+        if (entry) {
+            onSearchResultClick(entry, event);
+            return;
+        }
+
         var chip = event.target && event.target.closest && event.target.closest('.sa-citation-chip');
         if (!chip) {
             return;
@@ -467,6 +501,33 @@
         for (var i = 0; i < cards.length; i++) {
             var cardNode = renderToolCard(cards[i], i);
             state.transcriptEl.appendChild(cardNode);
+        }
+
+        // Story 10.2 AC-1 — Search-Agent rendering: scan toolCallsRendered[]
+        // for any tool whose result.structuredContent.sessions is an array.
+        // Per AC-1's structural-signal contract, the tool name is NOT part
+        // of the detection — Epic 8 search tools are the canonical
+        // producers of sessions[] arrays and Inspection tools never emit
+        // this shape, so the structural signal is sufficient and forward-
+        // compatible (any future search tool that emits sessions[] gets
+        // the curated-list rendering automatically). Render the curated
+        // list BEFORE the assistantMarkdown block so the visual order is
+        // [tool-cards] -> [curated session list] -> [agent narrative].
+        for (var k = 0; k < cards.length; k++) {
+            var card = cards[k];
+            var sc = card && card.result && card.result.structuredContent;
+            if (sc && Array.isArray(sc.sessions)) {
+                // Skip the empty-sessions[] case per AC-5 — the agent's
+                // assistantMarkdown carries the no-match narrative + any
+                // refinement suggestions; rendering an empty <a> list
+                // would just be visual noise.
+                if (sc.sessions.length === 0) {
+                    continue;
+                }
+                var totalCount = (typeof sc.result_count === 'number') ? sc.result_count : sc.sessions.length;
+                var limitArg = (card.args && typeof card.args.limit === 'number') ? card.args.limit : 0;
+                renderSearchResultList(k, sc.sessions, totalCount, limitArg);
+            }
         }
 
         // AC-3: render the final assistant answer in fallback Markdown
@@ -839,6 +900,225 @@
         }
     }
 
+    /* ------------------------------------------------------------------ */
+    /* Story 10.2 — Search-Agent curated-list rendering.                   */
+    /* ------------------------------------------------------------------ */
+
+    /**
+     * Story 10.2 AC-2 / AC-3 — render a curated list of session entries
+     * as <a class="sa-search-result-entry"> anchors appended to the
+     * transcript, between the tool-call cards and the agent's narrative.
+     *
+     * Each entry is a real anchor (display: block via the CSS rule from
+     * Story 10.2 AC-7) so the entire row is clickable and keyboard-default
+     * focusable per UX-DR20. Visible columns per AC-3 in order:
+     *   1. SessionId (bold)
+     *   2. TimeCreated relative form (`3 minutes ago`); absolute ISO Z on title attribute
+     *   3. Source -> Target arrow with <no-source> fallback
+     *   4. MessageBodyClassName (full FQN, truncated to 40 chars + ellipsis)
+     *   5. Status display label from ENS_STATUS_LABEL; status === 5 (Error)
+     *      gets sa-search-result-status-error class
+     *   6. (MVP-deferred) brief context — slot-only; no per-session
+     *      annotation comes from AgentLoop today (per AC-3 #6)
+     *
+     * Columns separated by U+00B7 middle dot ` · ` matching the welcome
+     * message convention; UTF-8 encoding via the asset's TranslateTable=UTF8.
+     *
+     * AC-6 — when totalCount > limitArg, append a single
+     * <div class="sa-search-truncation-note"> after the list with the
+     * "Showing first N of M" message. The agent's assistantMarkdown will
+     * also mention truncation per the AgentLoop prompt template; this
+     * extra DOM block makes the visual marker explicit per UX-DR29.
+     *
+     * XSS-safety: entirely createElement + textContent + setAttribute. No
+     * innerHTML, no string-concat into HTML attributes (setAttribute
+     * auto-encodes).
+     */
+    function renderSearchResultList(tcIndex, sessions, totalCount, limitArg) {
+        if (!sessions || !sessions.length) {
+            return;
+        }
+        var searchSessionKey = (state.context && state.context.sessionKey) || '';
+        for (var i = 0; i < sessions.length; i++) {
+            var s = sessions[i];
+            if (!s) {
+                continue;
+            }
+            var anchor = document.createElement('a');
+            anchor.setAttribute('class', 'sa-search-result-entry');
+            anchor.setAttribute('href', '#');
+            anchor.setAttribute('data-session-id', String(s.session_id != null ? s.session_id : ''));
+            anchor.setAttribute('data-search-session-key', searchSessionKey);
+            anchor.setAttribute('data-tool-call-index', String(tcIndex));
+
+            var sourceName = s.source_config_name || '<no-source>';
+            var targetName = s.target_config_name || '<no-target>';
+            var bodyClass = s.message_body_class_name || '';
+            var statusLabel = ENS_STATUS_LABEL[s.status] || ('Unknown(' + s.status + ')');
+            var relTime = formatRelativeTime(s.time_created);
+            var absTime = s.time_created || '';
+
+            // aria-label per AC-2 — descriptive, no separators in the
+            // screen-reader announcement so the synthesizer can parse
+            // each clause naturally.
+            var aria = 'Session ' + (s.session_id != null ? s.session_id : 'unknown')
+                + ' from ' + sourceName + ' to ' + targetName
+                + ', ' + bodyClass
+                + ', Status: ' + statusLabel
+                + ', ' + relTime;
+            anchor.setAttribute('aria-label', aria);
+
+            // Title attribute carries the absolute ISO Z timestamp for
+            // hover-reveal (sighted users see the relative form by
+            // default; hovering the anchor reveals the precise time).
+            if (absTime) {
+                anchor.setAttribute('title', absTime);
+            }
+
+            // Column 1: SessionId (bold via .sa-search-result-sid).
+            var sidSpan = document.createElement('span');
+            sidSpan.setAttribute('class', 'sa-search-result-sid');
+            sidSpan.textContent = 'Session ' + (s.session_id != null ? s.session_id : 'unknown');
+            anchor.appendChild(sidSpan);
+
+            anchor.appendChild(document.createTextNode(' · '));
+
+            // Column 2: relative time (absolute on the anchor's title).
+            anchor.appendChild(document.createTextNode(relTime));
+
+            anchor.appendChild(document.createTextNode(' · '));
+
+            // Column 3: Source -> Target with arrow.
+            anchor.appendChild(document.createTextNode(sourceName + ' → ' + targetName));
+
+            anchor.appendChild(document.createTextNode(' · '));
+
+            // Column 4: MessageBodyClassName, truncated to 40 chars.
+            anchor.appendChild(document.createTextNode(truncateClassName(bodyClass, 40)));
+
+            anchor.appendChild(document.createTextNode(' · '));
+
+            // Column 5: Status label, with .sa-search-result-status-error
+            // when status === 5 (Error).
+            var statusSpan = document.createElement('span');
+            if (s.status === 5) {
+                statusSpan.setAttribute('class', 'sa-search-result-status-error');
+            }
+            statusSpan.textContent = 'Status: ' + statusLabel;
+            anchor.appendChild(statusSpan);
+
+            // Column 6 (MVP-deferred): brief context — no AgentLoop
+            // emission today; slot intentionally empty per AC-3 #6.
+
+            state.transcriptEl.appendChild(anchor);
+        }
+
+        // AC-6 — truncation marker DOM block. Emitted when totalCount
+        // exceeds limitArg AND limitArg is positive (limitArg=0 means the
+        // tool call did not pass an explicit limit, so we cannot prove
+        // truncation occurred — defer to the assistantMarkdown narrative).
+        if (limitArg > 0 && totalCount > limitArg) {
+            var note = document.createElement('div');
+            note.setAttribute('class', 'sa-search-truncation-note');
+            note.textContent = 'Showing first ' + sessions.length + ' of ' + totalCount + ' matches — refine your query to narrow results.';
+            state.transcriptEl.appendChild(note);
+        }
+    }
+
+    /**
+     * Story 10.2 AC-3 — convert an ISO Z timestamp string to a relative
+     * form like "3 minutes ago", "2 hours ago", "5 days ago". For
+     * deltas beyond 30 days the absolute ISO date (YYYY-MM-DD) is
+     * returned so the operator still gets a recognizable temporal cue
+     * without unwieldy "1247 days ago" strings.
+     *
+     * Returns "(unknown time)" for null/empty/unparseable input — the
+     * UI fallback so a missing timestamp doesn't break the entry render.
+     */
+    function formatRelativeTime(isoZ) {
+        if (!isoZ) {
+            return '(unknown time)';
+        }
+        var t = Date.parse(isoZ);
+        if (isNaN(t)) {
+            return '(unknown time)';
+        }
+        var deltaMs = Date.now() - t;
+        // Guard against future timestamps (clock skew, fixture drift).
+        if (deltaMs < 0) {
+            deltaMs = 0;
+        }
+        var seconds = Math.floor(deltaMs / 1000);
+        if (seconds < 60) {
+            return seconds === 1 ? '1 second ago' : seconds + ' seconds ago';
+        }
+        var minutes = Math.floor(seconds / 60);
+        if (minutes < 60) {
+            return minutes === 1 ? '1 minute ago' : minutes + ' minutes ago';
+        }
+        var hours = Math.floor(minutes / 60);
+        if (hours < 24) {
+            return hours === 1 ? '1 hour ago' : hours + ' hours ago';
+        }
+        var days = Math.floor(hours / 24);
+        if (days <= 30) {
+            return days === 1 ? '1 day ago' : days + ' days ago';
+        }
+        // Beyond 30 days — show absolute date (first 10 chars of ISO Z = YYYY-MM-DD).
+        return isoZ.substring(0, 10);
+    }
+
+    /**
+     * Story 10.2 AC-3 column 4 — truncate a class FQN to maxChars
+     * characters, appending a U+2026 ellipsis when truncation occurred.
+     * Empty / null input returns the empty string (the column renders
+     * blank rather than emitting "..." with no content).
+     */
+    function truncateClassName(fqn, maxChars) {
+        if (!fqn) {
+            return '';
+        }
+        if (fqn.length <= maxChars) {
+            return fqn;
+        }
+        return fqn.substring(0, maxChars) + '…';
+    }
+
+    /**
+     * Story 10.2 AC-4 — search-result-entry click handler STUB.
+     *
+     * Called by onTranscriptClick when the operator clicks any
+     * .sa-search-result-entry anchor. Story 10.2 ships only the stub
+     * (preventDefault + console.log + TODO marker); Story 10.3 replaces
+     * this body with the actual RecordClickThrough ZenMethod hyperevent
+     * + navigation hand-off to Visual Trace.
+     *
+     * The function-name boundary is the load-bearing surface contract:
+     * Story 10.3 keeps the same name so the delegation in
+     * onTranscriptClick continues to dispatch correctly.
+     */
+    function onSearchResultClick(anchor, event) {
+        if (event && typeof event.preventDefault === 'function') {
+            event.preventDefault();
+        }
+        var sessionId = anchor && anchor.getAttribute && anchor.getAttribute('data-session-id');
+        var tcIndex = anchor && anchor.getAttribute && anchor.getAttribute('data-tool-call-index');
+        if (typeof console !== 'undefined' && console.log) {
+            console.log('[sa-search] click captured: session-id=' + sessionId + ', tool-call-index=' + tcIndex + ' — Story 10.3 will wire the actual hand-off');
+        }
+        // Story 10.2 manual-smoke / test fixture hook: mirror the
+        // SessionAgentChatTestHook pattern so a smoke driver can assert
+        // the click reached this stub. Story 10.3 keeps this hook for
+        // backward compatibility; production never installs it.
+        if (typeof window !== 'undefined' && typeof window.SessionAgentSearchClickTestHook === 'function') {
+            try {
+                window.SessionAgentSearchClickTestHook(sessionId, tcIndex);
+            } catch (e) {
+                // Swallow — test-only hook.
+            }
+        }
+    }
+
     /**
      * Append a generic message block (helper documented in spec). Not
      * called by the current submit path — kept available for Story 3.4+
@@ -894,4 +1174,13 @@
     // closure (helps static analyzers; runtime cost is zero).
     void appendMessageBlock;
     void escapeText;
+    // Story 10.2 — `renderSearchResultList` is invoked by handleEnvelope
+    // and `onSearchResultClick` is invoked by onTranscriptClick, so they
+    // are NOT unused. The void-references below are defensive against
+    // tree-shaking analyzers that may not trace dynamic dispatch through
+    // the closure-scoped delegation. Helper functions formatRelativeTime
+    // and truncateClassName are reachable through renderSearchResultList,
+    // so no separate void references are needed for them.
+    void renderSearchResultList;
+    void onSearchResultClick;
 })();

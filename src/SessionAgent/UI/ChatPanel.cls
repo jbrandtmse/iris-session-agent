@@ -184,6 +184,23 @@ ClassMethod EmitStyle() As %Status
     ; needed — UX-DR21 / NFR-T1 satisfied via reuse.
     &html<.sa-citation-error { color: var(--sa-error-text-color); font-style: italic; margin-left: 0.25em; }>
 
+    ; --- Story 10.2 AC-7 — Search-Agent curated-list rendering rules.
+    ; Each sa-search-result-entry is a real <a> with display:block so
+    ; the whole row is clickable; hover/focus styling uses the existing
+    ; --sa-citation-chip-text token (chip-active hue) for the left
+    ; border + a subtle background tint. The hover/focus tokens
+    ; --sa-hover-bg / --sa-accent-color / --sa-muted-fg get explicit
+    ; rgba/hex fallbacks so the rules render correctly even when the
+    ; parent palette doesn't define them — same fallback-with-var()
+    ; pattern as the 10-token MVP set above. The
+    ; --sa-tool-card-status-error token already exists and is reused
+    ; for the Error-status-row tint per UX-DR21.
+    &html<.sa-search-result-entry { display: block; padding: 8px 12px; margin: 4px 0; text-decoration: none; color: inherit; border-left: 3px solid transparent; border-radius: 4px; transition: background 100ms; }>
+    &html<.sa-search-result-entry:hover, .sa-search-result-entry:focus { background: var(--sa-hover-bg, rgba(0, 0, 0, 0.04)); border-left-color: var(--sa-accent-color, #0066cc); }>
+    &html<.sa-search-result-status-error { color: var(--sa-tool-card-status-error, #c53030); font-weight: 600; }>
+    &html<.sa-search-result-sid { font-weight: 600; }>
+    &html<.sa-search-truncation-note { font-style: italic; margin: 6px 0; padding: 4px 8px; color: var(--sa-muted-fg, #666); }>
+
     &html<</style>>
     Quit $$$OK
 }

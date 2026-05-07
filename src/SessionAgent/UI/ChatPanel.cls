@@ -201,6 +201,22 @@ ClassMethod EmitStyle() As %Status
     &html<.sa-search-result-sid { font-weight: 600; }>
     &html<.sa-search-truncation-note { font-style: italic; margin: 6px 0; padding: 4px 8px; color: var(--sa-muted-fg, #666); }>
 
+    ; --- Story 10.4 AC-4 — from-search stripe (UX-DR5). The stripe is a
+    ; thin horizontal bar above the chat transcript with the literal
+    ; search query, an Accept button, and an × Dismiss button. Both
+    ; buttons share styling tokens with the existing search-result-entry
+    ; rules above (--sa-from-search-stripe-border / -bg fall back to the
+    ; same #0066cc / rgba(0,102,204,0.08) pair). All colors reference CSS
+    ; custom properties with explicit fallback hex/rgba literals per
+    ; .claude/rules/angular-patterns.md analog for ObjectScript-emitted
+    ; CSS — fallbacks are the rendered values today (parent palette
+    ; doesn't publish these vars yet).
+    &html<.sa-from-search-stripe { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px; margin: 0 0 8px 0; border-left: 3px solid var(--sa-from-search-stripe-border, #0066cc); background: var(--sa-from-search-stripe-bg, rgba(0, 102, 204, 0.08)); font-size: 0.92em; }>
+    &html<.sa-stripe-text { flex: 1 1 auto; }>
+    &html<.sa-stripe-accept, .sa-stripe-dismiss { background: transparent; border: 1px solid var(--sa-from-search-stripe-border, #0066cc); border-radius: 3px; padding: 2px 8px; cursor: pointer; font-size: 0.9em; }>
+    &html<.sa-stripe-dismiss { padding: 2px 6px; }>
+    &html<.sa-stripe-accept:hover, .sa-stripe-dismiss:hover { background: var(--sa-from-search-stripe-bg, rgba(0, 102, 204, 0.12)); }>
+
     &html<</style>>
     Quit $$$OK
 }

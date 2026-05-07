@@ -75,6 +75,17 @@ Class SessionAgent.EnsPortal.VisualTrace Extends EnsPortal.VisualTrace [ System 
 /// uses this for the browser tab title.</p>
 Parameter PAGENAME = "Visual Trace + Agent";
 
+/// <p>Story 10.4 AC-1 — search-session key inherited from a click-through
+/// hand-off. When the operator clicks a session entry on the Search Agent
+/// page (Story 10.3), the navigation URL appends
+/// <code>&FROM_SEARCH=&lt;search-session-key&gt;</code>. Zen's
+/// <code>ZENURL</code> binding auto-captures this query-string param into
+/// the property. Read by <method>DrawChatPanel</method> to look up the
+/// search-session's <CLASS>SessionAgent.Chat.History</CLASS> row and
+/// extract the literal operator query for the "from search" stripe
+/// (UX-DR5). Empty in the typical Inspection-flow case (no hand-off).</p>
+Property fromSearchKey As %ZEN.Datatype.string(ZENURL = "FROM_SEARCH");
+
 
 /// <p>Override the parent's tab strip (<code>XData allTabs</code>) — copy
 /// the parent's three tabs verbatim and append our "Ask the agent" tab as
@@ -230,10 +241,35 @@ Method DrawChatPanel(pSeed As %String) As %Status
             }
         }
 
+        ; ─────────────────────────────────────────────────────────────
+        ; Story 10.4 AC-1 — read the FROM_SEARCH URL param (auto-bound
+        ; to ..fromSearchKey via ZENURL). When non-empty, look up the
+        ; search-session's Chat.History row using the same
+        ; (AgentName, SessionKey, PortalUser) tuple the search agent
+        ; persists under (Story 10.1 / 10.2 store under
+        ; AgentName="message-search"). Extract the literal first-user-
+        ; message via ExtractLiteralFirstUserMessage. The two-array
+        ; invariant (Story 9.4) means the digest prefix is NOT in the
+        ; persisted TurnsJson — the canonical first user-text block IS
+        ; the literal operator query verbatim.
+        ;
+        ; Empty key OR no history row → tFromSearchQuery="" → the helper
+        ; emits fromSearchQuery:"" and chat-panel.js renders no stripe
+        ; per AC-2 / AC-3.
+        ; ─────────────────────────────────────────────────────────────
+        Set tFromSearchQuery = ""
+        If ..fromSearchKey '= "" {
+            Set tSearchHist = ##class(SessionAgent.Chat.History).ConvKeyIdxOpen("message-search", ..fromSearchKey, tPortalUser, 0)
+            If $IsObject(tSearchHist) {
+                Set tFromSearchQuery = ..ExtractLiteralFirstUserMessage(tSearchHist)
+                Do tSearchHist.%Close()
+            }
+        }
+
         ; Dispatch to the shared helper. It writes to the current device
         ; via &html<...> (the Zen OnDrawContent callback's output goes to
         ; the page response).
-        Set tHelperSC = ##class(SessionAgent.EnsPortal.Util.ChatPanelDrawHelper).DrawChatPanel(tAgentName, tSessionKey, tPortalUser, "", tPriorJson, tPlaceholder)
+        Set tHelperSC = ##class(SessionAgent.EnsPortal.Util.ChatPanelDrawHelper).DrawChatPanel(tAgentName, tSessionKey, tPortalUser, "", tPriorJson, tPlaceholder, tFromSearchQuery, ..fromSearchKey)
         If $$$ISERR(tHelperSC) {
             ; Helper-level error is unexpected (only invariant: empty
             ; agent name, which we hard-code). Capture without raising
@@ -250,6 +286,68 @@ Method DrawChatPanel(pSeed As %String) As %Status
     ; Always return OK — the parent Zen renderer doesn't surface
     ; OnDrawContent failures to the operator usefully.
     Quit $$$OK
+}
+
+/// <p>Story 10.4 AC-1 — extract the literal first-user-message from a
+/// <CLASS>SessionAgent.Chat.History</CLASS> row's
+/// <property>TurnsJson</property> canonical-Anthropic stream. Returns the
+/// verbatim <code>text</code> field of the FIRST <code>role:"user"</code>
+/// turn's first <code>type:"text"</code> block.</p>
+///
+/// <p><b>Two-array invariant (Story 9.4).</b> The persisted
+/// <code>TurnsJson</code> is the canonical array — the digest prefix is
+/// NEVER persisted (the digest only rides the provider-bound
+/// <code>tTurnsForLlm</code> parallel array, never the canonical
+/// <code>tTurns</code> stored to <code>Chat.History</code>). So
+/// <code>TurnsJson[0].content[0].text</code> for the first user turn IS
+/// the literal operator query verbatim — NO digest stripping required.</p>
+///
+/// <p>Returns <code>""</code> on any failure (no row, malformed JSON, no
+/// user turns, no text block on the first user turn) — the caller renders
+/// no stripe in that case per AC-2.</p>
+ClassMethod ExtractLiteralFirstUserMessage(pHist As SessionAgent.Chat.History) As %String
+{
+    Set tLiteral = ""
+    Try {
+        If '$IsObject(pHist) Quit
+        If '$IsObject(pHist.TurnsJson) Quit
+        Do pHist.TurnsJson.Rewind()
+        If pHist.TurnsJson.AtEnd Quit
+        Set tBuf = ""
+        While 'pHist.TurnsJson.AtEnd {
+            Set tBuf = tBuf _ pHist.TurnsJson.Read(32000)
+        }
+        If tBuf = "" Quit
+
+        Set tArr = ##class(%DynamicArray).%FromJSON(tBuf)
+        If '$IsObject(tArr) Quit
+
+        ; Walk turns; stop at the first role="user" turn with a text block.
+        Set tIter = tArr.%GetIterator()
+        While tIter.%GetNext(.tIdx, .tTurn) {
+            If '$IsObject(tTurn) Continue
+            If tTurn.%Get("role") '= "user" Continue
+            Set tContent = tTurn.%Get("content")
+            If '$IsObject(tContent) Continue
+            Set tBlockIter = tContent.%GetIterator()
+            While tBlockIter.%GetNext(.tBidx, .tBlock) {
+                If '$IsObject(tBlock) Continue
+                If tBlock.%Get("type") '= "text" Continue
+                ; First text block of the first user turn — verbatim text.
+                Set tLiteral = tBlock.%Get("text")
+                Quit
+            }
+            ; Whether or not we found a text block, this was the first
+            ; user turn — do NOT continue scanning (the first user turn
+            ; defines the literal operator query per Story 9.4).
+            Quit
+        }
+    }
+    Catch ex {
+        ; Swallow — empty-string degradation is the safe UX.
+        Set tLiteral = ""
+    }
+    Quit tLiteral
 }
 
 /// <p>Internal helper — flatten the canonical-Anthropic

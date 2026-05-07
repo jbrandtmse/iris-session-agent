@@ -102,12 +102,25 @@ Class SessionAgent.EnsPortal.Util.ChatPanelDrawHelper Extends %RegisteredObject
 /// <code>"Ask anything about this session."</code> (first-time variant).
 /// Story 3.3 supplies <code>"Continue the conversation."</code> for
 /// returning conversations per UX-DR17-MVP-subset.</li>
+/// <li><code>pFromSearchQuery</code> — Story 10.4 AC-2. Optional literal
+/// search query text (the verbatim first-user-message from the search
+/// session's <CLASS>SessionAgent.Chat.History</CLASS>). When non-empty,
+/// the bootstrap context emits <code>fromSearchQuery: "&lt;text&gt;"</code>
+/// and <code>chat-panel.js</code> renders the "from search" stripe per
+/// UX-DR5. Defaults to <code>""</code> for back-compat with the
+/// Inspection-non-hand-off path AND the Search-Agent's MessageViewer host
+/// page (which never passes this).</li>
+/// <li><code>pFromSearchKey</code> — Story 10.4 AC-2. Optional search-
+/// session key (the value the FROM_SEARCH URL param carried). Embedded
+/// in the bootstrap context so the JS click handlers and the stripe DOM's
+/// <code>data-search-key</code> attribute carry the search context into
+/// the next <code>contextHints</code> turn. Defaults to <code>""</code>.</li>
 /// </ul>
 ///
 /// <p><b>Returns:</b> <code>$$$OK</code> on success; <code>$$$ERROR</code>
 /// for parameter validation failures (only invariant: empty
 /// <code>pAgentName</code>).</p>
-ClassMethod DrawChatPanel(pAgentName As %String, pSessionKey As %String = "", pPortalUser As %String = "", pStream As %Stream.Object = "", pPriorTranscriptJson As %String = "[]", pPlaceholder As %String = "Ask anything about this session.") As %Status
+ClassMethod DrawChatPanel(pAgentName As %String, pSessionKey As %String = "", pPortalUser As %String = "", pStream As %Stream.Object = "", pPriorTranscriptJson As %String = "[]", pPlaceholder As %String = "Ask anything about this session.", pFromSearchQuery As %String = "", pFromSearchKey As %String = "") As %Status
 {
     Set tSC = $$$OK
     Try {
@@ -157,6 +170,17 @@ ClassMethod DrawChatPanel(pAgentName As %String, pSessionKey As %String = "", pP
         ; Story 3.3 AC-6 — embed placeholder. Story 3.3's caller decides
         ; first-time vs returning variant; we pass through verbatim.
         Do tCtx.%Set("placeholder", pPlaceholder)
+
+        ; Story 10.4 AC-2 — embed the from-search literal query + the
+        ; search-session key. chat-panel.js init reads both: when
+        ; fromSearchQuery is non-empty it renders the stripe DOM (UX-DR5)
+        ; and seeds state.fromSearchContext so the next submitTurn() pass
+        ; carries the search context into the AgentLoop's contextHints
+        ; (AC-8). Both default to "" — the inspection-non-hand-off path
+        ; AND the Search-Agent's MessageViewer host page leave them empty
+        ; and the panel renders without the stripe.
+        Do tCtx.%Set("fromSearchQuery", pFromSearchQuery)
+        Do tCtx.%Set("fromSearchKey", pFromSearchKey)
 
         Set tBootstrapJson = tCtx.%ToJSON()
         Set tBootstrapJson = $Replace(tBootstrapJson, "</script>", "<\/script>")

@@ -39,7 +39,15 @@
         // RecordClickThrough with '[]' (empty contributing tool calls),
         // which Story 9.5's substrate handles per its AC-1 (no aliases
         // inferred → returns aliases_recorded: []; not an error).
-        lastToolCallsRendered: []
+        lastToolCallsRendered: [],
+        // Story 10.4 AC-5 / AC-6 / AC-7 — from-search context cache.
+        // Populated when init() detects fromSearchQuery in the bootstrap
+        // context (UX-DR5 stripe rendered). Drained on the next
+        // submitTurn() into the contextHintsJson payload (one-shot —
+        // set to null after the turn fires so subsequent turns don't
+        // re-send the search context). Cleared by the × Dismiss handler
+        // so a dismissed stripe never carries through to the chat.
+        fromSearchContext: null
     };
 
     /* Citation-chip regex per AC-3 (Story 3.2) extended in Story 3.4
@@ -204,10 +212,114 @@
             renderWelcomeMessage();
         }
 
+        // Story 10.4 AC-3 — from-search stripe (UX-DR5). When the host
+        // page came from a Search-Agent click-through, the bootstrap
+        // context carries fromSearchQuery (literal operator query text)
+        // and fromSearchKey (search-session key). Non-empty query → render
+        // the stripe DOM ABOVE the transcript with three exits (Accept,
+        // × Dismiss, implicit-accept on typing). Empty query → no stripe
+        // (the typical Inspection-flow case).
+        var fromSearchQuery = (state.context && state.context.fromSearchQuery) || '';
+        var fromSearchKey = (state.context && state.context.fromSearchKey) || '';
+        if (fromSearchQuery) {
+            renderFromSearchStripe(fromSearchQuery, fromSearchKey);
+        }
+
         // AC-1 / UX-DR16: auto-focus on tab open. Per AC-3 ordering:
         // prior-transcript render must complete before focus so the input
         // is the operator's natural next action.
         state.inputEl.focus();
+    }
+
+    /**
+     * Story 10.4 AC-3 / AC-5 / AC-6 — render the "from search" stripe
+     * above the chat transcript when the operator arrived via a Search-
+     * Agent click-through. The stripe carries the literal search query
+     * verbatim plus three exits:
+     *
+     *   - Accept button → fire an automatic agent turn with
+     *     state.fromSearchContext attached as contextHints (AC-5).
+     *   - × Dismiss button → silent dismiss; clear fromSearchContext so
+     *     subsequent turns operate as a fresh chat (AC-6).
+     *   - Implicit-accept on typing → submitTurn() drains
+     *     fromSearchContext into the next turn's contextHints (AC-7).
+     *
+     * XSS-safety: createElement + textContent + setAttribute only — never
+     * innerHTML. The literal query is HTML-escaped via textContent (the
+     * browser does the encoding).
+     */
+    function renderFromSearchStripe(query, searchKey) {
+        if (!state.transcriptEl || !state.transcriptEl.parentNode) {
+            return;
+        }
+        // Seed state.fromSearchContext per AC-5 #2 / AC-7. The shape per
+        // AC-8 is {from_search, search_query, search_session_key} — the
+        // AgentLoop's contextHints already accepts arbitrary dict shapes
+        // per Story 2.7's DTO contract; no orchestrator change needed.
+        state.fromSearchContext = {
+            from_search: true,
+            search_query: query,
+            search_session_key: searchKey || ''
+        };
+
+        var stripe = document.createElement('div');
+        stripe.setAttribute('class', 'sa-from-search-stripe');
+        stripe.setAttribute('role', 'status');
+        stripe.setAttribute('aria-live', 'polite');
+        stripe.setAttribute('data-search-key', searchKey || '');
+
+        // Stripe text — literal query inserted via textContent so XSS-safe
+        // even if the operator's search query contained HTML. The U+2014
+        // EM DASH is the literal Unicode character (UTF-8 byte sequence
+        // E2 80 94) per Rule 12 — not a hyphen-minus substitute.
+        var textSpan = document.createElement('span');
+        textSpan.setAttribute('class', 'sa-stripe-text');
+        textSpan.textContent = "You came from a search for '" + query + "' — want me to look at this session?";
+        stripe.appendChild(textSpan);
+
+        // Accept button — AC-5.
+        var acceptBtn = document.createElement('button');
+        acceptBtn.setAttribute('class', 'sa-stripe-accept');
+        acceptBtn.setAttribute('type', 'button');
+        acceptBtn.textContent = 'Accept';
+        acceptBtn.addEventListener('click', function () {
+            // AC-5 #1 — hide the stripe.
+            if (stripe.parentNode) {
+                stripe.parentNode.removeChild(stripe);
+            }
+            // AC-5 #3 — pre-fill the input + AC-5 #4 — submitTurn() drains
+            // state.fromSearchContext into contextHintsJson on the next
+            // call. The synthesized prompt is the simplest path per AC-5.
+            if (state.inputEl) {
+                state.inputEl.value = "Look at this session in the context of my earlier search.";
+            }
+            submitTurn();
+        });
+        stripe.appendChild(acceptBtn);
+
+        // × Dismiss button — AC-6.
+        var dismissBtn = document.createElement('button');
+        dismissBtn.setAttribute('class', 'sa-stripe-dismiss');
+        dismissBtn.setAttribute('type', 'button');
+        dismissBtn.setAttribute('aria-label', 'Dismiss from-search context');
+        dismissBtn.textContent = '×'; // U+00D7 MULTIPLICATION SIGN — the canonical close glyph.
+        dismissBtn.addEventListener('click', function () {
+            // AC-6 #1 — hide the stripe.
+            if (stripe.parentNode) {
+                stripe.parentNode.removeChild(stripe);
+            }
+            // AC-6 #2 — clear fromSearchContext so subsequent turns run
+            // with empty contextHints. Per AC-6 #3 the stripe stays
+            // hidden for the rest of the chat session — the parentNode
+            // removal above is the implementation.
+            state.fromSearchContext = null;
+        });
+        stripe.appendChild(dismissBtn);
+
+        // Insert ABOVE the transcript so the stripe occupies the top of
+        // the panel chrome. The transcript element is a direct child of
+        // .sa-chat-panel; insert the stripe as the previous sibling.
+        state.transcriptEl.parentNode.insertBefore(stripe, state.transcriptEl);
     }
 
     /**
@@ -453,14 +565,47 @@
 
         var agentName = (state.context && state.context.agentName) || '';
         var sessionKey = (state.context && state.context.sessionKey) || '';
+
+        // Story 10.4 AC-7 / AC-8 — merge state.fromSearchContext (set by
+        // init() when the bootstrap context's fromSearchQuery is non-
+        // empty) into the contextHintsJson payload. Implicit-accept (the
+        // operator types before clicking either stripe button) and
+        // explicit-accept (Accept button) both drain the context here;
+        // dismiss-then-type runs with the empty default. After the turn
+        // fires we hide the stripe (treated as implicit accept per AC-7)
+        // and null fromSearchContext for one-shot consumption.
         var contextHintsJson = '{}';
+        var fromSearchAttached = false;
+        if (state.fromSearchContext) {
+            try {
+                contextHintsJson = JSON.stringify(state.fromSearchContext);
+                fromSearchAttached = true;
+            } catch (e) {
+                // Defense-in-depth — fromSearchContext is a plain object
+                // we constructed ourselves so JSON.stringify can't throw
+                // in practice. The fallback empty-object payload still
+                // sends the turn with no hints rather than blocking it.
+                contextHintsJson = '{}';
+            }
+        }
 
         // AC-1: invoke the ZenMethod hyperevent. Story 3.3 wires the
         // server-side SendChatMessage. The Zen synchronous-AJAX proxy
         // returns the ZenMethod's string return value directly.
+        //
+        // Story 10.4 review F-1 — track whether the dispatch into the
+        // orchestrator actually fired. A JS-side throw (network blip,
+        // zenPage stub missing) means the turn never reached
+        // SendChatMessage and the contextHints were not consumed. In
+        // that case we MUST keep state.fromSearchContext populated so
+        // the operator's retry attempt re-sends the context. A returned
+        // envelope (success OR server-rendered error envelope) means
+        // the orchestrator ran — drain the one-shot per AC-7.
+        var turnDispatched = false;
         if (typeof zenPage !== 'undefined' && zenPage && typeof zenPage.SendChatMessage === 'function') {
             try {
                 var envelopeJson = zenPage.SendChatMessage(agentName, sessionKey, userText, contextHintsJson);
+                turnDispatched = true;
                 handleEnvelope(envelopeJson);
             } catch (e) {
                 handleEnvelopeError(e);
@@ -482,6 +627,7 @@
             if (typeof window.SessionAgentChatTestHook === 'function') {
                 try {
                     var hookEnvelope = window.SessionAgentChatTestHook(agentName, sessionKey, userText, contextHintsJson);
+                    turnDispatched = true;
                     handleEnvelope(hookEnvelope);
                 } catch (e2) {
                     handleEnvelopeError(e2);
@@ -489,6 +635,25 @@
             } else {
                 handleEnvelopeError(new Error('zenPage.SendChatMessage unavailable'));
             }
+        }
+
+        // Story 10.4 AC-7 — implicit-accept cleanup. If fromSearchContext
+        // was attached to this turn AND the dispatch reached the
+        // orchestrator, hide the stripe (if still present — explicit
+        // Accept already removed it) and null the context so subsequent
+        // turns don't re-send it. AC-7 spec: "the stripe is hidden
+        // (treated as implicit Accept). And state.fromSearchContext =
+        // null after the turn fires (one-shot consumption)." Review F-1:
+        // gate on turnDispatched so a JS-side throw (no envelope ever
+        // returned, contextHints never reached the orchestrator) does
+        // NOT drop the search context — the operator's retry must
+        // re-send it.
+        if (fromSearchAttached && turnDispatched) {
+            var stripeEl = document.querySelector('.sa-from-search-stripe');
+            if (stripeEl && stripeEl.parentNode) {
+                stripeEl.parentNode.removeChild(stripeEl);
+            }
+            state.fromSearchContext = null;
         }
     }
 
@@ -1278,4 +1443,9 @@
     // so no separate void references are needed for them.
     void renderSearchResultList;
     void onSearchResultClick;
+    // Story 10.4 — renderFromSearchStripe is invoked by init() when the
+    // bootstrap context carries fromSearchQuery; the void reference is
+    // defensive against tree-shaking analyzers that may not trace dynamic
+    // dispatch through the closure-scoped delegation.
+    void renderFromSearchStripe;
 })();

@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-05-02
-last_updated: 2026-05-07 (Story 10.3 review — click-through capture + navigation; 9/9 ACs PASS; regression 390/390/0)
+last_updated: 2026-05-07 (Story 10.4 done — sa-from-search-stripe + Inspection-side FROM_SEARCH handling; 10/10 ACs PASS; 1 MEDIUM auto-fixed in review (F-1 transport-failure context-drain); 2 LOW deferred; regression 394/394/0)
 project: iris-session-agent
 # Epic 1 complete (retro 2026-05-02); Epic 2 retrospective triage gate (Story 2.0) 2026-05-03
 project_key: NOKEY
@@ -141,7 +141,7 @@ development_status:
   10-1-ensportal-messageviewer-subclass-chat-tab-zenmethod-wiring: done
   10-2-search-agent-ui-rendering-sa-search-result-entry-curated-list: done
   10-3-click-through-capture-navigation-to-visual-trace: done
-  10-4-sa-from-search-stripe-inspection-side-from-search-handling: backlog
+  10-4-sa-from-search-stripe-inspection-side-from-search-handling: done
   10-5-sa-concurrent-tab-banner-non-modal-banner: backlog
   10-6-purgestalesearchchat-uservocabularydecay-sweep-tasks: backlog
   10-7-vendored-markdown-bundle-chat-panel-js-growth-tier-render-upgrade: backlog

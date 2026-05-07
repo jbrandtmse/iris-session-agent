@@ -1302,3 +1302,19 @@ This file accumulates findings, follow-ups, and architect-decision items that ar
   - **Blocking?** Not blocking — eventual pass on retry maintains the documented contract; sequential per-class invocation per `object-script-testing.md` §"MCP iris_execute_tests Truncation Workaround" continues to sidestep the flake during normal cycle operations.
   - **Triage 2026-05-07 (Story 10.2 review): retry path matches Story 10.0 AI-5 umbrella entry's documented behavior; rate worse than documented but eventually passes; logged as a data-point update on the existing umbrella entry.**
 
+
+## Deferred from: code review of story 10-4 (2026-05-07)
+
+- **F-2 — `TestVisualTracePropertyFromSearchKeyExists` does not assert ZENURL parameter value**
+  - **File / line:** `src/SessionAgent/Test/FromSearchStripeTest.cls:139`
+  - **Severity:** LOW
+  - **Predicted-bug shape:** None (no carrier required). The test asserts `Type='%ZEN.Datatype.string'` but not the `ZENURL = "FROM_SEARCH"` parameter value. A regression that drops `ZENURL` would pass this test silently — however, the AC-10 live-integration HTTP-fetch empirically verifies the URL binding (verbatim bootstrap line `fromSearchKey: "sa-test-104-key"` reaching the page).
+  - **Justification (Rule 8 test 3):** Pure cosmetic — the empirical AC-10 evidence covers the load-bearing invariant, this is a test-thinness observation only.
+  - **Future-story:** Add a `%Dictionary.ParameterDefinition` cross-walk if a sweep over ZENURL-bound properties is ever scoped.
+
+- **F-3 — Privacy-isolation intent (PortalUser-scoped lookup) is implicit, not documented in Dev Notes**
+  - **File / line:** `src/SessionAgent/EnsPortal/VisualTrace.cls:259` (the `Chat.History.ConvKeyIdxOpen("message-search", ..fromSearchKey, tPortalUser, 0)` call site)
+  - **Severity:** LOW
+  - **Predicted-bug shape:** None. The behavior is correct (PortalUser-scoped lookup means an operator can only inherit from their own search-session row — a privileged operator cannot impersonate via URL param because the row does not exist for their PortalUser).
+  - **Justification (Rule 8 test 3):** Pure cosmetic — the doc-comment / Dev Notes do not call out the privacy-isolation design intent. Behavior is correct as shipped.
+  - **Future-story:** Doc-pass cleanup; add a privacy-isolation note to the `VisualTrace.fromSearchKey` property doc-comment.

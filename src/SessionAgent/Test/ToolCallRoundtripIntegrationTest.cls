@@ -339,6 +339,12 @@ ClassMethod BuildMinimalToolArgs(pToolName As %String) As %String
     ; Synthetic prefilter_value returns 0 candidates → 0 matches success
     ; envelope; canonical envelope shape exercised on the round-trip.
     If pToolName = "inspect_body_candidates" Quit "{""pattern"":""synthetic-no-match-pattern-86"",""prefilter_indexed_column"":""Status"",""prefilter_value"":""Synthetic.NoMatch.Status""}"
+    ; Story 8.7 — vocab_lookup list mode against the matrix tester
+    ; PortalUser. The Registry.Dispatch caller-context populates
+    ; PortalUser from the running tool-call session; mode='list'
+    ; returns the user's saved vocabulary (or count=0 / empty array
+    ; on a fresh tester) — success envelope shape.
+    If pToolName = "vocab_lookup" Quit "{""mode"":""list""}"
     ; Unknown tool — empty object. Will produce a tool-error envelope but
     ; the dispatch round-trip still happens.
     Quit "{}"
@@ -710,15 +716,17 @@ ClassMethod RunMatrix() As %DynamicObject
 /// 4 × 13 = 52 for Epic 5; Story 8.3 grew the count to 4 × 19 = 76
 /// (13 inspection + 6 search); Story 8.4 grew it to 4 × 20 = 80
 /// (13 inspection + 7 search); Story 8.5 grew it to 4 × 21 = 84
-/// (13 inspection + 8 search); Story 8.6 grows it to 4 × 22 = 88
-/// (13 inspection + 9 search). When a 5th provider or 23rd tool is
-/// added, this assertion auto-fails so the maintainer updates the
-/// expected count + acknowledges the matrix grew. Defensive against
-/// silent shrinkage too (a regression deleting a tool).</p>
+/// (13 inspection + 8 search); Story 8.6 grew it to 4 × 22 = 88
+/// (13 inspection + 9 search); Story 8.7 grows it to 4 × 23 = 92
+/// (13 inspection + 10 search — closes the Epic 8 acceptance gate).
+/// When a 5th provider or 24th tool is added, this assertion
+/// auto-fails so the maintainer updates the expected count +
+/// acknowledges the matrix grew. Defensive against silent shrinkage
+/// too (a regression deleting a tool).</p>
 Method TestMatrixCardinalityIs52()
 {
     Set tMatrix = ..EnumerateMatrix()
-    Do $$$AssertEquals(tMatrix.%Size(), 88, "Matrix cardinality at Story 8.6 close = 4 providers × 22 tools (13 inspection + 9 search) = 88 pairs (got: " _ tMatrix.%Size() _ ")")
+    Do $$$AssertEquals(tMatrix.%Size(), 92, "Matrix cardinality at Story 8.7 close = 4 providers × 23 tools (13 inspection + 10 search) = 92 pairs (got: " _ tMatrix.%Size() _ ")")
 }
 
 /// <p><b>AC-5 — Dispatch policy gate.</b> Structurally verify that every

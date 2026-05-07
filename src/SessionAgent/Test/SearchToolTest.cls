@@ -1201,4 +1201,371 @@ Method TestInspectBodyCandidatesGracefulBodyError()
     Quit
 }
 
+/// <p>Story 8.7 — VocabLookup test scaffolding. Each vocab test uses the
+/// <code>"vocab-tester"</code> portal user (distinct from the default
+/// <code>"tester"</code> from <method>BuildCtx</method>) so the
+/// per-test fixture is isolated from any production UserVocabulary
+/// rows that may exist for the default test user. Pre-test cleanup
+/// sweeps any prior-run debris for that PortalUser.</p>
+Parameter VOCABTESTUSER As %String = "vocab-tester";
+
+/// <p>Build a CallerContext stub with the vocab-test PortalUser.</p>
+ClassMethod BuildVocabCtx() As SessionAgent.Agent.CallerContext
+{
+    Set tCtx = ##class(SessionAgent.Agent.CallerContext).%New()
+    Set tCtx.AgentName = "message-search"
+    Set tCtx.PortalUser = ..#VOCABTESTUSER
+    Set tCtx.Namespace = $NAMESPACE
+    Quit tCtx
+}
+
+/// <p>Sweep all UserVocabulary rows for the vocab-test PortalUser. Used
+/// in pre-test setup AND post-test cleanup for every vocab test so
+/// independent test runs do not see stale fixture state.</p>
+ClassMethod CleanVocabFixture()
+{
+    Set tStmt = ##class(%SQL.Statement).%New()
+    If $$$ISOK(tStmt.%Prepare("DELETE FROM SessionAgent_Search.UserVocabulary WHERE %EXACT(PortalUser) = ?")) {
+        Do tStmt.%Execute(..#VOCABTESTUSER)
+    }
+    Quit
+}
+
+/// <p>Story 8.7 AC-11 #1 — mode='list' against an empty UserVocabulary
+/// for the vocab-test PortalUser returns <code>count=0</code> and an
+/// empty <code>vocabulary:[]</code> array.</p>
+Method TestVocabLookupListEmpty()
+{
+    Do ..CleanVocabFixture()
+    Set tCtx = ..BuildVocabCtx()
+    Set tArgs = {"mode": "list"}
+    Set tResult = ""
+    Set tSC = ##class(SessionAgent.Tool.Search.VocabLookup).Invoke(tCtx, tArgs, .tResult)
+    Do $$$AssertStatusOK(tSC, "VocabLookup mode=list returns $$$OK")
+    Do $$$AssertEquals(+tResult.%Get("isError"), 0, "list mode (empty fixture) is success envelope")
+    Do $$$AssertEquals(tResult.structuredContent.%Get("mode"), "list", "structuredContent.mode = list")
+    Do $$$AssertEquals(tResult.structuredContent.%Get("portal_user"), ..#VOCABTESTUSER, "portal_user echoed")
+    Do $$$AssertEquals(+tResult.structuredContent.%Get("count"), 0, "count = 0 on empty fixture")
+    Do $$$AssertEquals(tResult.structuredContent.%Get("vocabulary").%Size(), 0, "vocabulary array is empty")
+    Do $$$AssertEquals(tResult.structuredContent.%Get("indexed_lead_column"), "PortalUser", "indexed_lead_column = PortalUser")
+    Do ..CleanVocabFixture()
+    Quit
+}
+
+/// <p>Story 8.7 AC-11 #2 — mode='save' on an empty fixture creates a
+/// new UserVocabulary row with <code>SuccessCount=1</code>,
+/// <code>Confidence=0</code>, <code>CreatedVia="explicit"</code>;
+/// envelope <code>action="created"</code>.</p>
+Method TestVocabLookupSaveCreatesRow()
+{
+    Do ..CleanVocabFixture()
+    Set tCtx = ..BuildVocabCtx()
+    Set tArgs = {"mode": "save", "alias": "failed admits", "description": "sessions where Status='Error' and source has 'A01'"}
+    Set tResult = ""
+    Set tSC = ##class(SessionAgent.Tool.Search.VocabLookup).Invoke(tCtx, tArgs, .tResult)
+    Do $$$AssertStatusOK(tSC, "VocabLookup mode=save returns $$$OK")
+    Do $$$AssertEquals(+tResult.%Get("isError"), 0, "save mode (new row) is success envelope")
+    Do $$$AssertEquals(tResult.structuredContent.%Get("mode"), "save", "structuredContent.mode = save")
+    Do $$$AssertEquals(tResult.structuredContent.%Get("action"), "created", "action = created on new row")
+    Do $$$AssertEquals(+tResult.structuredContent.%Get("new_success_count"), 1, "new_success_count = 1 on first save")
+    Do $$$AssertEquals(tResult.structuredContent.%Get("alias"), "failed admits", "alias echoed")
+
+    ; Verify DB state — exactly 1 row exists with the expected shape.
+    Set tProbe = ##class(%SQL.Statement).%New()
+    Do tProbe.%Prepare("SELECT COUNT(*) AS c, MAX(SuccessCount) AS sc, MAX(Confidence) AS cf, MAX(%EXACT(CreatedVia)) AS cv FROM SessionAgent_Search.UserVocabulary WHERE %EXACT(PortalUser) = ? AND %EXACT(Alias) = ?")
+    Set tRs = tProbe.%Execute(..#VOCABTESTUSER, "failed admits")
+    Do tRs.%Next()
+    Do $$$AssertEquals(+tRs.%Get("c"), 1, "exactly 1 UserVocabulary row exists for the saved alias")
+    Do $$$AssertEquals(+tRs.%Get("sc"), 1, "DB SuccessCount = 1")
+    Do $$$AssertEquals(+tRs.%Get("cf"), 0, "DB Confidence = 0 (Epic 9 Story 9.2 will recompute)")
+    Do $$$AssertEquals(tRs.%Get("cv"), "explicit", "DB CreatedVia = explicit")
+    Do ..CleanVocabFixture()
+    Quit
+}
+
+/// <p>Story 8.7 AC-11 #3 — mode='save' on a fixture that already has
+/// the same <code>(PortalUser, Alias, MessageBodyClass)</code> triple
+/// increments <code>SuccessCount</code> from 1 to 2; envelope
+/// <code>action="incremented"</code>; DB still has only 1 row.</p>
+Method TestVocabLookupSaveIncrementsExistingRow()
+{
+    Do ..CleanVocabFixture()
+
+    ; Seed an existing row directly via the OREF API so the second
+    ; save's increment path is exercised.
+    Set tSeed = ##class(SessionAgent.Search.UserVocabulary).%New()
+    Set tSeed.PortalUser = ..#VOCABTESTUSER
+    Set tSeed.Alias = "completed orders"
+    Set tSeed.MessageBodyClass = ""
+    Set tSeed.SuccessCount = 1
+    Set tSeed.FailureCount = 0
+    Set tSeed.Confidence = 0
+    Set tSeed.CreatedVia = "explicit"
+    Set tSeed.CreatedAt = "2026-05-07T00:00:00Z"
+    Set tSeed.LastUsed = "2026-05-07T00:00:00Z"
+    Do $$$AssertStatusOK(tSeed.%Save(), "seed UserVocabulary row saved")
+
+    Set tCtx = ..BuildVocabCtx()
+    Set tArgs = {"mode": "save", "alias": "completed orders"}
+    Set tResult = ""
+    Set tSC = ##class(SessionAgent.Tool.Search.VocabLookup).Invoke(tCtx, tArgs, .tResult)
+    Do $$$AssertStatusOK(tSC, "VocabLookup mode=save (increment path) returns $$$OK")
+    Do $$$AssertEquals(+tResult.%Get("isError"), 0, "save mode (existing row) is success envelope")
+    Do $$$AssertEquals(tResult.structuredContent.%Get("action"), "incremented", "action = incremented on existing row")
+    Do $$$AssertEquals(+tResult.structuredContent.%Get("new_success_count"), 2, "new_success_count = 2 after increment")
+
+    ; Verify DB still has only 1 row (idempotent — the IS NULL composite-key
+    ; probe matched the seeded row).
+    Set tProbe = ##class(%SQL.Statement).%New()
+    Do tProbe.%Prepare("SELECT COUNT(*) AS c, MAX(SuccessCount) AS sc FROM SessionAgent_Search.UserVocabulary WHERE %EXACT(PortalUser) = ? AND %EXACT(Alias) = ?")
+    Set tRs = tProbe.%Execute(..#VOCABTESTUSER, "completed orders")
+    Do tRs.%Next()
+    Do $$$AssertEquals(+tRs.%Get("c"), 1, "still exactly 1 UserVocabulary row (idempotent — IS NULL composite-key probe matched the seeded row)")
+    Do $$$AssertEquals(+tRs.%Get("sc"), 2, "DB SuccessCount = 2 after increment")
+    Do ..CleanVocabFixture()
+    Quit
+}
+
+/// <p>Story 8.7 AC-11 #4 — mode='search' with substring pattern
+/// <code>"ed"</code> against 3 seeded rows
+/// (<code>"failed admits"</code>, <code>"completed orders"</code>,
+/// <code>"errored discharges"</code>) returns all 3 matches (substring
+/// <code>"ed"</code> appears in <code>fail<b>ed</b></code>,
+/// <code>complet<b>ed</b></code>, <code><b>e</b>rror<b>ed</b></code>).</p>
+Method TestVocabLookupSearchSubstringMatch()
+{
+    Do ..CleanVocabFixture()
+
+    For tAlias = "failed admits", "completed orders", "errored discharges" {
+        Set tRow = ##class(SessionAgent.Search.UserVocabulary).%New()
+        Set tRow.PortalUser = ..#VOCABTESTUSER
+        Set tRow.Alias = tAlias
+        Set tRow.MessageBodyClass = ""
+        Set tRow.SuccessCount = 1
+        Set tRow.FailureCount = 0
+        Set tRow.Confidence = 0
+        Set tRow.CreatedVia = "explicit"
+        Set tRow.CreatedAt = "2026-05-07T00:00:00Z"
+        Set tRow.LastUsed = "2026-05-07T00:00:00Z"
+        Do $$$AssertStatusOK(tRow.%Save(), "seed UserVocabulary row '" _ tAlias _ "' saved")
+    }
+
+    Set tCtx = ..BuildVocabCtx()
+    Set tArgs = {"mode": "search", "alias": "ed"}
+    Set tResult = ""
+    Set tSC = ##class(SessionAgent.Tool.Search.VocabLookup).Invoke(tCtx, tArgs, .tResult)
+    Do $$$AssertStatusOK(tSC, "VocabLookup mode=search returns $$$OK")
+    Do $$$AssertEquals(+tResult.%Get("isError"), 0, "search mode is success envelope")
+    Do $$$AssertEquals(tResult.structuredContent.%Get("mode"), "search", "structuredContent.mode = search")
+    Do $$$AssertEquals(tResult.structuredContent.%Get("alias_pattern"), "ed", "alias_pattern echoed")
+    Do $$$AssertEquals(+tResult.structuredContent.%Get("count"), 3, "count = 3 (all 3 seeded rows match substring 'ed')")
+    Do $$$AssertEquals(tResult.structuredContent.%Get("matches").%Size(), 3, "matches array has 3 entries")
+
+    ; Verify each expected alias appears in the matches list.
+    Set tFoundFailed = 0, tFoundCompleted = 0, tFoundErrored = 0
+    Set tIter = tResult.structuredContent.%Get("matches").%GetIterator()
+    While tIter.%GetNext(.tKey, .tEntry) {
+        Set tA = tEntry.%Get("alias")
+        If tA = "failed admits" Set tFoundFailed = 1
+        If tA = "completed orders" Set tFoundCompleted = 1
+        If tA = "errored discharges" Set tFoundErrored = 1
+    }
+    Do $$$AssertTrue(tFoundFailed, "'failed admits' present in matches")
+    Do $$$AssertTrue(tFoundCompleted, "'completed orders' present in matches")
+    Do $$$AssertTrue(tFoundErrored, "'errored discharges' present in matches")
+    Do ..CleanVocabFixture()
+    Quit
+}
+
+/// <p>Story 8.7 review-fix HIGH — regression guard for the
+/// <code>(PortalUser, Alias)</code> pair-unique probe. A second save
+/// with the SAME alias but a DIFFERENT MessageBodyClass MUST NOT
+/// trigger a unique-constraint violation — the implementation matches
+/// the schema's pair-unique index by probing on the pair (NOT the
+/// triple including MessageBodyClass) and updating MessageBodyClass
+/// on the existing row when the operator supplies a new value.</p>
+Method TestVocabLookupSaveDifferentBodyClassUpdatesExistingRow()
+{
+    Do ..CleanVocabFixture()
+
+    ; First save — with empty MessageBodyClass.
+    Set tCtx = ..BuildVocabCtx()
+    Set tArgs = {"mode": "save", "alias": "ED visit", "message_body_class": ""}
+    Set tResult = ""
+    Set tSC = ##class(SessionAgent.Tool.Search.VocabLookup).Invoke(tCtx, tArgs, .tResult)
+    Do $$$AssertStatusOK(tSC, "first save returns $$$OK")
+    Do $$$AssertEquals(tResult.structuredContent.%Get("action"), "created", "first save action = created")
+
+    ; Second save — same (PortalUser, Alias) but DIFFERENT MessageBodyClass.
+    ; Schema's UserAliasIdx is unique on (PortalUser, Alias) only, so the
+    ; pair-probe correctly matches the existing row and increments rather
+    ; than attempting an INSERT that would fail uniqueness.
+    Set tArgs2 = {"mode": "save", "alias": "ED visit", "message_body_class": "EnsLib.HL7.Message"}
+    Set tResult2 = ""
+    Set tSC2 = ##class(SessionAgent.Tool.Search.VocabLookup).Invoke(tCtx, tArgs2, .tResult2)
+    Do $$$AssertStatusOK(tSC2, "second save (different body_class) returns $$$OK")
+    Do $$$AssertEquals(+tResult2.%Get("isError"), 0, "second save is success envelope (not unique-violation error)")
+    Do $$$AssertEquals(tResult2.structuredContent.%Get("action"), "incremented", "action = incremented (not created or error)")
+    Do $$$AssertEquals(+tResult2.structuredContent.%Get("new_success_count"), 2, "new_success_count = 2 after pair-match increment")
+
+    ; Verify DB — still exactly 1 row, MessageBodyClass updated.
+    Set tProbe = ##class(%SQL.Statement).%New()
+    Do tProbe.%Prepare("SELECT COUNT(*) AS c, MAX(%EXACT(MessageBodyClass)) AS bc, MAX(SuccessCount) AS sc FROM SessionAgent_Search.UserVocabulary WHERE %EXACT(PortalUser) = ? AND %EXACT(Alias) = ?")
+    Set tRs = tProbe.%Execute(..#VOCABTESTUSER, "ED visit")
+    Do tRs.%Next()
+    Do $$$AssertEquals(+tRs.%Get("c"), 1, "still exactly 1 UserVocabulary row (pair-unique constraint preserved)")
+    Do $$$AssertEquals(tRs.%Get("bc"), "EnsLib.HL7.Message", "MessageBodyClass updated to operator's new value")
+    Do $$$AssertEquals(+tRs.%Get("sc"), 2, "DB SuccessCount = 2 after increment")
+    Do ..CleanVocabFixture()
+    Quit
+}
+
+/// <p>Story 8.7 review-fix MEDIUM — operator-supplied <code>limit</code>
+/// in list mode is honored (capped at 200). Seeds 5 rows; invokes
+/// list with <code>limit=3</code>; asserts exactly 3 rows returned.</p>
+Method TestVocabLookupListLimitParameterRespected()
+{
+    Do ..CleanVocabFixture()
+
+    For tAlias = "alpha 1", "beta 2", "gamma 3", "delta 4", "epsilon 5" {
+        Set tRow = ##class(SessionAgent.Search.UserVocabulary).%New()
+        Set tRow.PortalUser = ..#VOCABTESTUSER
+        Set tRow.Alias = tAlias
+        Set tRow.MessageBodyClass = ""
+        Set tRow.SuccessCount = 1
+        Set tRow.FailureCount = 0
+        Set tRow.Confidence = 0
+        Set tRow.CreatedVia = "explicit"
+        Set tRow.CreatedAt = "2026-05-07T00:00:00Z"
+        Set tRow.LastUsed = "2026-05-07T00:00:00Z"
+        Do $$$AssertStatusOK(tRow.%Save(), "seed row '" _ tAlias _ "' saved")
+    }
+
+    Set tCtx = ..BuildVocabCtx()
+    Set tArgs = {"mode": "list", "limit": 3}
+    Set tResult = ""
+    Set tSC = ##class(SessionAgent.Tool.Search.VocabLookup).Invoke(tCtx, tArgs, .tResult)
+    Do $$$AssertStatusOK(tSC, "list mode with limit=3 returns $$$OK")
+    Do $$$AssertEquals(+tResult.%Get("isError"), 0, "list mode is success envelope")
+    Do $$$AssertEquals(+tResult.structuredContent.%Get("count"), 3, "exactly 3 rows returned (limit honored)")
+    Do $$$AssertEquals(tResult.structuredContent.%Get("vocabulary").%Size(), 3, "vocabulary array has 3 entries")
+    Do ..CleanVocabFixture()
+    Quit
+}
+
+/// <p>Story 8.7 AC-8 — comprehensive L1 read-only invariant test.
+/// Discovers every concrete <CLASS>SessionAgent.Tool.Search.*</CLASS>
+/// subclass (excluding test fixtures) via the same query
+/// <CLASS>SessionAgent.Test.BoundedWhereInvariantTest</CLASS> uses; for
+/// each, asserts the compiled <code>MutatesState</code> parameter
+/// equals 0. Locks NFR-S1 Layer 1 enforcement at the search-agent
+/// surface — a future author who flips the flag (e.g., to allow a
+/// future write-tool) gets a CI failure here.</p>
+///
+/// <p><b>Expected total — 10 tools:</b> 8 indexed-access search tools
+/// (search_by_time/status/source/target/message_class/session/super_session/body_field)
+/// + inspect_body_candidates + vocab_lookup. Closes the Epic 8
+/// acceptance gate (AC-15).</p>
+Method TestAllSearchToolsAreReadOnly()
+{
+    Set tStmt = ##class(%SQL.Statement).%New()
+    Set tSC = tStmt.%Prepare("SELECT %EXACT(Name) AS ClassName FROM %Dictionary.ClassDefinition WHERE %EXACT(Super) = 'SessionAgent.Tool.Search.Base' AND Abstract = 0 AND NOT (%EXACT(Name) %STARTSWITH 'SessionAgent.Test.') ORDER BY %EXACT(Name)")
+    Do $$$AssertStatusOK(tSC, "search-tool discovery query prepared")
+    Set tRs = tStmt.%Execute()
+    Set tCount = 0
+    Set tWriteTools = ""
+    While tRs.%Next() {
+        Set tClassName = tRs.%Get("ClassName")
+        Set tCount = tCount + 1
+        Set tParam = ##class(%Dictionary.ParameterDefinition).%OpenId(tClassName _ "||MutatesState")
+        Do $$$AssertTrue($IsObject(tParam), tClassName _ " has MutatesState parameter row")
+        Do $$$AssertEquals(+tParam.Default, 0, tClassName _ " MutatesState=0 (NFR-S1 L1 read-only invariant)")
+        If +tParam.Default = 1 Set tWriteTools = tWriteTools _ tClassName _ ", "
+    }
+    Do $$$AssertEquals(tCount, 10, "exactly 10 production search tools registered (Epic 8 acceptance gate)")
+    Do $$$AssertEquals(tWriteTools, "", "no write-capable search tool present (read-only contract)")
+    Quit
+}
+
+/// <p>Story 8.7 AC-9 — comprehensive envelope-shape iteration. For each
+/// of the 10 production search tools, build a representative input,
+/// invoke, and assert the result is either a structured success
+/// envelope (<code>structuredContent</code> present) OR a structured
+/// error envelope (<code>isError:1</code> + <code>content[0].text</code>).
+/// NEVER an unstructured ObjectScript exception.</p>
+Method TestAllSearchToolsReturnValidEnvelopes()
+{
+    Set tCtx = ..BuildVocabCtx()
+    Set tStmt = ##class(%SQL.Statement).%New()
+    Set tSC = tStmt.%Prepare("SELECT %EXACT(Name) AS ClassName FROM %Dictionary.ClassDefinition WHERE %EXACT(Super) = 'SessionAgent.Tool.Search.Base' AND Abstract = 0 AND NOT (%EXACT(Name) %STARTSWITH 'SessionAgent.Test.') ORDER BY %EXACT(Name)")
+    Do $$$AssertStatusOK(tSC, "search-tool discovery query prepared")
+    Set tRs = tStmt.%Execute()
+    Set tCount = 0
+    While tRs.%Next() {
+        Set tClassName = tRs.%Get("ClassName")
+        Set tToolName = ##class(SessionAgent.Tool.Registry).GetParameterValue(tClassName, "ToolName")
+        Set tArgs = ..BuildRepresentativeVocabArgs(tToolName)
+        Set tResult = ""
+        Set tToolSC = $ClassMethod(tClassName, "Invoke", tCtx, tArgs, .tResult)
+        Do $$$AssertStatusOK(tToolSC, tClassName _ ".Invoke returns $$$OK (envelope-based error contract)")
+        Do $$$AssertTrue($IsObject(tResult), tClassName _ ": pResult populated as %DynamicObject")
+        Do $$$AssertTrue($IsObject(tResult.content), tClassName _ ": content array present")
+        Do $$$AssertTrue(tResult.content.%Size() >= 1, tClassName _ ": content has at least one entry")
+        ; Either structured success (structuredContent present) OR structured error (isError=1).
+        Set tIsError = +tResult.%Get("isError")
+        If tIsError = 1 {
+            Do $$$AssertTrue(tResult.content.%Get(0).%IsDefined("text"), tClassName _ ": error envelope content[0].text present")
+        } Else {
+            Do $$$AssertTrue($IsObject(tResult.structuredContent), tClassName _ ": success envelope has structuredContent")
+        }
+        Set tCount = tCount + 1
+    }
+    Do $$$AssertEquals(tCount, 10, "exactly 10 production search tools iterated (Epic 8 acceptance gate)")
+    Quit
+}
+
+/// <p>Build representative input args for the comprehensive envelope-shape
+/// iteration test. Uses synthetic / no-match values so the tools either
+/// return empty result sets (success envelope) or structured-error
+/// envelopes — both acceptable shapes for the iteration. No fixture
+/// seeding required.</p>
+ClassMethod BuildRepresentativeVocabArgs(pToolName As %String) As %DynamicObject
+{
+    Set tArgs = {}
+    If pToolName = "search_by_time" {
+        Do tArgs.%Set("limit", 5, "number")
+    } ElseIf pToolName = "search_by_status" {
+        Set tStatusArr = ##class(%DynamicArray).%New()
+        Do tStatusArr.%Push("Error")
+        Do tArgs.%Set("status_in", tStatusArr)
+        Do tArgs.%Set("limit", 5, "number")
+    } ElseIf pToolName = "search_by_source" {
+        Do tArgs.%Set("source_config_name", "SyntheticTestSrc_NoMatch")
+        Do tArgs.%Set("limit", 5, "number")
+    } ElseIf pToolName = "search_by_target" {
+        Do tArgs.%Set("target_config_name", "SyntheticTestTgt_NoMatch")
+        Do tArgs.%Set("limit", 5, "number")
+    } ElseIf pToolName = "search_by_message_class" {
+        Do tArgs.%Set("message_body_class_name", "Synthetic.NoMatch.Msg")
+        Do tArgs.%Set("limit", 5, "number")
+    } ElseIf pToolName = "search_by_session" {
+        Do tArgs.%Set("session_id", "9799911")
+    } ElseIf pToolName = "search_by_super_session" {
+        Do tArgs.%Set("super_session_key", "Synthetic.NoMatch.SuperSession")
+        Do tArgs.%Set("limit", 5, "number")
+    } ElseIf pToolName = "search_by_body_field" {
+        Do tArgs.%Set("search_table_class", "Synthetic.NoMatch.SearchTable")
+        Do tArgs.%Set("prop_name", "MRN")
+        Do tArgs.%Set("prop_value", "synthetic-no-match-12345")
+        Do tArgs.%Set("limit", 5, "number")
+    } ElseIf pToolName = "inspect_body_candidates" {
+        Do tArgs.%Set("pattern", "synthetic-no-match-pattern-87")
+        Do tArgs.%Set("prefilter_indexed_column", "Status")
+        Do tArgs.%Set("prefilter_value", "Synthetic.NoMatch.Status")
+    } ElseIf pToolName = "vocab_lookup" {
+        Do tArgs.%Set("mode", "list")
+    }
+    Quit tArgs
+}
+
 }

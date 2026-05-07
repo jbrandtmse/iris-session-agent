@@ -1124,3 +1124,33 @@ This file accumulates findings, follow-ups, and architect-decision items that ar
   - **Recommendation when picked up:** Display-name-translate when `prefilter_indexed_column="Status"` (e.g., `Status='Error'` instead of `Status='8'`). The translation table is already implemented in [`SearchByStatus.cls`](../../src/SessionAgent/Tool/Search/SearchByStatus.cls) `StatusDisplayToCode` (could lift to a shared helper, or inline the inverse map in `InspectBodyCandidates`).
   - **Owner:** Story 8.7 (Epic 8 closer) or Epic 8 retrospective close-out.
   - **Blocking?** Not blocking.
+
+---
+
+## Deferred from: code review of story-8.7-vocablookup-utility-comprehensive-searchtooltest (2026-05-07)
+
+- **LOW-8.7-F01 — `VocabLookup.InvokeList` argument-array packing has a fragile dead-code shape.**
+  - **Source:** Story 8.7 code review (Blind-Hunter layer).
+  - **File:** [`src/SessionAgent/Tool/Search/VocabLookup.cls`](../../src/SessionAgent/Tool/Search/VocabLookup.cls) lines 211-220 (post-review-fix line numbers).
+  - **Severity:** LOW (no operator-observable defect — keyed-lookup mode means `tParams` is always empty in current usage; the `tArgs(2) = pPortalUser` line correctly lands `pPortalUser` at the second `?` placeholder).
+  - **Observation:** `InvokeList` initializes `tArgs(1) = tLimit` then iterates the `tParams` array (empty after `BuildBoundedWhereClause(KeyedLookupSentinel, ...)` returns) starting at index 2, then UNCONDITIONALLY sets `tArgs(2) = pPortalUser`. If `tParams` ever contained binds (e.g., a future refactor that mixes time-window mode with PortalUser binding), the iterator's first bind at index 2 would be silently overwritten by the PortalUser assignment. The `InvokeSearch` method uses an explicit numbered packing (`tArgs(1)=tLimit, tArgs(2)=pPortalUser, tArgs(3)=tPattern`) which is the cleaner pattern.
+  - **Why deferred (Rule 8 review):** Test 3 — pure cosmetic, no predicted bug shape. The current `BuildBoundedWhereClause(KeyedLookupSentinel, ...)` contract guarantees `tParams` is empty in the keyed-lookup path, so the dead-code iterator loop is functionally equivalent to a no-op. Refactoring to the explicit numbered packing would be a one-line cleanup but no operator-observable defect can be predicted from the current shape.
+  - **Recommendation when picked up:** Replace the iterator + `tArgs(2)` assignment with the explicit form used by `InvokeSearch`:
+    ```
+    Kill tArgs
+    Set tArgs(1) = tLimit
+    Set tArgs(2) = pPortalUser
+    Set tArgs = 2
+    ```
+  - **Owner:** Future cosmetic-cleanup pass; or rolls into Epic 9 vocabulary-learning enhancements (Story 9.1+) if those touch `VocabLookup.InvokeList`.
+  - **Blocking?** Not blocking.
+
+- **LOW-8.7-F02 — `vocab_lookup` invalid-mode error message renders awkward when mode is empty (`got: ''`).**
+  - **Source:** Story 8.7 code review (Edge-Case-Hunter layer).
+  - **File:** [`src/SessionAgent/Tool/Search/VocabLookup.cls`](../../src/SessionAgent/Tool/Search/VocabLookup.cls) line 212 (post-review-fix line numbers).
+  - **Severity:** LOW (no operator-observable defect — error envelope is correctly structured; only the prose is mildly awkward).
+  - **Observation:** When the operator invokes `vocab_lookup({})` with no `mode` field, the dispatch falls through to the `Else` branch that emits *"vocab_lookup mode must be one of 'list' | 'save' | 'search'; got: ''"*. The trailing `got: ''` is functionally correct but reads awkward — an operator who forgot to include `mode` would benefit from a more direct *"the 'mode' field is required"* phrasing.
+  - **Why deferred (Rule 8 review):** Test 3 — pure cosmetic, no predicted bug shape. The locked-subset JSON Schema declares `mode` as `required`, so a future MCP-side validator will reject the empty-mode request before it even reaches `Invoke`; the prose only matters for tests / direct-dispatch callers.
+  - **Recommendation when picked up:** Branch the error message: when `tMode = ""` emit *"vocab_lookup requires a 'mode' field — one of 'list' | 'save' | 'search'"*; otherwise keep the current "got: 'X'" form.
+  - **Owner:** Future cosmetic-cleanup pass.
+  - **Blocking?** Not blocking.

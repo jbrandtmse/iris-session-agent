@@ -253,7 +253,17 @@ Method TestUnboundedFixtureWouldBeRejected()
 /// <method>GetIndexedLeadColumns</method> returns
 /// <code>["PropValue"]</code> as a stable canonical placeholder
 /// (operator's per-call <code>prop_name</code> is the LOGICAL name; the
-/// PHYSICAL indexed column is always <code>PropValue</code>).</p>
+/// PHYSICAL indexed column is always <code>PropValue</code>).
+/// <code>PortalUser</code> is added for Story 8.7
+/// (<CLASS>SessionAgent.Tool.Search.VocabLookup</CLASS>) — the lead
+/// column on the <code>UserAliasIdx</code> unique index of
+/// <CLASS>SessionAgent.Search.UserVocabulary</CLASS>. vocab_lookup is
+/// the only search tool that does NOT query <code>Ens.*</code>; it
+/// queries the iris-session-agent's own per-portal-user vocabulary
+/// table, so the bounded-WHERE invariant is satisfied via the
+/// <code>PortalUser</code> keyed-lookup predicate (no
+/// <code>TimeCreated</code> window applies — vocabulary queries are
+/// user-scoped, not time-bounded).</p>
 ClassMethod BuildIndexedColumnSet(ByRef pSet)
 {
     Set pSet("TimeCreated") = 1
@@ -264,6 +274,7 @@ ClassMethod BuildIndexedColumnSet(ByRef pSet)
     Set pSet("SessionId") = 1
     Set pSet("SuperSessionKey") = 1
     Set pSet("PropValue") = 1
+    Set pSet("PortalUser") = 1
     Quit
 }
 

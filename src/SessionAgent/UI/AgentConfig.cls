@@ -431,7 +431,7 @@ ClassMethod LoadAgentConfig(pAgentName As %String) As %String [ ZenMethod ]
         Do tObj.%Set("EndpointUrl", "")
         Do tObj.%Set("EnvVarName", "OPENAI_API_KEY")
         Do tObj.%Set("CredentialName", "")
-        Do tObj.%Set("MaxTokens", 4000)
+        Do tObj.%Set("MaxTokens", 32000)
         Do tObj.%Set("Temperature", 0.1)
         Do tObj.%Set("SystemPromptOverride", "")
         Do tObj.%Set("Enabled", 0)
@@ -523,7 +523,7 @@ ClientMethod loadAgent() [ Language = javascript ]
     zen('endpointUrlText').setValue(data.EndpointUrl || '');
     zen('envVarText').setValue(data.EnvVarName || '');
     zen('credCombo').setValue(data.CredentialName || '');
-    zen('maxTokensText').setValue(data.MaxTokens || 4000);
+    zen('maxTokensText').setValue(data.MaxTokens || 32000);
     zen('temperatureText').setValue(data.Temperature || 0.1);
     zen('systemPromptText').setValue(data.SystemPromptOverride || '');
     zen('enabledCheck').setValue(data.Enabled ? 1 : 0);
@@ -625,6 +625,36 @@ ClientMethod providerChanged() [ Language = javascript ]
             }
             if (newDefault !== current) {
                 envVar.setValue(newDefault);
+            }
+        }
+    }
+
+    // Provider-aware MaxTokens auto-suggest. The 2026-05-06 manual-test
+    // pass surfaced that the legacy 4096 default (a holdover from
+    // Ollama-class limits) is far too small for hyperscalers — gpt-4.1,
+    // claude-sonnet-4-5, and gemini-2.5-pro routinely emit 16k+ tokens
+    // for tool-call-heavy multi-turn answers, and 4096 silently truncates
+    // mid-response. Bump to 32000 for hyperscalers (matches the AC-1
+    // validation cap exactly) and keep 4096 for openai-compatible
+    // (Ollama / vLLM are typically deployed on smaller models with
+    // tighter output budgets). Same stale-canonical guard pattern as
+    // EnvVarName above — operator-typed custom values (e.g., 8192,
+    // 16384) survive a provider switch.
+    var maxTokensField = zen('maxTokensText');
+    if (maxTokensField) {
+        var currentMax = String(maxTokensField.getValue() || '');
+        var canonicalMaxDefaults = ['', '4000', '4096', '32000'];
+        var isStaleMaxCanonical = (canonicalMaxDefaults.indexOf(currentMax) >= 0);
+        if (isStaleMaxCanonical) {
+            var newMaxDefault = '';
+            switch (provider) {
+                case 'openai':            newMaxDefault = '32000'; break;
+                case 'anthropic':         newMaxDefault = '32000'; break;
+                case 'gemini':            newMaxDefault = '32000'; break;
+                case 'openai-compatible': newMaxDefault = '4096';  break;
+            }
+            if (newMaxDefault !== '' && newMaxDefault !== currentMax) {
+                maxTokensField.setValue(newMaxDefault);
             }
         }
     }

@@ -105,9 +105,12 @@ Method TestLoadAgentConfigEmptyForUnknownAgent()
     Do $$$AssertTrue($IsObject(tObj), "Returned JSON parses to a %DynamicObject")
     Do $$$AssertEquals(tObj.%Get("found"), 0, "found=0 — unknown agent has no row")
 
-    ; Empty-defaults shape per AC-5: Provider=openai, MaxTokens=4000, etc.
+    ; Empty-defaults shape per AC-5: Provider=openai, MaxTokens=32000
+    ; (hyperscaler-class default per 2026-05-06 manual-test fix bundle —
+    ; the prior 4000 was an Ollama-tier holdover that silently truncated
+    ; long hyperscaler responses).
     Do $$$AssertEquals(tObj.%Get("Provider"), "openai", "Empty-defaults Provider=openai")
-    Do $$$AssertEquals(tObj.%Get("MaxTokens"), 4000, "Empty-defaults MaxTokens=4000")
+    Do $$$AssertEquals(tObj.%Get("MaxTokens"), 32000, "Empty-defaults MaxTokens=32000 (hyperscaler-class)")
     Do $$$AssertEquals(tObj.%Get("EnvVarName"), "OPENAI_API_KEY", "Empty-defaults EnvVarName=OPENAI_API_KEY")
     Do $$$AssertEquals(tObj.%Get("Enabled"), 0, "Empty-defaults Enabled=0")
 }

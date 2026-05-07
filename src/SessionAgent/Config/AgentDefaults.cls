@@ -80,7 +80,14 @@ ClassMethod GetSeedConfig(pAgentName As %String) As SessionAgent.Config.Agent
     Set tAgent.AgentName = pAgentName
     Set tAgent.Provider = "openai"
     Set tAgent.Model = "gpt-4.1-mini"
-    Set tAgent.MaxTokens = 4096
+    ; Hyperscaler-class default (Manual-test 2026-05-06): 4096 was an
+    ; Ollama-class holdover that silently truncated mid-response on
+    ; tool-call-heavy turns against gpt-4.1 / claude-sonnet-4-5 /
+    ; gemini-2.5-pro. 32000 matches the AC-1 form validator cap and
+    ; covers practical hyperscaler answer lengths. The Story 6.1 form's
+    ; providerChanged() handler downshifts to 4096 if the operator
+    ; switches provider to openai-compatible (Ollama / vLLM tier).
+    Set tAgent.MaxTokens = 32000
     Set tAgent.Temperature = 0.0
     Set tAgent.SystemPromptOverride = ""
     Set tAgent.CredentialName = ""

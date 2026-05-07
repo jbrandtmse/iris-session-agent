@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-05-02
-last_updated: 2026-05-06 (Story 7.0 ready-for-review — dev complete: 3 rule codifications appended (Rule 12 layout-vs-content, PAGENAME MPP5646, Property Test* shadow trap), 4 deferred-work items bound to Story 8.0, regression sweep 288/288 PASS truncation-aware / 260/260 via canonical SQL probe with empirical evidence supporting item G fragility binding)
+last_updated: 2026-05-06 (Story 7.1 ready-for-review — Task-0 probe verbatim outputs case a:SQLCODE=0 case b:SQLCODE=100; Option B Audit FK cascade selected (storage-shape %String, NFR-SC4, Topic-10 consistency); architecture.md line 994 cascade sentence appended; regression sweep 288/288 PASS via SQL ground-truth probe TestInstance 248; no .cls files modified)
 project: iris-session-agent
 # Epic 1 complete (retro 2026-05-02); Epic 2 retrospective triage gate (Story 2.0) 2026-05-03
 project_key: NOKEY
@@ -111,7 +111,7 @@ development_status:
 
   epic-7: in-progress
   7-0-epic-6-deferred-cleanup: done
-  7-1-task-0-probe-audit-fk-cascade-design: backlog
+  7-1-task-0-probe-audit-fk-cascade-design: done
   7-2-purgeorphanedchathistory-task-installer-scheduling: backlog
   7-3-1000-session-integration-test: backlog
   epic-7-retrospective: optional

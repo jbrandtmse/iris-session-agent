@@ -1318,3 +1318,33 @@ This file accumulates findings, follow-ups, and architect-decision items that ar
   - **Predicted-bug shape:** None. The behavior is correct (PortalUser-scoped lookup means an operator can only inherit from their own search-session row — a privileged operator cannot impersonate via URL param because the row does not exist for their PortalUser).
   - **Justification (Rule 8 test 3):** Pure cosmetic — the doc-comment / Dev Notes do not call out the privacy-isolation design intent. Behavior is correct as shipped.
   - **Future-story:** Doc-pass cleanup; add a privacy-isolation note to the `VisualTrace.fromSearchKey` property doc-comment.
+
+## Deferred from: code review of 10-5-sa-concurrent-tab-banner-non-modal-banner (2026-05-07)
+
+- **F-2 — `beforeunload` cleanup does not catch Zen sibling-tab switches**
+  - **File / line:** `static/chat-panel.js:271` (`window.addEventListener('beforeunload', stopLockPolling)`)
+  - **Severity:** LOW
+  - **Predicted-bug shape:** None operator-visible. When the operator clicks a sibling Zen tab (Header / Body / Trace) on the same page, `beforeunload` does NOT fire — the chat-panel JS context survives and the polling timer keeps firing every 2s while the operator is on a different tab. Banner stays in DOM but is hidden by the tab strip's CSS, so no visual leak. The next polling tick that sees `locked: false` will dismount + stop polling. Cost: ~30 server probes/min of operator-tab-switched-away-and-still-locked time.
+  - **Justification (Rule 8 test 3):** No predicted-bug shape — the polling probe is a cheap server round-trip (`ConvKeyIdxOpen` only; no external API), the recovery path is correct, the visual state remains coherent. Pure perf-hygiene observation.
+  - **Future-story:** If a Zen-tab-switch listener is added for any other reason (e.g., to pause the in-flight LLM stream), wire it into `stopLockPolling` at the same time.
+
+- **F-3 — 2s synchronous-XHR polling cadence amplifies pre-existing sync-XHR pattern**
+  - **File / line:** `static/chat-panel.js:411` (`zenPage.IsChatHistoryLocked(...)`)
+  - **Severity:** LOW
+  - **Predicted-bug shape:** None. Zen hyperevents historically use synchronous XMLHttpRequest. Modern Chrome (80+) deprecated sync-XHR with console warning; Firefox warns but still allows. The 2s polling cadence amplifies the pre-existing pattern (the existing `zenPage.SendChatMessage` and `zenPage.RecordClickThrough` use the same sync mechanism) — but only while the banner is shown (= concurrent-tab-locked state, which is rare).
+  - **Justification (Rule 8 test 3 / pre-existing):** Pre-existing project-wide pattern (every Zen hyperevent in this codebase uses sync XHR). Not a regression introduced by this story. Browser-deprecation risk is industry-wide for Zen-based portals; outside Story 10.5's scope to migrate.
+  - **Future-story:** Epic 11+ (Angular UI) replaces Zen hyperevents with modern `fetch()`-based XHR — naturally retires this pattern.
+
+- **F-4 — `LogLlmCall` audit row noise per `lock_held` retry**
+  - **File / line:** `src/SessionAgent/EnsPortal/VisualTrace.cls:603`, `src/SessionAgent/EnsPortal/MessageViewer.cls:505`
+  - **Severity:** LOW
+  - **Predicted-bug shape:** None operator-visible. Each `SendChatMessage` invocation that hits the lock_held arm emits an `Audit.LlmCall` row with `IsError=1`. If two operators rapidly retry submits while a turn holds the lock, the audit log accumulates rows of the form `"SendChatMessage exception: ERROR #5803: ..."`. The audit data is correct and useful for diagnostics; volume is bounded by operator retry-rate.
+  - **Justification (Rule 8 test 3 / pre-existing):** Pre-existing audit-emission pattern from Story 2.12 — every never-throw envelope path emits a row. Not a Story 10.5 regression.
+  - **Future-story:** If audit-row volume becomes a concern, suppress emission for the `lock_held` kind specifically (it is an operator-resolvable transient state, not a true error). Currently no operator pain reported.
+
+- **F-5 — Test class hardcoded Windows + Unix repo paths**
+  - **File / line:** `src/SessionAgent/Test/ConcurrentTabBannerTest.cls:118-127` (`LoadChatPanelJs`)
+  - **Severity:** LOW
+  - **Predicted-bug shape:** None on the canonical CI/install path. The IPM module-root resolution path (L106-115) tries first; both repo-path fallbacks (`c:\git\iris-session-agent\static\chat-panel.js` and `/git/iris-session-agent/static/chat-panel.js`) are dev-cycle conveniences. If a contributor clones to a non-canonical workspace location AND the IPM module isn't loaded, the test fails with a clear error message. CI / installed-package paths are unaffected.
+  - **Justification (Rule 8 test 3 / pre-existing):** Identical pattern to `SessionAgent.Test.ChatPanelJsTest.cls` (the precedent class this test was modeled on per the spec). Workspace-coupling is a project-wide convention; fixing it would require a project-wide refactor.
+  - **Future-story:** A test-utility helper that resolves source-file paths via `%IPM.Storage.Module` only (and skips fallbacks) — applied to all `chat-panel.js` source-text invariant tests across the project.

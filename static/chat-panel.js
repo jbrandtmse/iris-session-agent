@@ -47,7 +47,17 @@
         // set to null after the turn fires so subsequent turns don't
         // re-send the search context). Cleared by the × Dismiss handler
         // so a dismissed stripe never carries through to the chat.
-        fromSearchContext: null
+        fromSearchContext: null,
+        // Story 10.5 AC-3 / AC-4 / AC-5 — concurrent-tab lock-state
+        // polling. lockPollIntervalMs is the cadence (2 seconds per spec
+        // AC-4) at which checkLockState() re-invokes the
+        // IsChatHistoryLocked ZenMethod while the banner is visible.
+        // lockPollIntervalId is the setInterval handle; null when
+        // polling is inactive. Cleared on lock-release (banner dismount)
+        // and via beforeunload to stop the timer when the operator
+        // navigates away from the chat panel.
+        lockPollIntervalMs: 2000,
+        lockPollIntervalId: null
     };
 
     /* Citation-chip regex per AC-3 (Story 3.2) extended in Story 3.4
@@ -122,6 +132,17 @@
         'internal': function (err) {
             var msg = (err && err.message) || 'an unexpected error';
             return 'Something went wrong: ' + msg + '. See the audit log for details.';
+        },
+        // Story 10.5 AC-5 — concurrent-tab lock_held envelope. Returned
+        // by SendChatMessage when AgentLoop.RunTurn fails to acquire the
+        // Chat.History exclusive row lock (another browser tab holds it
+        // mid-conversation). The renderer (renderConcurrentTabBanner)
+        // mounts a non-modal banner above the transcript; this map entry
+        // is the textual fallback used by renderErrorBlock when the
+        // renderer cannot run for some reason. Keeps the inline error
+        // wording identical to the banner for UX consistency.
+        'lock_held': function (err) {
+            return 'Another browser tab is mid-conversation with this agent. Switch to it or wait for it to complete.';
         }
     };
 
@@ -229,6 +250,26 @@
         // prior-transcript render must complete before focus so the input
         // is the operator's natural next action.
         state.inputEl.focus();
+
+        // Story 10.5 AC-3 — concurrent-tab lock-state probe at chat-panel
+        // open. Issues an immediate IsChatHistoryLocked() ZenMethod call;
+        // if the response indicates locked === true, mounts the banner
+        // and starts the polling loop. The probe is fire-and-forget from
+        // the operator's perspective (synchronous AJAX under the hood,
+        // but the ZenMethod is fast — single ConvKeyIdxOpen probe).
+        // Typical case (no concurrent tab): probe returns
+        // {locked: false}, no banner, no polling.
+        checkLockState();
+
+        // Story 10.5 AC-4 — beforeunload cleanup. Stops the polling
+        // timer when the operator navigates away from the chat panel
+        // (page reload, tab close, navigate to another portal page).
+        // Without this the setInterval would continue firing in the
+        // background until the page is fully unloaded, which is harmless
+        // in practice but wastes cycles and pollutes the network logs.
+        if (typeof window.addEventListener === 'function') {
+            window.addEventListener('beforeunload', stopLockPolling);
+        }
     }
 
     /**
@@ -320,6 +361,181 @@
         // the panel chrome. The transcript element is a direct child of
         // .sa-chat-panel; insert the stripe as the previous sibling.
         state.transcriptEl.parentNode.insertBefore(stripe, state.transcriptEl);
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Story 10.5 — concurrent-tab banner + polling.                       */
+    /* ------------------------------------------------------------------ */
+
+    /**
+     * Story 10.5 AC-3 — server-side lock probe. Invokes the
+     * IsChatHistoryLocked ZenMethod on the host page (VisualTrace OR
+     * MessageViewer — both ship the same signature) with the bootstrap
+     * context's agentName + sessionKey. Parses the JSON envelope; if
+     * locked === true, mounts the concurrent-tab banner and starts the
+     * polling loop. If locked === false (typical case), removes the
+     * banner if present (lock just released) and stops polling.
+     *
+     * The function is invoked from THREE call sites:
+     *   1. init() — at chat-panel-open (one-shot probe).
+     *   2. The polling timer (setInterval) — every state.lockPollIntervalMs
+     *      ms while the banner is visible.
+     *   3. handleEnvelope's lock_held branch — re-probe after the user's
+     *      submit attempt failed with lock_held, to enter the polling
+     *      cycle (idempotent: if a banner already exists, no double-mount).
+     *
+     * Defensive: any throw from zenPage.IsChatHistoryLocked OR JSON.parse
+     * is swallowed so a transient probe error does NOT leave the input
+     * stuck in a disabled state. The probe will retry on the next tick.
+     */
+    function checkLockState() {
+        if (!state.context) {
+            return;
+        }
+        var agentName = state.context.agentName || '';
+        var sessionKey = state.context.sessionKey || '';
+        if (!agentName || !sessionKey) {
+            return;
+        }
+        if (typeof zenPage === 'undefined' || !zenPage || typeof zenPage.IsChatHistoryLocked !== 'function') {
+            // Story 3.6 manual smoke / non-Zen-page load: zenPage absent.
+            // Without the lock-probe ZenMethod we cannot detect lock state,
+            // so degrade gracefully — no banner, no polling. The fallback
+            // path is the AC-5 lock_held envelope from SendChatMessage,
+            // which still works for the actual concurrent-turn case.
+            return;
+        }
+
+        var responseJson;
+        try {
+            responseJson = zenPage.IsChatHistoryLocked(agentName, sessionKey);
+        } catch (e) {
+            if (typeof console !== 'undefined' && console.warn) {
+                console.warn('[chat-panel] IsChatHistoryLocked threw: ' + (e && e.message));
+            }
+            return;
+        }
+
+        var response;
+        try {
+            response = JSON.parse(responseJson);
+        } catch (parseErr) {
+            if (typeof console !== 'undefined' && console.warn) {
+                console.warn('[chat-panel] IsChatHistoryLocked returned malformed JSON: ' + responseJson);
+            }
+            return;
+        }
+
+        if (response && response.locked === true) {
+            renderConcurrentTabBanner();
+            startLockPolling();
+        } else {
+            // locked: false (or unknown) — dismount banner + stop polling.
+            // Idempotent: if banner is not present, dismissConcurrentTabBanner
+            // is a no-op.
+            dismissConcurrentTabBanner();
+        }
+    }
+
+    /**
+     * Story 10.5 AC-3 — mount the concurrent-tab banner DOM above the
+     * transcript and disable the input. Idempotent: if a banner is
+     * already present (e.g., the polling loop re-fires while the lock
+     * is still held), this is a no-op.
+     *
+     * Insertion order: ABOVE the from-search stripe (if present) per
+     * AC-3 spec — the banner is the most-prominent operator advisory
+     * and should sit at the very top of the panel chrome. Implementation:
+     * insert as the FIRST child of the transcript's parentNode (which
+     * is .sa-chat-panel).
+     *
+     * XSS-safety: createElement + textContent + setAttribute only —
+     * never innerHTML. The banner text is a fixed pre-translated string,
+     * not interpolated from any LLM or user input.
+     */
+    function renderConcurrentTabBanner() {
+        if (!state.transcriptEl || !state.transcriptEl.parentNode) {
+            return;
+        }
+        // Idempotent — bail if banner already mounted.
+        if (document.querySelector('.sa-concurrent-tab-banner')) {
+            return;
+        }
+
+        var banner = document.createElement('div');
+        banner.setAttribute('class', 'sa-concurrent-tab-banner');
+        banner.setAttribute('role', 'alert');
+        banner.setAttribute('aria-live', 'assertive');
+        banner.textContent = "Another browser tab is mid-conversation with this agent. Switch to it or wait for it to complete.";
+
+        // Insert as the FIRST child of .sa-chat-panel so the banner sits
+        // above the from-search stripe (if present) AND above the
+        // transcript. The transcript's parentNode is .sa-chat-panel.
+        var panel = state.transcriptEl.parentNode;
+        panel.insertBefore(banner, panel.firstChild);
+
+        // Disable + de-emphasize the input per AC-3.
+        if (state.inputEl) {
+            state.inputEl.setAttribute('aria-disabled', 'true');
+            state.inputEl.setAttribute('disabled', 'disabled');
+            state.inputEl.classList.add('sa-input-locked');
+        }
+    }
+
+    /**
+     * Story 10.5 AC-4 — dismount the banner DOM and re-enable the input.
+     * Also stops the polling loop (which is the natural exit when the
+     * lock has just released — no more probes needed). Idempotent: if
+     * the banner is not mounted, this is a no-op.
+     */
+    function dismissConcurrentTabBanner() {
+        var banner = document.querySelector('.sa-concurrent-tab-banner');
+        var bannerWasMounted = !!banner;
+        if (banner && banner.parentNode) {
+            banner.parentNode.removeChild(banner);
+        }
+        if (state.inputEl) {
+            state.inputEl.removeAttribute('aria-disabled');
+            state.inputEl.removeAttribute('disabled');
+            state.inputEl.classList.remove('sa-input-locked');
+        }
+        // Stop polling — the lock has released, no further probes needed.
+        stopLockPolling();
+        // AC-4 final step — re-focus the input so the operator's natural
+        // next action is to type. Only refocus if we actually transitioned
+        // out of the locked state (avoid stealing focus on initial-load
+        // unlocked path where there was nothing to dismount).
+        if (bannerWasMounted && state.inputEl && typeof state.inputEl.focus === 'function') {
+            state.inputEl.focus();
+        }
+    }
+
+    /**
+     * Story 10.5 AC-4 — start the lock-state polling timer. Idempotent:
+     * if the timer is already running, this is a no-op (avoids
+     * setInterval stacking when checkLockState is invoked re-entrantly
+     * from multiple sources — the init probe + the lock_held envelope
+     * branch both call this, and only the first call should arm the
+     * timer).
+     */
+    function startLockPolling() {
+        if (state.lockPollIntervalId !== null) {
+            return;
+        }
+        state.lockPollIntervalId = setInterval(checkLockState, state.lockPollIntervalMs);
+    }
+
+    /**
+     * Story 10.5 AC-4 — stop the lock-state polling timer. Idempotent.
+     * Called from:
+     *   1. dismissConcurrentTabBanner (lock released).
+     *   2. beforeunload (page navigation away).
+     */
+    function stopLockPolling() {
+        if (state.lockPollIntervalId !== null) {
+            clearInterval(state.lockPollIntervalId);
+            state.lockPollIntervalId = null;
+        }
     }
 
     /**
@@ -667,6 +883,19 @@
         }
 
         if (envelope && envelope.error) {
+            // Story 10.5 AC-5 — lock_held envelope from SendChatMessage
+            // means another browser tab acquired the Chat.History lock
+            // BETWEEN the page-open lock probe (which returned locked:false)
+            // and this submit attempt. Mount the banner via the same DOM
+            // path AC-3 uses + start polling (idempotent if already
+            // polling). The renderErrorBlock call STILL fires for the
+            // operator-visible error block in the transcript so the
+            // submit attempt is visibly acknowledged + has a fallback
+            // text per ERROR_KIND_TO_TEXT["lock_held"].
+            if (envelope.error.kind === 'lock_held') {
+                renderConcurrentTabBanner();
+                startLockPolling();
+            }
             renderErrorBlock(envelope.error);
             finishTurn();
             return;

@@ -217,6 +217,26 @@ ClassMethod EmitStyle() As %Status
     &html<.sa-stripe-dismiss { padding: 2px 6px; }>
     &html<.sa-stripe-accept:hover, .sa-stripe-dismiss:hover { background: var(--sa-from-search-stripe-bg, rgba(0, 102, 204, 0.12)); }>
 
+    ; --- Story 10.5 AC-6 — concurrent-tab banner + locked-input rules.
+    ; The banner is a non-modal advisory bar mounted ABOVE the chat
+    ; transcript when another browser tab holds the Chat.History
+    ; exclusive lock (FR46, UX-DR8, NFR-P4). Visual treatment: warning-
+    ; tone (amber) left border + tinted background, matches the
+    ; from-search stripe pattern from Story 10.4 AC-4. Per AC-6 all
+    ; colors reference CSS custom properties with explicit fallback
+    ; hex/rgba literals so the rules render correctly even when the
+    ; parent palette doesn't define the var (--sa-banner-warning-*
+    ; tokens are not yet in the 10-token MVP set; the var() form is
+    ; forward-compatible with Epic 10.7+ live-palette lookups).
+    ;
+    ; The .sa-input-locked rule applies opacity + cursor-not-allowed
+    ; visual de-emphasis to the input when the banner is shown — the
+    ; input is also disabled at the attribute level (chat-panel.js
+    ; setAttribute('disabled', 'disabled')), so screen readers + keyboard
+    ; users get the hard signal too.
+    &html<.sa-concurrent-tab-banner { display: flex; align-items: center; padding: 10px 12px; margin: 0 0 8px 0; border-left: 3px solid var(--sa-banner-warning-border, #d49317); background: var(--sa-banner-warning-bg, rgba(212, 147, 23, 0.10)); color: var(--sa-banner-warning-fg, #6b4a0a); font-size: 0.94em; min-height: 40px; }>
+    &html<.sa-input-locked { opacity: 0.55; cursor: not-allowed; }>
+
     &html<</style>>
     Quit $$$OK
 }

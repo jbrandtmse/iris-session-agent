@@ -481,10 +481,25 @@ ClassMethod SendChatMessage(pAgentName As %String, pSessionKey As %String, pUser
     }
     Catch ex {
         ; Never-throw contract — convert to structured error envelope.
+        ; Story 10.5 AC-2: detect IRIS lock-fail (error code 5803,
+        ; $$$LockFailedToAcquireExclusive — verified Task 0; the spec-named
+        ; $$$ERRORLOCKFAILED macro itself does not exist in this IRIS
+        ; distro) and surface a distinct error.kind = "lock_held" so
+        ; chat-panel.js renders the concurrent-tab banner via the AC-5
+        ; path. Verbatim copy from VisualTrace per the AC-2 same-body
+        ; contract.
+        Set tKind = "internal"
+        Set tMessage = "Internal error — see audit log"
+        ; Story 10.5 review fix-now (F-1): comma-boundary-anchored 5803
+        ; match — see VisualTrace.IsChatHistoryLocked for rationale.
+        If ("," _ $SYSTEM.Status.GetErrorCodes(ex.AsStatus()) _ ",") [ ",5803," {
+            Set tKind = "lock_held"
+            Set tMessage = "Another browser tab is mid-conversation with this agent."
+        }
         Set tErr = ##class(%DynamicObject).%New()
         Set tErrInner = ##class(%DynamicObject).%New()
-        Do tErrInner.%Set("kind", "internal")
-        Do tErrInner.%Set("message", "Internal error — see audit log")
+        Do tErrInner.%Set("kind", tKind)
+        Do tErrInner.%Set("message", tMessage)
         Do tErr.%Set("error", tErrInner)
         Set tEnvelope = tErr.%ToJSON()
 
@@ -495,6 +510,53 @@ ClassMethod SendChatMessage(pAgentName As %String, pSessionKey As %String, pUser
         Catch auditEx {
             ; Swallow — never-throw is the higher invariant.
         }
+    }
+    Quit tEnvelope
+}
+
+/// <p>Story 10.5 AC-1 — server-side lock probe. Invoked by
+/// <code>chat-panel.js</code>'s <code>checkLockState()</code> at chat-
+/// panel-open AND every ~2 seconds while the banner is visible. Returns
+/// a JSON envelope <code>{"locked": true|false}</code> describing whether
+/// another process currently holds the
+/// <CLASS>SessionAgent.Chat.History</CLASS> exclusive lock for the
+/// <code>(pAgentName, pSessionKey, %session.Username)</code> tuple.</p>
+///
+/// <p>Verbatim copy from
+/// <CLASS>SessionAgent.EnsPortal.VisualTrace</CLASS> — same body, same
+/// signature, so the shared <code>chat-panel.js</code> works for both
+/// host pages. See VisualTrace's IsChatHistoryLocked doc-comment for the
+/// full semantics + Task 0 finding (lock-fail error code is 5803,
+/// not the spec-named <code>$$$ERRORLOCKFAILED</code> macro which does
+/// not exist in this IRIS distro).</p>
+ClassMethod IsChatHistoryLocked(pAgentName As %String, pSessionKey As %String) As %String [ ZenMethod ]
+{
+    Set tEnvelope = ""
+    Try {
+        Set tPortalUser = ""
+        If $IsObject($Get(%session)) {
+            Set tPortalUser = %session.Username
+        }
+        If tPortalUser = "" {
+            Set tPortalUser = $Username
+        }
+
+        ; Probe lock state without holding. See VisualTrace for semantics.
+        Set tSC = $$$OK
+        Set tHist = ##class(SessionAgent.Chat.History).ConvKeyIdxOpen(pAgentName, pSessionKey, tPortalUser, 4, .tSC)
+        ; Story 10.5 review fix-now (F-1): comma-boundary-anchored 5803
+        ; match — see VisualTrace.IsChatHistoryLocked for rationale.
+        If '$IsObject(tHist) && ($$$ISERR(tSC)) && (("," _ $SYSTEM.Status.GetErrorCodes(tSC) _ ",") [ ",5803,") {
+            Set tEnvelope = "{""locked"": true}"
+            Quit
+        }
+        If $IsObject(tHist) {
+            Do tHist.%Close()
+        }
+        Set tEnvelope = "{""locked"": false}"
+    }
+    Catch ex {
+        Set tEnvelope = "{""locked"": false, ""probe_error"": " _ ##class(%DynamicObject).%New().%Set("text", ex.DisplayString()).%ToJSON() _ "}"
     }
     Quit tEnvelope
 }

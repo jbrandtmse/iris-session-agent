@@ -579,10 +579,25 @@ ClassMethod SendChatMessage(pAgentName As %String, pSessionKey As %String, pUser
     }
     Catch ex {
         ; Never-throw contract — convert to structured error envelope.
+        ; Story 10.5 AC-2: detect IRIS lock-fail (error code 5803,
+        ; $$$LockFailedToAcquireExclusive — verified Task 0; the spec-named
+        ; $$$ERRORLOCKFAILED macro itself does not exist in this IRIS
+        ; distro) and surface a distinct error.kind = "lock_held" so
+        ; chat-panel.js renders the concurrent-tab banner via the AC-5
+        ; path. The per-kind text is the same banner-equivalent message
+        ; UX-DR8 / FR46 specify.
+        Set tKind = "internal"
+        Set tMessage = "Internal error — see audit log"
+        ; Story 10.5 review fix-now (F-1): comma-boundary-anchored 5803
+        ; match — see IsChatHistoryLocked above for rationale.
+        If ("," _ $SYSTEM.Status.GetErrorCodes(ex.AsStatus()) _ ",") [ ",5803," {
+            Set tKind = "lock_held"
+            Set tMessage = "Another browser tab is mid-conversation with this agent."
+        }
         Set tErr = ##class(%DynamicObject).%New()
         Set tErrInner = ##class(%DynamicObject).%New()
-        Do tErrInner.%Set("kind", "internal")
-        Do tErrInner.%Set("message", "Internal error — see audit log")
+        Do tErrInner.%Set("kind", tKind)
+        Do tErrInner.%Set("message", tMessage)
         Do tErr.%Set("error", tErrInner)
         Set tEnvelope = tErr.%ToJSON()
 
@@ -593,6 +608,90 @@ ClassMethod SendChatMessage(pAgentName As %String, pSessionKey As %String, pUser
         Catch auditEx {
             ; Swallow — never-throw is the higher invariant.
         }
+    }
+    Quit tEnvelope
+}
+
+/// <p>Story 10.5 AC-1 — server-side lock probe. Invoked by
+/// <code>chat-panel.js</code>'s <code>checkLockState()</code> at chat-
+/// panel-open AND every ~2 seconds while the banner is visible. Returns
+/// a JSON envelope <code>{"locked": true|false}</code> describing whether
+/// another process currently holds the
+/// <CLASS>SessionAgent.Chat.History</CLASS> exclusive lock for the
+/// <code>(pAgentName, pSessionKey, %session.Username)</code> tuple.</p>
+///
+/// <p><b>Pattern (verified Story 10.5 Task 0).</b> The actual error code
+/// IRIS emits on <code>%OpenId(id, 4)</code> lock-fail is
+/// <code>5803</code> (<code>$$$LockFailedToAcquireExclusive</code> per
+/// <code>irislib/%occErrors.inc</code> line 2017). The Story 10.5 spec's
+/// reference to <code>$$$ERRORLOCKFAILED</code> is a generic stand-in
+/// for the IRIS lock-fail error code — the actual macro of that name
+/// does NOT exist in this IRIS distro. We detect via
+/// <code>$SYSTEM.Status.GetErrorCodes(tSC) [ "5803"</code> per
+/// <code>.claude/rules/iris-objectscript-basics.md</code> §"$$$ERROR* macro
+/// detection".</p>
+///
+/// <p><b>Probe semantics.</b> Try <code>ConvKeyIdxOpen(...,4,.tSC)</code>
+/// (concurrency=4 + the dictionary's auto-generated default timeout —
+/// <code>$ZU(115,4)</code>). If the OREF returns NULL with status
+/// containing 5803, another process holds the lock — emit
+/// <code>{"locked":true}</code>. Otherwise we briefly held the lock; release
+/// immediately via <code>%Close()</code> so the actual turn-holder can
+/// re-acquire when their LoadOrCreate fires next. Emit <code>{"locked":false}</code>.</p>
+///
+/// <p><b>Defensive Catch.</b> Probe failure is treated as
+/// <code>locked: false</code> so the banner doesn't false-positive into a
+/// stuck state. Operator can still attempt a turn; if a real lock IS held,
+/// <method>SendChatMessage</method> will surface it via the structured-
+/// error path (AC-2 — <code>error.kind = "lock_held"</code>).</p>
+ClassMethod IsChatHistoryLocked(pAgentName As %String, pSessionKey As %String) As %String [ ZenMethod ]
+{
+    Set tEnvelope = ""
+    Try {
+        Set tPortalUser = ""
+        If $IsObject($Get(%session)) {
+            Set tPortalUser = %session.Username
+        }
+        If tPortalUser = "" {
+            Set tPortalUser = $Username
+        }
+
+        ; Probe lock state without holding. ConvKeyIdxOpen wraps %OpenId
+        ; with concurrency=4 (exclusive) and the dictionary's default
+        ; timeout. If the row is locked by another process, the call
+        ; returns $$$NULLOREF and tSC carries error code 5803
+        ; ($$$LockFailedToAcquireExclusive — verified Task 0). Otherwise
+        ; we briefly held the lock; release immediately so the turn-
+        ; holder can re-acquire on the next LoadOrCreate.
+        Set tSC = $$$OK
+        Set tHist = ##class(SessionAgent.Chat.History).ConvKeyIdxOpen(pAgentName, pSessionKey, tPortalUser, 4, .tSC)
+        ; Story 10.5 review fix-now (F-1): comma-boundary-anchored match
+        ; against the canonical $$$LockFailedToAcquireExclusive code (5803,
+        ; per irislib/%occErrors.inc:2017). Wrapping the codes-list with
+        ; "," _ ... _ "," and matching ",5803," ensures word-boundary
+        ; semantics — the bare-substring form ([ "5803") would false-
+        ; positive on any future IRIS code containing "5803" as a digit-
+        ; substring (e.g., 58031, 15803). The canonical %SYSTEM.Status.Equals
+        ; alternative requires Include %occErrors which neither parent
+        ; class declares; the comma-anchor form preserves the spec's
+        ; substring-detection contract while eliminating the false-positive
+        ; risk class. See .claude/rules/iris-objectscript-basics.md
+        ; §"IRIS error code 5803 / $$$LockFailedToAcquireExclusive".
+        If '$IsObject(tHist) && ($$$ISERR(tSC)) && (("," _ $SYSTEM.Status.GetErrorCodes(tSC) _ ",") [ ",5803,") {
+            Set tEnvelope = "{""locked"": true}"
+            Quit
+        }
+        If $IsObject(tHist) {
+            Do tHist.%Close()
+        }
+        Set tEnvelope = "{""locked"": false}"
+    }
+    Catch ex {
+        ; Defensive: probe failure treated as "not locked" so the banner
+        ; doesn't false-positive into a stuck state. Operator can still
+        ; attempt a turn; if real lock held, SendChatMessage surfaces it
+        ; via the structured-error path (AC-2).
+        Set tEnvelope = "{""locked"": false, ""probe_error"": " _ ##class(%DynamicObject).%New().%Set("text", ex.DisplayString()).%ToJSON() _ "}"
     }
     Quit tEnvelope
 }

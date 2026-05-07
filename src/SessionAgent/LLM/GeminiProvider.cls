@@ -233,6 +233,17 @@ Method GetProviderName() As %String
     Quit ..#PROVIDERNAME
 }
 
+/// <p>Concrete (Epic 9 demo hardening, 2026-05-07) — Google AI API keys
+/// canonically begin with <code>AIzaSy</code> (39-char total length is
+/// the typical shape, but only the prefix is checked here so future
+/// length changes don't break the gate). Reject anything else BEFORE
+/// the network round-trip. See abstract method's class doc-comment for
+/// the originating finding.</p>
+Method IsApiKeyShapeValid(pApiKey As %String) As %Boolean
+{
+    Quit ($Extract(pApiKey, 1, 6) = "AIzaSy")
+}
+
 /// <p>Concrete — issue one Gemini generateContent round-trip with inline
 /// retry. See class doc-comment for the retry-wrapping design (option (ii)
 /// — inline) and mock-HTTP design (option C —

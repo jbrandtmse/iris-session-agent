@@ -166,6 +166,31 @@ Method GetProviderName() As %String [ Abstract ]
     Quit ""
 }
 
+/// <p>Virtual hook (added 2026-05-07 — Epic 9 demo hardening) — return
+/// <code>1</code> if <var>pApiKey</var> matches the canonical shape this
+/// provider expects, <code>0</code> otherwise. Default implementation
+/// returns <code>1</code> (accept anything) so the
+/// <CLASS>OpenAICompatProvider</CLASS> Story 5.3 optional-auth idiom
+/// (<code>EnvVarName=PATH, CredentialName=""</code> for Ollama-no-auth)
+/// keeps working unchanged. Cloud providers (OpenAI / Anthropic / Gemini)
+/// override this with prefix checks (<code>sk-</code> /
+/// <code>sk-ant-</code> / <code>AIzaSy</code> respectively).</p>
+///
+/// <p><b>Why this exists.</b> Operator-state drift on a dev install set
+/// <code>EnvVarName=PATH, Provider=openai</code>; the resolved API key
+/// became the entire Windows PATH (multi-hundred chars containing
+/// <code>\</code>, <code>;</code>, drive letters), which bypassed the
+/// credential-missing guard and fed garbage into the OpenAI
+/// <code>Authorization</code> header. OpenAI rejected with HTTP 401 and
+/// the chat panel echoed the bare 401-error-text including the leaked
+/// PATH. The shape check rejects the malformed key BEFORE it leaves
+/// IRIS, surfacing a clear "API key shape invalid for provider X" error
+/// envelope instead.</p>
+Method IsApiKeyShapeValid(pApiKey As %String) As %Boolean
+{
+    Quit 1
+}
+
 /// <p>Template method — orchestrates one LLM round-trip. See class
 /// doc-comment §"Template flow" for the 6-step flow. Concretes do NOT
 /// override this method.</p>
@@ -227,6 +252,32 @@ Method Invoke(pCanonicalHistory As %DynamicArray, pToolDefs As %DynamicArray, pS
                 0, 1,
                 "Credential resolution failed for agent " _ pConfigAgent.AgentName)
             ; Argumentless quit — return after Try/Catch per project rule.
+            Quit
+        }
+
+        ; Step 3.5 — API-key shape check (added 2026-05-07, Epic 9 demo
+        ; hardening). When the resolved key is non-empty AND the concrete
+        ; rejects its shape, populate a structured-error envelope BEFORE
+        ; dispatching to CallMessages. Default IsApiKeyShapeValid returns 1
+        ; (accept anything — preserves OpenAICompat Story 5.3 optional-auth
+        ; idiom). Cloud providers override with prefix checks. Cited
+        ; originating finding: dev-install drift set EnvVarName=PATH on the
+        ; session-inspection openai agent; resolved "key" was the entire
+        ; Windows PATH; HTTP 401 echoed the leaked PATH back to the chat
+        ; panel. Shape check rejects BEFORE the network round-trip.
+        If (tApiKey '= "") && ('..IsApiKeyShapeValid(tApiKey)) {
+            Do ..PopulateApiKeyShapeError(pProviderResponse, pConfigAgent.AgentName, ..GetProviderName())
+            Set tLatency = ..ComputeLatencyMs(tStart)
+            Do ##class(SessionAgent.Audit.Emit).LogLlmCall(
+                ..ResolveChatHistoryId(pCallerCtx),
+                ..GetProviderName(),
+                pConfigAgent.Model,
+                pCanonicalHistory.%Size(),
+                0, 0,
+                tLatency,
+                "error",
+                0, 1,
+                "API key shape invalid for provider " _ ..GetProviderName() _ " on agent " _ pConfigAgent.AgentName)
             Quit
         }
 
@@ -344,6 +395,31 @@ ClassMethod PopulateCredentialError(pResp As SessionAgent.Agent.ProviderResponse
     Set tBlock = ##class(%DynamicObject).%New()
     Do tBlock.%Set("type", "text")
     Do tBlock.%Set("text", "Credential resolution failed for agent " _ pAgentName)
+    Do pResp.Content.%Push(tBlock)
+    Set pResp.Usage = ##class(%DynamicObject).%New()
+    Do pResp.Usage.%Set("input_tokens", 0)
+    Do pResp.Usage.%Set("output_tokens", 0)
+    Do pResp.Usage.%Set("cache_creation_input_tokens", 0)
+    Do pResp.Usage.%Set("cache_read_input_tokens", 0)
+    Quit
+}
+
+/// <p>Internal helper — populate <CLASS>pResp</CLASS> with the
+/// API-key-shape-invalid structured-error envelope. The text is
+/// operator-readable, names the agent AND the provider, and points the
+/// operator at the Story 6 Zen form's EnvVarName / CredentialName fields.
+/// Used by the Step-3.5 shape check in <method>Invoke</method>. The key
+/// itself is NEVER logged in the envelope — the message names the
+/// provider's expected prefix without echoing the actual bytes
+/// (NFR-S3 — never-log invariant; Epic 9 demo bug shipped a Windows PATH
+/// in the bare HTTP 401 echo, which this envelope replaces).</p>
+ClassMethod PopulateApiKeyShapeError(pResp As SessionAgent.Agent.ProviderResponse, pAgentName As %String, pProviderName As %String) [ Internal ]
+{
+    Set pResp.StopReason = "error"
+    Set pResp.Content = ##class(%DynamicArray).%New()
+    Set tBlock = ##class(%DynamicObject).%New()
+    Do tBlock.%Set("type", "text")
+    Do tBlock.%Set("text", "API key shape invalid for provider " _ pProviderName _ " on agent " _ pAgentName _ ". The resolved key did not match the expected prefix for this provider. Check Config.Agent.EnvVarName / CredentialName for typos or stale operator state (e.g., EnvVarName=PATH is the OpenAI-compatible / Ollama optional-auth idiom — NOT for cloud providers).")
     Do pResp.Content.%Push(tBlock)
     Set pResp.Usage = ##class(%DynamicObject).%New()
     Do pResp.Usage.%Set("input_tokens", 0)

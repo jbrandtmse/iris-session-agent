@@ -95,6 +95,8 @@ EnvVarName      = PATH                                      ; satisfies abstract
 
 For paid OpenAI-compatible providers (Together AI, OpenRouter, Anyscale) set `CredentialName='YourCredential'` and create the matching `Ens.Config.Credentials` row with a Bearer token in `Password`. For HTTPS endpoints (vLLM behind reverse-proxy, paid hosted), the same `DefaultSSL` configuration the README §7 documents covers TLS — the provider auto-detects scheme + non-default port from the URL. See **README §6** for the full deployment table and provider-comparison rationale.
 
+> **⚠️ `EnvVarName=PATH` is the Ollama-only optional-auth idiom. DO NOT use it for cloud providers** (`openai`, `anthropic`, `gemini`). Story 5.3 introduced the `EnvVarName=PATH, CredentialName=""` pattern as a non-empty sentinel that satisfies the abstract template's credential-resolvability gate while letting the OpenAI-compatible concrete suppress the `Authorization` header for Ollama-no-auth endpoints. For a cloud provider, the same pattern resolves the entire OS PATH as the API key, which gets forwarded to the provider's `Authorization` header — the provider rejects with HTTP 401 and the chat panel surfaces the leaked PATH back to operators. **Cloud providers (`Provider=openai/anthropic/gemini`) MUST be configured with `CredentialName=<credential-row-name>` (e.g., `SessionAgentOpenAI`) AND `EnvVarName=""` OR with `EnvVarName=<actual-env-var>` (e.g., `OPENAI_API_KEY`) AND `CredentialName=""`.** As a defensive backstop, Story 9.x ships a per-concrete `IsApiKeyShapeValid` hook that rejects malformed keys (Windows PATH, missing provider prefix) BEFORE the network round-trip, surfacing a clear "API key shape invalid" error envelope instead of an HTTP 401 echo.
+
 ---
 
 ## What's next

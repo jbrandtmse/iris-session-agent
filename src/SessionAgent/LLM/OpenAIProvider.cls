@@ -163,6 +163,18 @@ Method GetProviderName() As %String
     Quit ..#PROVIDERNAME
 }
 
+/// <p>Concrete (Epic 9 demo hardening, 2026-05-07) — OpenAI API keys
+/// canonically begin with <code>sk-</code> (covers both legacy
+/// <code>sk-...</code> and modern <code>sk-proj-...</code> shapes).
+/// Reject anything else BEFORE the network round-trip so the chat panel
+/// surfaces a clear shape-error envelope instead of letting OpenAI
+/// echo a leaked-PATH 401-error-text. See abstract method's class
+/// doc-comment for the originating finding.</p>
+Method IsApiKeyShapeValid(pApiKey As %String) As %Boolean
+{
+    Quit ($Extract(pApiKey, 1, 3) = "sk-")
+}
+
 /// <p>Concrete — issue one OpenAI Chat Completions round-trip with inline
 /// retry. See class doc-comment for the retry-wrapping design (option
 /// (ii) — inline) and mock-HTTP design (option C —

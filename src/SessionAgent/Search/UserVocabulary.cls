@@ -103,6 +103,234 @@ Property CreatedVia As %String;
 /// alias mapping (or null if absent), no de-duplication logic needed.</p>
 Index UserAliasIdx On (PortalUser, Alias) [ Unique ];
 
+/// <p>Story 9.2 AC-1 — record a successful alias use (clickthrough,
+/// explicit save, extracted from chat, or seed insertion). Probes the
+/// schema's unique <code>(PortalUser, Alias)</code> pair via
+/// <code>%SQL.Statement</code>; if a row exists, increments
+/// <code>SuccessCount</code> and updates <code>LastUsed</code> (and
+/// <code>MessageBodyClass</code> when <var>pBodyClass</var> is non-empty).
+/// If absent, creates a new row with the supplied
+/// <var>pCreatedVia</var>. After <code>%Save()</code> succeeds, emits a
+/// <code>(SessionAgent, VocabWrite, pCreatedVia)</code> audit event with
+/// the operator's <var>pDescription</var> in the details string.</p>
+///
+/// <p><b>Caller-context contract.</b> <var>pCreatedVia</var> MUST be one
+/// of the four pre-registered triples
+/// (<code>clickthrough</code> / <code>explicit</code> /
+/// <code>extracted</code> / <code>seed</code>) — see
+/// <CLASS>SessionAgent.Audit.Emit</CLASS> §<method>EnsureEvents</method>
+/// (Story 1.3 lines 55–58). An unregistered triple will cause
+/// <code>$System.Security.Audit</code> to silently return <code>0</code>
+/// per project rule §"Security.Events Pre-Registration for Audit"; the
+/// row save still succeeds but the audit trail is lost. If a future
+/// caller requires a fifth triple, add it to <method>EnsureEvents</method>
+/// and re-run <method>SessionAgent.Installer.Install</method>.</p>
+///
+/// <p><b>Default <var>pCreatedVia</var> = <code>"clickthrough"</code>.</b>
+/// The dominant call site (Story 9.5's <code>RecordClickThrough</code>
+/// ZenMethod) does not pass the parameter — defaulting matches that
+/// expected usage. <code>VocabLookup.InvokeSave</code> (Story 8.7 / 9.2
+/// AC-4) overrides to <code>"explicit"</code>.</p>
+///
+/// <p><b>Confidence recompute.</b> The
+/// <method>%OnAfterSave</method> trigger fires exactly once per
+/// <code>%Save()</code> on IRIS 2024.1 (verified by
+/// <CLASS>SessionAgent.Test.OnAfterSaveRecursionProbe</CLASS> Story 9.1
+/// AC-1: <code>fire_count=1</code>) and recomputes <code>Confidence</code>
+/// via direct SQL UPDATE — the bypass of the OREF persistence layer's
+/// trigger dispatch keeps the trigger non-recursive.</p>
+///
+/// <p><b>Audit-emit return capture (Story 9.2 review fix MEDIUM-9.2-F01).</b>
+/// <var>pAuditEmitted</var> ByRef receives the return value of
+/// <code>$System.Security.Audit</code> (1 on success, 0 if the triple is
+/// unregistered — the silent-fail path per project rule
+/// §"Security.Events Pre-Registration for Audit"). Callers (e.g.,
+/// <method>VocabLookup.InvokeSave</method>) surface this in their
+/// envelope's <code>audit_emitted</code> field so operators can detect
+/// audit-registration drift. Defaults to <code>0</code> so callers that
+/// don't pass the parameter still observe the conservative "audit may
+/// not have emitted" default.</p>
+ClassMethod RecordSuccess(pPortalUser As %String, pAlias As %String, pBodyClass As %String = "", pCreatedVia As %String = "clickthrough", pDescription As %String = "", ByRef pAuditEmitted As %Integer = 0) As %Status
+{
+    Set tSC = $$$OK
+    Try {
+        ; ISO-8601 UTC Z timestamp per project rule §"Timestamp and Encoding
+        ; Standards" — $ZTimeStamp is UTC, NOT $Horolog (which is local time
+        ; and would be incorrect when appending the "Z" suffix).
+        Set tNowIso = $Translate($ZDateTime($ZTimeStamp, 3, 1), " ", "T") _ "Z"
+
+        ; ---- Pair probe — matches UserAliasIdx unique-index (PortalUser, Alias).
+        Set tFoundId = ""
+        Set tStmt = ##class(%SQL.Statement).%New()
+        Set tPrepSC = tStmt.%Prepare("SELECT TOP 1 ID FROM SessionAgent_Search.UserVocabulary WHERE %EXACT(PortalUser) = ? AND %EXACT(Alias) = ?")
+        If $$$ISERR(tPrepSC) Set tSC = tPrepSC Quit
+        Set tRs = tStmt.%Execute(pPortalUser, pAlias)
+        If tRs.%Next() Set tFoundId = tRs.%Get("ID")
+
+        ; ---- Branch: existing row → increment, OR new row → insert.
+        Set tAction = ""
+        If tFoundId '= "" {
+            Set tRow = ##class(SessionAgent.Search.UserVocabulary).%OpenId(tFoundId)
+            If '$IsObject(tRow) Set tSC = $$$ERROR($$$GeneralError, "RecordSuccess: existing row " _ tFoundId _ " could not be opened") Quit
+            Set tRow.SuccessCount = (+tRow.SuccessCount) + 1
+            Set tRow.LastUsed = tNowIso
+            ; Don't blank an existing scope — only override if caller passed one.
+            If pBodyClass '= "" Set tRow.MessageBodyClass = pBodyClass
+            Set tSaveSC = tRow.%Save()
+            If $$$ISERR(tSaveSC) Set tSC = tSaveSC Quit
+            Set tAction = "incremented"
+        } Else {
+            Set tRow = ##class(SessionAgent.Search.UserVocabulary).%New()
+            Set tRow.PortalUser = pPortalUser
+            Set tRow.Alias = pAlias
+            Set tRow.MessageBodyClass = pBodyClass
+            Set tRow.CreatedVia = pCreatedVia
+            Set tRow.CreatedAt = tNowIso
+            Set tRow.LastUsed = tNowIso
+            Set tRow.SuccessCount = 1
+            Set tRow.FailureCount = 0
+            Set tRow.Confidence = 0
+            Set tSaveSC = tRow.%Save()
+            If $$$ISERR(tSaveSC) Set tSC = tSaveSC Quit
+            Set tAction = "created"
+        }
+
+        ; ---- Audit emit. Triple = (SessionAgent, VocabWrite, pCreatedVia).
+        ; Defensive: $System.Security.Audit returns 0 on unregistered triple
+        ; (silent fail). Row save already succeeded; audit failure does NOT
+        ; flip status — operator data is never lost to audit drift. Capture
+        ; the return value into pAuditEmitted (ByRef) so callers can surface
+        ; drift detection in their envelopes (review fix MEDIUM-9.2-F01).
+        Set tDetails = "PortalUser=" _ pPortalUser _ "; Alias=" _ pAlias _ "; MessageBodyClass=" _ pBodyClass _ "; Action=" _ tAction _ "; Description=" _ pDescription
+        Set tDesc = "UserVocabulary.RecordSuccess: " _ tAction _ " row (via=" _ pCreatedVia _ ")"
+        Set tAuditRet = $System.Security.Audit("SessionAgent", "VocabWrite", pCreatedVia, tDetails, tDesc)
+        Set pAuditEmitted = $Select(tAuditRet=1: 1, 1: 0)
+    }
+    Catch ex {
+        Set tSC = ex.AsStatus()
+    }
+    Quit tSC
+}
+
+/// <p>Story 9.2 AC-2 — record a failed alias use (operator typed an alias,
+/// the search returned results, the operator did not click any hit).
+/// Probes the same unique <code>(PortalUser, Alias)</code> pair as
+/// <method>RecordSuccess</method>; if absent, returns <code>$$$OK</code>
+/// without inserting (graceful no-op — the operator's failed alias never
+/// converted to a stored vocabulary entry, so there is nothing to
+/// penalize). If present, increments <code>FailureCount</code>, updates
+/// <code>LastUsed</code>, calls <code>%Save()</code>, and emits a
+/// <code>(SessionAgent, VocabWrite, extracted)</code> audit event.</p>
+///
+/// <p><b>Audit-Name triple choice — design rationale.</b> The epic spec
+/// originally suggested <code>failure_decrement</code> as a candidate
+/// triple Name. After review, <code>extracted</code> (one of the four
+/// already-registered <code>VocabWrite</code> Names) is the closest
+/// operational match — <code>RecordFailure</code> fires after the
+/// operator has moved on without clicking, which is the same shape as
+/// "extracted from chat post-action" (a follow-up update to an existing
+/// alias, not a primary write or click). Re-using
+/// <code>extracted</code> keeps the audit-event surface tight (no fifth
+/// triple needs to be added to <method>SessionAgent.Audit.Emit.EnsureEvents</method>
+/// and re-deployed). Future operators reading
+/// <code>iris_audit_events EventType=VocabWrite EventName=extracted</code>
+/// will see BOTH the chat-extraction inserts AND the failure-increment
+/// updates; the EventData details string distinguishes them
+/// (<code>"Action=failure_increment"</code> vs the chat-extraction
+/// caller's details). Story 9.5's dev sees this rationale here.</p>
+///
+/// <p><b>Audit-emit return capture (Story 9.2 review fix MEDIUM-9.2-F01).</b>
+/// <var>pAuditEmitted</var> ByRef receives the return value of
+/// <code>$System.Security.Audit</code> (1 on success, 0 if the triple is
+/// unregistered — silent fail). Defaults to <code>0</code> for callers
+/// that don't pass the parameter.</p>
+ClassMethod RecordFailure(pPortalUser As %String, pAlias As %String, ByRef pAuditEmitted As %Integer = 0) As %Status
+{
+    Set tSC = $$$OK
+    Try {
+        Set tNowIso = $Translate($ZDateTime($ZTimeStamp, 3, 1), " ", "T") _ "Z"
+
+        ; Pair probe.
+        Set tFoundId = ""
+        Set tStmt = ##class(%SQL.Statement).%New()
+        Set tPrepSC = tStmt.%Prepare("SELECT TOP 1 ID FROM SessionAgent_Search.UserVocabulary WHERE %EXACT(PortalUser) = ? AND %EXACT(Alias) = ?")
+        If $$$ISERR(tPrepSC) Set tSC = tPrepSC Quit
+        Set tRs = tStmt.%Execute(pPortalUser, pAlias)
+        If tRs.%Next() Set tFoundId = tRs.%Get("ID")
+
+        ; Absent → no-op (graceful per AC-2).
+        If tFoundId = "" Quit
+
+        ; Present → increment FailureCount.
+        Set tRow = ##class(SessionAgent.Search.UserVocabulary).%OpenId(tFoundId)
+        If '$IsObject(tRow) Set tSC = $$$ERROR($$$GeneralError, "RecordFailure: existing row " _ tFoundId _ " could not be opened") Quit
+        Set tRow.FailureCount = (+tRow.FailureCount) + 1
+        Set tRow.LastUsed = tNowIso
+        Set tSaveSC = tRow.%Save()
+        If $$$ISERR(tSaveSC) Set tSC = tSaveSC Quit
+
+        ; Audit emit — re-using "extracted" triple per design rationale above.
+        ; Capture return value into pAuditEmitted (ByRef) — review fix MEDIUM-9.2-F01.
+        Set tDetails = "PortalUser=" _ pPortalUser _ "; Alias=" _ pAlias _ "; Action=failure_increment; NewFailureCount=" _ (+tRow.FailureCount)
+        Set tDesc = "UserVocabulary.RecordFailure: incremented FailureCount on existing row"
+        Set tAuditRet = $System.Security.Audit("SessionAgent", "VocabWrite", "extracted", tDetails, tDesc)
+        Set pAuditEmitted = $Select(tAuditRet=1: 1, 1: 0)
+    }
+    Catch ex {
+        Set tSC = ex.AsStatus()
+    }
+    Quit tSC
+}
+
+/// <p>Story 9.2 AC-3 — recursion-safe trigger that recomputes
+/// <code>Confidence = Success / (Success + Failure + 1)</code> on every
+/// row save. The "+1" denominator term is the smoothing factor (per
+/// architecture §"Confidence semantics") — it caps the maximum
+/// confidence at slightly less than 1.0 even after many successes,
+/// reserving headroom for future failure signals to move the score down.</p>
+///
+/// <p><b>Recursion avoidance.</b> The trigger uses a direct
+/// <code>&amp;sql(UPDATE...)</code> against the same row instead of
+/// calling <code>..%Save()</code>. The OREF persistence layer's
+/// trigger dispatch fires <code>%OnAfterSave</code> only on
+/// <code>%Save()</code>; a direct embedded-SQL UPDATE bypasses that
+/// dispatch and therefore does NOT re-fire the trigger.
+/// <CLASS>SessionAgent.Test.OnAfterSaveRecursionProbe</CLASS> verified
+/// this empirically on IRIS 2024.1 (Story 9.1 AC-1: fire_count=1,
+/// recursion_detected=0). The <var>insert</var> parameter is the
+/// IRIS-framework signature; this trigger fires identically on insert
+/// and update so the parameter is unused.</p>
+Method %OnAfterSave(insert As %Boolean) As %Status [ Private, ServerOnly = 1 ]
+{
+    ; Story 9.2 AC-5 test-only opt-in instrumentation. The PPG is NOT
+    ; touched in production — only Story 9.2's TestOnAfterSaveFireCountExactlyOne
+    ; sets ^||Story92TriggerFireCount = 0 before %Save() to opt in to
+    ; fire-count tracking. Reading $Data avoids any production overhead;
+    ; if the PPG is undefined, the increment is skipped entirely.
+    If $Data(^||Story92TriggerFireCount) {
+        Set ^||Story92TriggerFireCount = $Get(^||Story92TriggerFireCount, 0) + 1
+    }
+
+    Set tDenom = ..SuccessCount + ..FailureCount + 1
+    Set ..Confidence = ..SuccessCount / tDenom
+    Set tConfidence = ..Confidence
+    Set tId = ..%Id()
+    &sql(UPDATE SessionAgent_Search.UserVocabulary
+         SET Confidence = :tConfidence
+         WHERE %ID = :tId)
+    ; Review fix MEDIUM-9.2-F02 — surface SQLCODE failure rather than
+    ; swallowing per project rule §"Write Status Checking". SQLCODE=100
+    ; (no matching row) is benign here only if the row was deleted by a
+    ; concurrent session between %Save() and this trigger; surfacing it
+    ; lets the caller observe the failure even though the row save itself
+    ; succeeded. SQLCODE<0 indicates a genuine SQL error (constraint
+    ; violation, etc.) — propagate as a $$$Status error.
+    If SQLCODE < 0 {
+        Quit $$$ERROR($$$GeneralError, "UserVocabulary.%OnAfterSave: SQL UPDATE on Confidence failed with SQLCODE=" _ SQLCODE _ " (%msg=" _ $Get(%msg) _ ")")
+    }
+    Quit $$$OK
+}
+
 Storage Default
 {
 <Data name="UserVocabularyDefaultData">

@@ -1178,3 +1178,32 @@ This file accumulates findings, follow-ups, and architect-decision items that ar
   - **Recommendation when picked up:** Either (a) rewrite the comment to *"booleans deliver as 1/0 integers from %GetIterator(); stringify via concat to produce '1'/'0' (consistent with numeric stringification path)"*, or (b) explicitly canonicalize booleans to `"true"`/`"false"` strings to make the alias more human-readable. (a) preserves current behavior; (b) is a behavior change that needs a determinism test — pick (a) for the cosmetic cleanup pass.
   - **Owner:** Story 9.5 dev (when consuming `SynthesizeAlias`) or future cosmetic-cleanup pass.
   - **Blocking?** Not blocking — Story 9.5 will exercise the contract empirically and can revise then if needed.
+
+---
+
+## Deferred from: code review of story-9-2-uservocabulary-recordsuccess-recordfailure-recursion-safe-onaftersave (2026-05-07)
+
+- **LOW-9.2-F06 — `RecordSuccess` / `RecordFailure` accept empty `pPortalUser` / `pAlias` without input validation.**
+  - **Source:** Story 9.2 code review (Blind-Hunter layer).
+  - **File:** [`src/SessionAgent/Search/UserVocabulary.cls`](../../src/SessionAgent/Search/UserVocabulary.cls) lines 153 (`RecordSuccess`) and 247 (`RecordFailure`).
+  - **Severity:** LOW (no production caller currently passes empty values — `VocabLookup.InvokeSave` and the `Invoke` dispatcher's caller-context guard reject empty `PortalUser` upstream; `pAlias = ""` is rejected by the XOR mode-dispatch check at `Invoke` line 200).
+  - **Observation:** Neither `RecordSuccess` nor `RecordFailure` validates that `pPortalUser '= ""` and `pAlias '= ""` before the `%SQL.Statement` probe. A future direct caller (e.g., a Story 9.5 ZenMethod, an REST handler, or any non-VocabLookup entry point) that forgets the upstream guard would create rows with empty PortalUser and/or empty Alias — which would still satisfy the `(PortalUser, Alias)` unique index (empty ≠ empty for different invocations? actually empty = empty for the unique constraint, so subsequent calls would correctly increment instead of insert) but pollutes the vocabulary table with operator-invisible rows.
+  - **Why deferred (Rule 8 review):** Test #1 — genuine future-story scope. The natural carrier is **Story 9.5 (`RecordClickThrough` ZenMethod)** which is the next direct caller of `RecordSuccess`. Story 9.5's spec MUST add the input-validation guard to its own ZenMethod entry (per the project pattern of validating at the public-surface layer, not deep in the persistence-helper layer); pushing that guard into `RecordSuccess` itself would be premature defensive programming. If a third caller surfaces in Story 9.6+, revisit this deferral.
+  - **Recommendation when picked up:** Story 9.5's `RecordClickThrough` ZenMethod adds at its top:
+    ```
+    If pPortalUser = "" Quit $$$ERROR($$$GeneralError, "RecordClickThrough: pPortalUser required")
+    If pAlias = "" Quit $$$ERROR($$$GeneralError, "RecordClickThrough: pAlias required")
+    ```
+    Same shape applies to any future direct caller. The persistence helpers (`RecordSuccess` / `RecordFailure`) stay as low-validation primitives so callers can compose them.
+  - **Owner:** Story 9.5 dev (when authoring `RecordClickThrough` ZenMethod).
+  - **Blocking?** Not blocking — Story 9.2 ships safely because all current callers guard at their own entry points.
+
+- **LOW-9.2-F08 — `%OnAfterSave` Confidence-recompute race under concurrent saves on the same row.**
+  - **Source:** Story 9.2 code review (Edge-Case-Hunter layer).
+  - **File:** [`src/SessionAgent/Search/UserVocabulary.cls`](../../src/SessionAgent/Search/UserVocabulary.cls) lines 297-308 (`%OnAfterSave`).
+  - **Severity:** LOW (no operator-observable bug under expected single-portal-user single-session usage; vocabulary writes are serialized at the (`PortalUser`, `Alias`) granularity and a single operator does not generate concurrent saves on the same alias).
+  - **Observation:** Two near-simultaneous `RecordSuccess` calls against the same `(PortalUser, Alias)` row — e.g., Session A and Session B both clicking through the same hit at the same instant — could both read stale `SuccessCount` (say `3`), both compute `Confidence = 3 / (3+0+1) = 0.75`, and both UPDATE Confidence=0.75 even though one of the writes should have observed `SuccessCount=4` and computed `0.8`. The `%Save()` / OREF persistence layer serializes the SuccessCount integer increment correctly (each save sees its own pre-incremented value), but the trigger's `..SuccessCount` snapshot at trigger-fire time may already be stale relative to the storage layer's actual post-commit value if a parallel session committed first. Last-write-wins on Confidence — semantically the trailing-Confidence is a few thousandths off the "correct" recompute. Self-corrects on the next save.
+  - **Why deferred (Rule 8 review):** Test #1 — out of AC-3 scope ("recursion-safe", not "concurrent-safe"). AC-3 verifies the trigger doesn't re-fire itself; concurrency is a separate hardening axis the architecture has not yet declared as a v1 requirement (the search agent is single-portal-user-per-session by design; the per-user vocab table is not a high-write-contention surface). Story 9.5's `RecordClickThrough` ZenMethod adds a single click-write path; Story 9.4's first-message prefix-injection adds a sweep-style read path; neither concurrent-saves-on-same-row workload exists in v1.
+  - **Recommendation when picked up (Epic 10+ hardening or a future high-write-contention story):** wrap the trigger's compute+UPDATE in a `LOCK +^SessionAgenC88B.UserVocabularyD(:tId):0E="lockfail"` to serialize concurrent recomputes per-row. Alternative: move the Confidence recompute to a SQL CASE expression in the trigger's UPDATE so the computed value reads the current `SuccessCount` / `FailureCount` from the row at UPDATE time (avoiding the OREF snapshot stale-read).
+  - **Owner:** Future hardening story (Epic 10 retrospective candidate or the first concurrent-write contention bug report).
+  - **Blocking?** Not blocking — single-operator per-session usage means the race window is operationally inaccessible in v1.

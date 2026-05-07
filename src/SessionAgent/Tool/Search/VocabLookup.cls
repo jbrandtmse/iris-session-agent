@@ -311,34 +311,51 @@ ClassMethod InvokeList(pPortalUser As %String, pLimit As %String, ByRef pResult 
 /// <code>LastUsed</code> (and <code>MessageBodyClass</code> if changed),
 /// save. If new: create row with <code>CreatedVia="explicit"</code>,
 /// <code>CreatedAt</code> ISO-8601 UTC Z, <code>SuccessCount=1</code>,
-/// <code>Confidence=0</code> (Epic 9 Story 9.2 will recompute via
-/// <code>%OnAfterSave</code> trigger).</p>
+/// initial <code>Confidence=0</code> at insert time. Story 9.2's
+/// <code>%OnAfterSave</code> trigger then recomputes
+/// <code>Confidence = Success / (Success + Failure + 1)</code> via
+/// direct SQL UPDATE before the save returns — so the post-save
+/// observable value is <code>0.5</code> on first insert
+/// (<code>1 / (1+0+1)</code>). The <method>InvokeSave</method>
+/// implementation delegates to
+/// <method>SessionAgent.Search.UserVocabulary.RecordSuccess</method>
+/// (Story 9.2 AC-4 refactor) — that ClassMethod owns the probe →
+/// branch → save → audit-emit logic.</p>
 ///
 /// <p><b>Audit emit defensive check.</b>
 /// <code>$System.Security.Audit</code> returns <code>0</code> if the
 /// triple is unregistered (silent fail per project rule
-/// §"Security.Events Pre-Registration"). Surfaces
-/// <code>audit_emitted=0|1</code> in the envelope so operators /
+/// §"Security.Events Pre-Registration"). The Story 9.2 refactor
+/// delegates audit emission to
+/// <method>SessionAgent.Search.UserVocabulary.RecordSuccess</method>
+/// which returns the audit-emit return value via the new
+/// <var>pAuditEmitted</var> ByRef parameter (review fix
+/// MEDIUM-9.2-F01). <method>InvokeSave</method> surfaces this verbatim
+/// as <code>audit_emitted=0|1</code> in the envelope so operators /
 /// reviewers can detect a registration drift; the row save succeeds
 /// regardless. The operator-supplied <var>pDescription</var> is
 /// captured in the audit-event details string so the operator's
 /// commentary about the alias is durably retained alongside the row
 /// save (per class doc-comment §"Description input — captured in
 /// audit details").</p>
+///
+/// <p><b>Envelope <code>description_persisted</code> field (Story 9.2
+/// additive — review fix LOW-9.2-F04).</b> The Story 9.2 refactor adds
+/// a new structured-content field <code>description_persisted</code>
+/// (1 if <var>pDescription</var> was non-empty, 0 otherwise) to let
+/// operators / chat panels detect whether their description text made
+/// it to the audit row. This is an ADDITIVE change to the envelope
+/// shape — not a "preservation" of pre-9.2 behavior. Pre-9.2 callers
+/// that don't read this field continue to work; new callers can
+/// observe the description-persistence signal.</p>
 ClassMethod InvokeSave(pPortalUser As %String, pAlias As %String, pDescription As %String, pBodyClass As %String, ByRef pResult As %DynamicObject)
 {
-    ; ISO-8601 UTC Z timestamp per project rule §"Timestamp and Encoding
-    ; Standards" — $ZTimeStamp is UTC, NOT $Horolog (which is local time
-    ; and would be incorrect when appending the "Z" suffix).
-    Set tNowIso = $Translate($ZDateTime($ZTimeStamp, 3, 1), " ", "T") _ "Z"
-
-    ; ---- Pair probe — matches UserAliasIdx unique-index (PortalUser, Alias).
-    ; Schema declares the pair as the uniqueness contract; probing by the
-    ; pair (NOT the triple including MessageBodyClass) keeps idempotency
-    ; aligned with the unique constraint — a triple-probe miss followed
-    ; by INSERT would hit the pair-unique constraint at %Save() time.
-    ; See class doc-comment §"Save mode probe / unique-index reconciliation".
-    Set tFoundId = ""
+    ; ---- Pre-probe to detect created vs incremented action — same pair-
+    ; unique probe RecordSuccess uses internally. Done BEFORE delegation so
+    ; the envelope's "action" field can distinguish a fresh insert from an
+    ; increment of an existing row (downstream callers depend on this for
+    ; the rendered text differentiation).
+    Set tFoundIdBefore = ""
     Set tStmt = ##class(%SQL.Statement).%New()
     Set tPrepSC = tStmt.%Prepare("SELECT TOP 1 ID FROM SessionAgent_Search.UserVocabulary WHERE %EXACT(PortalUser) = ? AND %EXACT(Alias) = ?")
     If $$$ISERR(tPrepSC) {
@@ -346,63 +363,40 @@ ClassMethod InvokeSave(pPortalUser As %String, pAlias As %String, pDescription A
         Set pResult = {"isError":(1), "content":[{"type":"text","text":(tErrText)}]}
         Quit
     }
-    Set tRs = tStmt.%Execute(pPortalUser, pAlias)
-    If tRs.%Next() Set tFoundId = tRs.%Get("ID")
+    Set tRsBefore = tStmt.%Execute(pPortalUser, pAlias)
+    If tRsBefore.%Next() Set tFoundIdBefore = tRsBefore.%Get("ID")
+    Set tAction = $Select(tFoundIdBefore '= "": "incremented", 1: "created")
 
-    ; ---- Branch: existing row → increment, OR new row → insert.
-    Set tAction = ""
-    Set tNewSuccessCount = 0
-    If tFoundId '= "" {
-        Set tRow = ##class(SessionAgent.Search.UserVocabulary).%OpenId(tFoundId)
-        If '$IsObject(tRow) {
-            Set pResult = {"isError":(1), "content":[{"type":"text","text":("vocab_lookup save: existing row " _ tFoundId _ " could not be opened")}]}
-            Quit
-        }
-        Set tRow.SuccessCount = (+tRow.SuccessCount) + 1
-        Set tRow.LastUsed = tNowIso
-        ; If the operator supplies a new MessageBodyClass for an existing
-        ; (PortalUser, Alias) row, update it on the existing row — the
-        ; pair-unique constraint means we cannot create a sibling row.
-        If pBodyClass '= "" Set tRow.MessageBodyClass = pBodyClass
-        Set tSaveSC = tRow.%Save()
-        If $$$ISERR(tSaveSC) {
-            Set tErrText = $System.Status.GetErrorText(tSaveSC)
-            Set pResult = {"isError":(1), "content":[{"type":"text","text":(tErrText)}]}
-            Quit
-        }
-        Set tAction = "incremented"
-        Set tNewSuccessCount = +tRow.SuccessCount
-    } Else {
-        Set tRow = ##class(SessionAgent.Search.UserVocabulary).%New()
-        Set tRow.PortalUser = pPortalUser
-        Set tRow.Alias = pAlias
-        Set tRow.MessageBodyClass = pBodyClass
-        Set tRow.CreatedVia = "explicit"
-        Set tRow.CreatedAt = tNowIso
-        Set tRow.LastUsed = tNowIso
-        Set tRow.SuccessCount = 1
-        Set tRow.FailureCount = 0
-        Set tRow.Confidence = 0
-        Set tSaveSC = tRow.%Save()
-        If $$$ISERR(tSaveSC) {
-            Set tErrText = $System.Status.GetErrorText(tSaveSC)
-            Set pResult = {"isError":(1), "content":[{"type":"text","text":(tErrText)}]}
-            Quit
-        }
-        Set tAction = "created"
-        Set tNewSuccessCount = 1
+    ; ---- Story 9.2 AC-4 delegation. RecordSuccess handles the probe →
+    ; branch → save → audit-emit logic + Confidence recompute via
+    ; %OnAfterSave trigger. pCreatedVia="explicit" preserves the pre-9.2
+    ; behavior (the row's CreatedVia field is the originating provenance,
+    ; only set on the insert path; an existing row's CreatedVia is NOT
+    ; overwritten by RecordSuccess). The ByRef tAuditEmitted captures the
+    ; $System.Security.Audit return value (review fix MEDIUM-9.2-F01) so
+    ; the envelope's audit_emitted field can detect triple-registration
+    ; drift (matches pre-refactor 8.7 defensive surface).
+    Set tAuditEmitted = 0
+    Set tSC = ##class(SessionAgent.Search.UserVocabulary).RecordSuccess(pPortalUser, pAlias, pBodyClass, "explicit", pDescription, .tAuditEmitted)
+    If $$$ISERR(tSC) {
+        Set tErrText = $System.Status.GetErrorText(tSC)
+        Set pResult = {"isError":(1), "content":[{"type":"text","text":(tErrText)}]}
+        Quit
     }
 
-    ; ---- Audit emit — (SessionAgent, VocabWrite, explicit) triple.
-    ; Triple is pre-registered by SessionAgent.Audit.Emit.EnsureEvents
-    ; (Story 1.3 line 56). $System.Security.Audit returns 1 on success,
-    ; 0 if the triple is unregistered (silent fail per project rule
-    ; §"Security.Events Pre-Registration for Audit"). Defensive check —
-    ; surface in envelope; do NOT fail the tool — the row is saved.
-    Set tAuditDetails = "PortalUser=" _ pPortalUser _ "; Alias=" _ pAlias _ "; MessageBodyClass=" _ pBodyClass _ "; Action=" _ tAction _ "; Description=" _ pDescription
-    Set tAuditDesc = "vocab_lookup save mode: " _ tAction _ " UserVocabulary row"
-    Set tAuditRet = $System.Security.Audit("SessionAgent", "VocabWrite", "explicit", tAuditDetails, tAuditDesc)
-    Set tAuditEmitted = $Select(tAuditRet=1: 1, 1: 0)
+    ; ---- Re-probe to read post-save SuccessCount for envelope shaping.
+    ; Surface a prep failure rather than silently defaulting to 0 (review
+    ; fix LOW-9.2-F03) — drift would otherwise be invisible to callers.
+    Set tNewSuccessCount = 0
+    Set tStmt2 = ##class(%SQL.Statement).%New()
+    Set tPrepSC2 = tStmt2.%Prepare("SELECT TOP 1 SuccessCount FROM SessionAgent_Search.UserVocabulary WHERE %EXACT(PortalUser) = ? AND %EXACT(Alias) = ?")
+    If $$$ISERR(tPrepSC2) {
+        Set tErrText = $System.Status.GetErrorText(tPrepSC2)
+        Set pResult = {"isError":(1), "content":[{"type":"text","text":(tErrText)}]}
+        Quit
+    }
+    Set tRsAfter = tStmt2.%Execute(pPortalUser, pAlias)
+    If tRsAfter.%Next() Set tNewSuccessCount = +tRsAfter.%Get("SuccessCount")
 
     Do pResult.structuredContent.%Set("mode", "save")
     Do pResult.structuredContent.%Set("portal_user", pPortalUser)
@@ -411,6 +405,7 @@ ClassMethod InvokeSave(pPortalUser As %String, pAlias As %String, pDescription A
     Do pResult.structuredContent.%Set("action", tAction)
     Do pResult.structuredContent.%Set("new_success_count", tNewSuccessCount, "number")
     Do pResult.structuredContent.%Set("audit_emitted", tAuditEmitted, "number")
+    Do pResult.structuredContent.%Set("description_persisted", $Select(pDescription'="": 1, 1: 0), "number")
     Do pResult.structuredContent.%Set("indexed_lead_column", "PortalUser")
 
     If tAction = "created" {

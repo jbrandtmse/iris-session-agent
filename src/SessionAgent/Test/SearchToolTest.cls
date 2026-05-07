@@ -1254,8 +1254,9 @@ Method TestVocabLookupListEmpty()
 
 /// <p>Story 8.7 AC-11 #2 — mode='save' on an empty fixture creates a
 /// new UserVocabulary row with <code>SuccessCount=1</code>,
-/// <code>Confidence=0</code>, <code>CreatedVia="explicit"</code>;
-/// envelope <code>action="created"</code>.</p>
+/// <code>Confidence=0.5</code> (Story 9.2 trigger recomputes
+/// <code>1 / (1+0+1) = 0.5</code> via <code>%OnAfterSave</code>),
+/// <code>CreatedVia="explicit"</code>; envelope <code>action="created"</code>.</p>
 Method TestVocabLookupSaveCreatesRow()
 {
     Do ..CleanVocabFixture()
@@ -1277,7 +1278,7 @@ Method TestVocabLookupSaveCreatesRow()
     Do tRs.%Next()
     Do $$$AssertEquals(+tRs.%Get("c"), 1, "exactly 1 UserVocabulary row exists for the saved alias")
     Do $$$AssertEquals(+tRs.%Get("sc"), 1, "DB SuccessCount = 1")
-    Do $$$AssertEquals(+tRs.%Get("cf"), 0, "DB Confidence = 0 (Epic 9 Story 9.2 will recompute)")
+    Do $$$AssertEquals(+tRs.%Get("cf"), 0.5, "DB Confidence = 0.5 (Story 9.2 %OnAfterSave: 1 / (1+0+1) = 0.5)")
     Do $$$AssertEquals(tRs.%Get("cv"), "explicit", "DB CreatedVia = explicit")
     Do ..CleanVocabFixture()
     Quit

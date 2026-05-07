@@ -296,7 +296,12 @@ lead would have shipped it again without a human-read step in the battery.
   artifacts (`Â`, `â€™`, `Ã©`, etc.)? Does the spacing make sense?"*
 - Acceptable evidence forms: a screenshot via `chrome-devtools-mcp`'s
   `take_screenshot`, a rendered-DOM `textContent` paste, or an in-browser
-  console transcript showing the visible strings.
+  console transcript showing the visible strings. **Note:** `textContent`
+  paste is acceptable for **content-correctness** claims only (mojibake,
+  label text, ARIA, byte-encoding). For **layout-correctness** claims
+  (chrome, framing, placement), see the "Layout-correctness vs
+  content-correctness evidence" sub-section below — `textContent` is
+  insufficient and a screenshot or DOM probe is required.
 - **Not acceptable** as the sole evidence: HTML-source diff (the bytes
   may be valid HTML but encode mojibake when interpreted), a11y-tree
   output (screen readers announce mojibake as garbage but the tree walker
@@ -309,6 +314,65 @@ lead would have shipped it again without a human-read step in the battery.
 **Originating finding.** UTF-8 mojibake `Â·` welcome-message incident
 (Story 3.7 → fix in commit `ebde251`). First applied: this story (4.0,
 the same commit that codifies the rule).
+
+### Layout-correctness vs content-correctness evidence (Story 7.0 / Epic 6 retro AI-1)
+
+**Rule.** Rule 12's empirical evidence forms split into two distinct
+categories — they are NOT interchangeable:
+
+- **Content-correctness** claims — mojibake checks, label text, ARIA
+  labels, byte-level encoding, readable-English prose. Acceptable
+  evidence: a screenshot, a rendered-DOM `textContent` paste, an
+  in-browser console transcript showing the visible strings.
+- **Layout-correctness** claims — chrome / styling / framing / placement
+  assertions like *"renders inside Mgmt-Portal chrome"*, *"form fields
+  aligned with the design"*, *"modal centered"*, *"breadcrumb appears
+  above the content area"*, *"Zen form inherits the portal's standardPage
+  banner"*. Acceptable evidence: **REQUIRES** either a screenshot via
+  `chrome-devtools-mcp.take_screenshot` OR an in-browser DOM-state JS
+  probe via `chrome-devtools-mcp.evaluate_script` (e.g., asserting that
+  a specific class is applied, that a specific element exists in the
+  rendered DOM, that a parent wrapper is present, that a CSS computed
+  property has the expected value).
+
+**Why the split.** A rendered-DOM `textContent` paste reads the visible
+strings but cannot detect missing chrome, layout drift, or visual
+regression — `textContent` ignores element identity, parent hierarchy,
+applied classes, and computed styles. The bytes pass the readability
+check while the surface ships without its expected wrapper, banner, or
+framing. Conversely, a screenshot detects layout drift but is
+expensive evidence to capture for every byte-level mojibake check —
+content-correctness claims do not need the screenshot path.
+
+**Originating finding.** Epic 6 manual-test session caught the
+`SessionAgent.UI.Portal.AgentConfigForm` Zen page rendering **without
+the Mgmt-Portal `EnsPortal.Template.standardPage` chrome** — no banner,
+no left navigation, no breadcrumb. The dev's empirical battery had
+included a `textContent` paste of the form fields (which read cleanly
+as readable English — content-correctness passed) but no screenshot
+and no DOM probe asserting the parent chrome wrapper was present.
+Story 6.1 dev + reviewer both passed the surface based on the
+content-correctness evidence; the gap surfaced only when the user
+opened the page in a browser. Fix bundle landed in commits `2193887`
+(chrome refactor + 3 sibling fix-nows) and `d6315f3` (MaxTokens
+default downshift). The retrospective AI-1 codified the rule because
+the next UI story would have repeated the same failure mode.
+
+**How to apply.**
+
+- At spec-writing time: when an AC asserts a layout/chrome/framing
+  property of the rendered surface, the empirical-battery evidence
+  block in the spec MUST require a screenshot or a DOM probe — not
+  just a `textContent` paste.
+- At dev-execution time: when implementing a UI story, capture the
+  layout-correctness evidence form that matches each AC's "Then ..."
+  clause. If an AC says *"renders inside Mgmt-Portal chrome"*, the
+  evidence is a `take_screenshot` of the page showing the chrome OR
+  an `evaluate_script` probe asserting `document.querySelector('.PortalBanner') !== null`.
+- At review time: a UI story whose layout-correctness AC is backed
+  only by `textContent` evidence is a HIGH-severity finding per Rule 8
+  (predicted-bug shape: layout drift will ship silently). Block until
+  the screenshot or DOM probe is captured.
 
 ---
 
@@ -327,7 +391,7 @@ the same commit that codifies the rule).
 | 9. Predicted-bug deferrals binding on named successor | ✓ (spec drafting) | — | ✓ (records the reassignment) |
 | 10. External-default research at spec time | ✓ | ✓ (escalate if discovered mid-execution) | ✓ (block on missing verification line) |
 | 11. Live integration smoke test mandatory | ✓ (epic-end) | ✓ (story authoring if API touched) | ✓ (verifies test exists) |
-| 12. Rendered-text readability — human-read step in UI-story battery | ✓ (UI-story epic-end) | ✓ (smoke-output evidence) | ✓ (blocks on missing evidence) |
+| 12. Rendered-text readability — human-read step in UI-story battery (content-correctness: textContent OK; **layout-correctness: requires screenshot or DOM probe** per Story 7.0 / Epic 6 retro AI-1) | ✓ (UI-story epic-end) | ✓ (smoke-output evidence — match form to AC: textContent for content claims, screenshot/DOM probe for layout claims) | ✓ (blocks on missing evidence; HIGH-severity if layout AC backed only by textContent) |
 
 ## How to load these rules in a future cycle
 

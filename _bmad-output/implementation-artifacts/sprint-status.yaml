@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-05-02
-last_updated: 2026-05-06 (Epic 6 COMPLETE + retrospective DONE — all 5 stories done; per-agent config UI + multi-namespace install shipped; 5-issue manual-test fix bundle landed; 5 days elapsed, 6/10 epics complete; retro saved at epic-6-retro-2026-05-06.md; 5 action items captured for Story 7.0 carry-forward)
+last_updated: 2026-05-06 (Story 7.0 ready-for-review — dev complete: 3 rule codifications appended (Rule 12 layout-vs-content, PAGENAME MPP5646, Property Test* shadow trap), 4 deferred-work items bound to Story 8.0, regression sweep 288/288 PASS truncation-aware / 260/260 via canonical SQL probe with empirical evidence supporting item G fragility binding)
 project: iris-session-agent
 # Epic 1 complete (retro 2026-05-02); Epic 2 retrospective triage gate (Story 2.0) 2026-05-03
 project_key: NOKEY
@@ -109,7 +109,8 @@ development_status:
   6-4-multi-namespace-install-support: done
   epic-6-retrospective: done
 
-  epic-7: backlog
+  epic-7: in-progress
+  7-0-epic-6-deferred-cleanup: done
   7-1-task-0-probe-audit-fk-cascade-design: backlog
   7-2-purgeorphanedchathistory-task-installer-scheduling: backlog
   7-3-1000-session-integration-test: backlog

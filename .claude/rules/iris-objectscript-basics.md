@@ -222,6 +222,63 @@ a ZPM hook?" Any yes blocks the PR.
    - `Security.Users`, `Security.Roles`, `Security.Resources`, `Security.Applications`, `Security.SSLConfigs` also require %SYS
    - For listing operations, prefer `##class(%ResultSet).%New("Config.Namespaces:List")` named queries over non-existent class methods like `Config.Namespaces.NamespaceList()`
 
+## `Parameter PAGENAME` MPP5646 Trap (EnsPortal Subclasses)
+
+**Rule.** Any class extending `EnsPortal.Template.standardPage` (or any
+sibling that triggers `$$$Text(..#PAGENAME)` codegen at compile time)
+MUST set `Parameter PAGENAME = ""` and override
+`Method %OnGetPageName() As %String { Quit "..." }` at runtime, rather
+than setting `Parameter PAGENAME = "Some Page Name"` directly.
+
+**Why.** When `Parameter PAGENAME` carries a non-empty value, the
+`EnsPortal.Template.standardPage` superclass codegen path emits
+`$$$Text(..#PAGENAME)` at compile time — the `$$$Text` macro writes
+into `^IRIS.Msg("Ensemble", ...)` to register the page name as a
+localizable string. That global node is **ENSLIB-privileged** at the
+storage layer; when the build context (the user / process invoking
+`compile_objectscript_class`, or the IPM `zpm load` lifecycle) does
+NOT hold the ENSLIB write privilege, the codegen path raises
+`<PROTECT> ^IRIS.Msg` and the compile fails with the cryptic
+`MPP5646: ` prefix in the error envelope. The runtime
+`%OnGetPageName()` override sidesteps the codegen path entirely —
+the page name is resolved at request-handling time via the
+already-privileged Ensemble portal context, not at compile time via
+the build context's privilege set.
+
+**Originating finding.** Story 6.4 fix-3 chrome refactor — the
+`SessionAgent.UI.Portal.AgentConfigForm` Zen page initially set
+`Parameter PAGENAME = "Configure Session Inspection Agent"` and
+compile-failed with `MPP5646 <PROTECT> ^IRIS.Msg` under the dev
+context. ~20 minutes were lost discovering the workaround during the
+manual-test fix bundle (commit `2193887`). Codified here so the next
+EnsPortal subclass author sees the rule before re-discovering it.
+
+**The pattern.** Use this canonical form on every EnsPortal subclass:
+
+```objectscript
+Class SessionAgent.UI.Portal.MyForm Extends EnsPortal.Template.standardPage
+{
+
+/// MPP5646 workaround: leave PAGENAME blank to suppress the
+/// $$$Text(..#PAGENAME) codegen path; resolve the page name at
+/// runtime via %OnGetPageName() instead.
+Parameter PAGENAME = "";
+
+Method %OnGetPageName() As %String
+{
+    Quit "My Form Display Name"
+}
+
+}
+```
+
+**Reviewer enforcement.** Any new class extending
+`EnsPortal.Template.standardPage` (or any sibling triggering the same
+codegen) whose source sets `Parameter PAGENAME` to a non-empty literal
+is a HIGH-severity finding per Rule 8 (predicted-bug shape: compile
+failure under non-ENSLIB-privileged build context). Fix-now in the
+same story.
+
 ## CouchDB Mango Selector Semantics
    - When a field referenced by a selector is **missing** from a document, CouchDB applies these rules:
      - `$ne` and `$nin` return **true** for missing fields — a missing field is "not equal" to any value

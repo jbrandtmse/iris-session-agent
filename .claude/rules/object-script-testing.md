@@ -230,3 +230,65 @@ just totals) — `SELECT COUNT(*) FROM %UnitTest_Result.TestMethod tm JOIN
 ... WHERE tm.Status=0 AND ...` — answers the binary "any failures?"
 question in one row. Use that to drive a tight red-green loop, then run the
 full per-method query at completion-claim time.
+
+## `Property Test*` Test-Method-Discovery Shadow Trap (Story 7.0 / Epic 6 retro AI-3)
+
+**Rule.** In any class extending `%UnitTest.TestCase` (or any subclass thereof —
+e.g., `SessionAgent.Test.IsolatedTestCase`), a `Property` named with the
+`Test*` prefix (e.g., `Property TestNsPrepared As %String`) auto-generates
+datatype helper methods that shadow the framework's test-method-discovery
+loop and produce phantom test failures. **Use any prefix that does NOT begin
+with `Test`** for state-tracking properties on test classes:
+`PreparedTestNs`, `Setup*`, `Cached*`, `Stored*`, `Initial*`, etc.
+
+**Why.** ObjectScript's class-compiler auto-generates datatype-helper
+methods for every `Property` declaration: `<PropName>DisplayToLogical`,
+`<PropName>LogicalToDisplay`, `<PropName>Normalize`,
+`<PropName>IsValid`, etc. The `%UnitTest.TestCase` framework's
+method-discovery loop iterates the compiled class's method roster and
+runs every method whose name begins with `Test`. When a property is
+named `TestNsPrepared`, the generated helpers (`TestNsPreparedDisplayToLogical`,
+`TestNsPreparedLogicalToDisplay`, …) all begin with `Test` and the framework
+matches them as test methods. They have no test body — they are
+datatype helpers — and the framework treats them as zero-assertion
+tests with undefined behavior, surfacing as phantom failures or as
+a confusing inflation of the test count.
+
+**Originating finding.** Story 6.4 dev wrote
+`Property TestNsPrepared As %Boolean` on
+`src/SessionAgent/Test/MultiNamespaceInstallTest.cls` to track whether the
+SATEST64 namespace had been bootstrapped before subsequent test methods
+ran. The class-level test run fired phantom test methods
+(`TestNsPreparedDisplayToLogical`, etc.) that the framework counted in
+its result envelope but had no real test body. The dev empirically
+discovered the shadow trap and renamed the property to `PreparedTestNs`
+(prefix flipped to `Prepared*`, which does not collide with the `Test`
+discovery prefix). Codified here so the next test author sees the rule
+before re-discovering it.
+
+**The pattern.** When you need a state-tracking property on a test class,
+use a non-`Test*` prefix:
+
+```objectscript
+Class MyApp.Test.SomeTest Extends %UnitTest.TestCase
+{
+
+/// Tracks whether the namespace was bootstrapped by a prior test method
+/// in this class. NOTE: prefix MUST NOT begin with "Test" — see
+/// .claude/rules/object-script-testing.md §"Property Test* Shadow Trap".
+Property PreparedTestNs As %Boolean [ InitialExpression = 0 ];
+
+/// ✓ Discovered as a test method by the framework — has a real test body.
+Method TestSomething()
+{
+    Do $$$AssertTrue(1=1, "real assertion")
+}
+
+}
+```
+
+**Reviewer enforcement.** Any new `Property` declaration on a class
+extending `%UnitTest.TestCase` whose name begins with `Test` is a
+HIGH-severity finding per Rule 8 (predicted-bug shape: phantom test
+methods will inflate or destabilize the regression sweep count).
+Fix-now in the same story by renaming the property.

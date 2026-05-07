@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-05-02
-last_updated: 2026-05-07 (Story 9.0 review — Epic 8 deferred cleanup complete: 5 AI codifications + 3 carry-forward rebinds; regression sweep 326/326)
+last_updated: 2026-05-07 (Story 9.1 review — AC-1 OnAfterSave fire_count=1 verified; AC-2 SynthesizeAlias 12/12 PASS; AC-3 regression sweep 338/338 via canonical numerical-MAX SQL probe)
 project: iris-session-agent
 # Epic 1 complete (retro 2026-05-02); Epic 2 retrospective triage gate (Story 2.0) 2026-05-03
 project_key: NOKEY
@@ -128,8 +128,8 @@ development_status:
   epic-8-retrospective: done
 
   epic-9: in-progress
-  9-0-epic-8-deferred-cleanup: review
-  9-1-task-0-probes-onaftersave-non-recursion-synthesizealias-determinism: backlog
+  9-0-epic-8-deferred-cleanup: done
+  9-1-task-0-probes-onaftersave-non-recursion-synthesizealias-determinism: review
   9-2-uservocabulary-recordsuccess-recordfailure-recursion-safe-onaftersave: backlog
   9-3-search-vocabularydigest-build: backlog
   9-4-agentloop-integration-first-user-message-prefix-injection: backlog

@@ -1154,3 +1154,27 @@ This file accumulates findings, follow-ups, and architect-decision items that ar
   - **Recommendation when picked up:** Branch the error message: when `tMode = ""` emit *"vocab_lookup requires a 'mode' field — one of 'list' | 'save' | 'search'"*; otherwise keep the current "got: 'X'" form.
   - **Owner:** Future cosmetic-cleanup pass.
   - **Blocking?** Not blocking.
+
+---
+
+## Deferred from: code review of story-9.1-task-0-probes-onaftersave-non-recursion-synthesizealias-determinism (2026-05-07)
+
+- **MEDIUM-9.1-F01 — Pre-existing flake observation: `SessionAgent.Test.AuditTest:TestLogLlmCallWritesOneRow` — intermittently fails on first run, passes on retry (carry-forward to Epic 9 retro / future test-hardening pass).**
+  - **Source:** Story 9.1 dev's regression-sweep transcript ("first run failed `AssertEquals: 5 LogLlmCall invocations -> 5 rows persisted`; passed on retry") — reviewer-confirmed not introduced by Story 9.1 (no `AuditTest.cls` modifications in the diff; last commit touching the file is `229f223` from Epic 2 retro).
+  - **File:** [`src/SessionAgent/Test/AuditTest.cls`](../../src/SessionAgent/Test/AuditTest.cls) line 149 (`TestLogLlmCallWritesOneRow`).
+  - **Severity:** MEDIUM at observation-time (a flaky regression-sweep test pollutes the pass-count signal); LOW for ship-blocking purposes (passes on retry; no operator-observable defect).
+  - **Observation:** The test calls `LogLlmCall` 5 times then asserts `SELECT COUNT(*) AS Cnt FROM SessionAgent_Audit.LlmCall = 5`. `OnBeforeOneTest` already kills `^SessionAgent.Audit.LlmCallD` and `^SessionAgent.Audit.LlmCallI` so seeded baseline is empty. The flake symptom (count != 5) suggests concurrent writes from another test or background process emitting LlmCall audit events during the window between OnBeforeOneTest's kill and the test's COUNT(*) probe.
+  - **Why deferred (Rule 5 + Rule 8 review):** Pre-existing pattern — same root-cause shape as `AgentLoopGuardsTest:TestRunTurnMaxIterationsCap` already in this file (line 892+) — global state leaking across tests under heavy concurrent test cadence. Story 9.1 dev correctly noted it but it's out-of-scope for a probe-only story. Per Rule 5, root-cause investigation deferred; per Rule 8 Test 1 (genuine future-epic scope) — flake budget belongs in Epic 9 retro health-check pass alongside the existing `AgentLoopGuardsTest` carry-forward.
+  - **Recommendation when picked up:** Combine with `AgentLoopGuardsTest:TestRunTurnMaxIterationsCap` deferred entry (line 892+) into a single Epic 9 / Epic 10 test-isolation hardening story. Likely fix: add a process-locking guard or a unique-namespace prefix to LlmCall test rows so concurrent test execution doesn't cross-contaminate. Worth a focused re-test cadence run + global-state probe.
+  - **Owner:** Epic 9 retro / future test-hardening pass.
+  - **Blocking?** Not blocking — flakes do not block ship; passes on retry; flake budget belongs in Epic 9 retro health.
+
+- **LOW-9.1-F02 — `SessionAgent.Search.SynthesizeAlias.NormalizeValue` boolean-type comment misleading.**
+  - **Source:** Story 9.1 code review (Edge-Case-Hunter layer).
+  - **File:** [`src/SessionAgent/Search/SynthesizeAlias.cls`](../../src/SessionAgent/Search/SynthesizeAlias.cls) lines 178-181.
+  - **Severity:** LOW (no operator-observable defect — behavior is correct; only the comment is misleading).
+  - **Observation:** The comment at line 179 says *`"true"/"false" are already lowercase canonical"`* but `%GetIterator()` typically delivers boolean values as the integers `1` or `0` (with type=`"boolean"` flag), not the string literals `"true"`/`"false"`. The actual stringification `pVal _ ""` produces `"1"`/`"0"`, which is consistent with the rest of the function (numeric stringification). Determinism holds — `{flag:true}` and `{flag:1}` would converge — but the comment text suggests the function emits `"true"`/`"false"` which is incorrect.
+  - **Why deferred (Rule 8 review):** Test 3 — pure cosmetic, no predicted bug shape. AC-2 does not require boolean test coverage; no production caller currently passes booleans (Story 9.5's click-through capture key contract uses tool-arg dictionaries that are typically string-keyed/string-valued). If Story 9.5 surfaces a boolean-value scenario the comment can be tightened then.
+  - **Recommendation when picked up:** Either (a) rewrite the comment to *"booleans deliver as 1/0 integers from %GetIterator(); stringify via concat to produce '1'/'0' (consistent with numeric stringification path)"*, or (b) explicitly canonicalize booleans to `"true"`/`"false"` strings to make the alias more human-readable. (a) preserves current behavior; (b) is a behavior change that needs a determinism test — pick (a) for the cosmetic cleanup pass.
+  - **Owner:** Story 9.5 dev (when consuming `SynthesizeAlias`) or future cosmetic-cleanup pass.
+  - **Blocking?** Not blocking — Story 9.5 will exercise the contract empirically and can revise then if needed.

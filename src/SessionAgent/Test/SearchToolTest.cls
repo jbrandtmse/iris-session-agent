@@ -6,7 +6,21 @@
 /// <CLASS>SessionAgent.Tool.Search.SearchByMessageClass</CLASS>, and
 /// <CLASS>SessionAgent.Tool.Search.SearchBySession</CLASS>.</p>
 ///
-/// <p>Six test methods (one per tool, AC-7):</p>
+/// <p>Story 8.4 extends this class with 3 additional test methods for
+/// <CLASS>SessionAgent.Tool.Search.SearchBySuperSession</CLASS>
+/// (<method>TestSearchBySuperSessionByKey</method>,
+/// <method>TestSearchBySuperSessionBySeedSessionId</method>,
+/// <method>TestSearchBySuperSessionXorRequired</method>). Fixture
+/// extension: <code>OnBeforeAllTests</code> seeds 4 additional
+/// <CLASS>Ens.MessageHeader</CLASS> rows in <code>BASESID+30..33</code>
+/// AND 4 corresponding <CLASS>Ens.SuperSessionIndex</CLASS> rows
+/// linking them all to <code>SuperSession='SS-TEST-001'</code>.
+/// <code>OnAfterAllTests</code> sweeps both extents — the FK has
+/// <code>OnDelete=cascade</code> so deleting the parent rows
+/// auto-cascades, plus belt-and-suspenders explicit
+/// <code>Ens.SuperSessionIndex</code> cleanup by SuperSession value.</p>
+///
+/// <p>Nine test methods total (six from Story 8.3 + three from Story 8.4):</p>
 /// <ol>
 /// <li><b>TestSearchByTimeReturnsTimeBoundedSessions</b> — fixture
 /// rows spanning 48h; default 24h window returns only the recent
@@ -24,6 +38,18 @@
 /// row whose <code>TimeCreated</code> is older than 720h; the
 /// keyed-lookup tool STILL resolves it (proving the keyed-lookup
 /// sentinel suppresses the time-window predicate).</li>
+/// <li><b>TestSearchBySuperSessionByKey</b> (Story 8.4) — 4 fixture
+/// sessions all linked to the same <code>SuperSession='SS-TEST-001'</code>;
+/// invoke with explicit <code>super_session_key</code> returns all 4
+/// sessions, <code>session_count=4</code>, <code>time_window_used</code>
+/// is JSON null.</li>
+/// <li><b>TestSearchBySuperSessionBySeedSessionId</b> (Story 8.4) —
+/// same fixture; invoke with <code>seed_session_id</code> resolves the
+/// super-session key via Phase-1 lookup and returns all 4 siblings
+/// (including the seed itself).</li>
+/// <li><b>TestSearchBySuperSessionXorRequired</b> (Story 8.4) — neither
+/// arg → <code>{isError:1}</code>; both args → <code>{isError:1}</code>;
+/// validates the Invoke-time XOR enforcement.</li>
 /// </ol>
 ///
 /// <p><b>Fixture.</b> <method>OnBeforeAllTests</method> seeds direct
@@ -78,16 +104,28 @@ Method %OnNew(initvalue As %String = "") As %Status
 /// SearchBySource/Target (2 with 'EpicADT', 2 with 'EpicADT2').</li>
 /// <li><code>BASESID + 9..BASESID + 12</code> — 4 sessions for
 /// SearchByMessageClass.</li>
+/// <li><code>BASESID + 30..BASESID + 33</code> — 4 sessions × 1 row
+/// each + 4 <CLASS>Ens.SuperSessionIndex</CLASS> rows all linking to
+/// <code>SuperSession='SS-TEST-001'</code> for the Story 8.4
+/// SearchBySuperSession tests.</li>
 /// <li><code>BASESID + 99</code> — 1 row with TimeCreated 1000h ago
 /// (older than 720h max window) for SearchBySession keyed-lookup test.</li>
 /// </ul>
 Method OnBeforeAllTests() As %Status
 {
     Kill ^||SessionAgentSearchTestIds
+    Kill ^||SessionAgentSearchSuperSessionTestIds
     Set tBase = ..#FIXTUREBASESID
 
     ; Defensive sweep — clear any prior-run debris in our SessionId range.
+    ; (Cascading FK on Ens.SuperSessionIndex.MessageHeaderFKey will
+    ; auto-delete any index rows pointing at our fixture headers, but
+    ; we also sweep by SuperSession value for orphan rows from crashed
+    ; runs.)
     Set tCleanup = ##class(%SQL.Statement).%New()
+    If $$$ISOK(tCleanup.%Prepare("DELETE FROM Ens.SuperSessionIndex WHERE %EXACT(SuperSession) = ?")) {
+        Do tCleanup.%Execute("SS-TEST-001")
+    }
     If $$$ISOK(tCleanup.%Prepare("DELETE FROM Ens.MessageHeader WHERE SessionId BETWEEN ? AND ?")) {
         Do tCleanup.%Execute(tBase, tBase + 100)
     }
@@ -213,6 +251,39 @@ Method OnBeforeAllTests() As %Status
         Set ^||SessionAgentSearchTestIds(tRowSeq) = tHdr.%Id()
     }
 
+    ; ---- SUPER-SESSION fixture (Story 8.4): 4 sessions, each with one
+    ; Ens.MessageHeader row + one Ens.SuperSessionIndex row all pointing
+    ; at SuperSession='SS-TEST-001'. SessionId BASESID+30..BASESID+33.
+    ; Captured SuperSessionIndex IDs are stored in
+    ; ^||SessionAgentSearchSuperSessionTestIds for explicit cleanup.
+    Kill ^||SessionAgentSearchSuperSessionTestIds
+    Set tSsiSeq = 0
+    For tSsOffset = 30, 31, 32, 33 {
+        Set tShiftedSecs = tNowSecs - 1800
+        Set tShiftedDays = tNowDays
+        If tShiftedSecs < 0 Set tShiftedSecs = tShiftedSecs + 86400, tShiftedDays = tShiftedDays - 1
+        Set tHdr = ##class(Ens.MessageHeader).%New()
+        Set tHdr.SessionId = tBase + tSsOffset
+        Set tHdr.TimeCreated = $ZDateTime(tShiftedDays _ "," _ tShiftedSecs, 3, 1, 0)
+        Set tHdr.SourceConfigName = "SuperSessionFixtureSrc"
+        Set tHdr.TargetConfigName = "SuperSessionFixtureTgt"
+        Set tHdr.MessageBodyClassName = "SuperSessionFixture.Msg"
+        Set tHdr.Status = 9
+        Set tSCss = tHdr.%Save()
+        If $$$ISERR(tSCss) Quit
+        Set tRowSeq = tRowSeq + 1
+        Set ^||SessionAgentSearchTestIds(tRowSeq) = tHdr.%Id()
+
+        ; Add the SuperSessionIndex row pointing at this MessageHeader.
+        Set tSsi = ##class(Ens.SuperSessionIndex).%New()
+        Set tSsi.SuperSession = "SS-TEST-001"
+        Set tSsi.MessageHeader = tHdr
+        Set tSCsi = tSsi.%Save()
+        If $$$ISERR(tSCsi) Quit
+        Set tSsiSeq = tSsiSeq + 1
+        Set ^||SessionAgentSearchSuperSessionTestIds(tSsiSeq) = tSsi.%Id()
+    }
+
     ; ---- SESSION-LOOKUP fixture: 1 row at -1000h (older than 720h max).
     ; SessionId BASESID+99. Proves keyed-lookup mode bypasses the window.
     Set tSessSid = tBase + 99
@@ -238,9 +309,33 @@ Method OnBeforeAllTests() As %Status
 }
 
 /// <p>Cleanup — delete fixture rows by captured ID then sweep any
-/// stragglers via composite-key DELETE.</p>
+/// stragglers via composite-key DELETE. Story 8.4 extends this with
+/// explicit <CLASS>Ens.SuperSessionIndex</CLASS> cleanup. The FK has
+/// <code>OnDelete=cascade</code> so MessageHeader DELETE cascades, but
+/// the explicit pass guards against partial-fixture states (e.g., a
+/// prior test crashed before linking) and the SuperSession-keyed
+/// composite DELETE catches any orphan rows by SuperSession value.</p>
 Method OnAfterAllTests() As %Status
 {
+    ; Story 8.4 — delete SuperSessionIndex rows BEFORE deleting their
+    ; parent MessageHeader rows. (The FK cascade handles the order
+    ; either way, but explicit deletion captures the test-cleanup
+    ; intent and survives any future FK-config drift.)
+    Set tSsiIdx = ""
+    For  {
+        Set tSsiIdx = $Order(^||SessionAgentSearchSuperSessionTestIds(tSsiIdx))
+        Quit:tSsiIdx=""
+        Set tSsiId = $Get(^||SessionAgentSearchSuperSessionTestIds(tSsiIdx))
+        If tSsiId '= "" Do ##class(Ens.SuperSessionIndex).%DeleteId(tSsiId)
+    }
+    Kill ^||SessionAgentSearchSuperSessionTestIds
+    ; Belt-and-suspenders — sweep any SuperSessionIndex rows for our
+    ; fixture SuperSession value (catches orphan rows from crashed runs).
+    Set tStmtSsi = ##class(%SQL.Statement).%New()
+    If $$$ISOK(tStmtSsi.%Prepare("DELETE FROM Ens.SuperSessionIndex WHERE %EXACT(SuperSession) = ?")) {
+        Do tStmtSsi.%Execute("SS-TEST-001")
+    }
+
     Set tIdx = ""
     For  {
         Set tIdx = $Order(^||SessionAgentSearchTestIds(tIdx))
@@ -458,6 +553,111 @@ Method TestSearchBySessionKeyedLookupOmitsTimeWindow()
     Set tSCb = ##class(SessionAgent.Tool.Search.SearchBySession).Invoke(tCtx, {}, .tBadResult)
     Do $$$AssertStatusOK(tSCb, "Invoke returns $$$OK on missing session_id (envelope-based error)")
     Do $$$AssertEquals(+tBadResult.%Get("isError"), 1, "isError = 1 on missing session_id")
+    Quit
+}
+
+/// <p>Story 8.4 AC-7 #1 — invoke <CLASS>SessionAgent.Tool.Search.SearchBySuperSession</CLASS>
+/// with explicit <code>super_session_key='SS-TEST-001'</code>. The
+/// fixture seeded 4 <CLASS>Ens.SuperSessionIndex</CLASS> rows linking
+/// <code>BASESID+30..BASESID+33</code> to that key; assert the tool
+/// returns all 4 sessions, <code>session_count=4</code>, and
+/// <code>time_window_used</code> is JSON null.</p>
+Method TestSearchBySuperSessionByKey()
+{
+    Set tCtx = ..BuildCtx()
+    Set tArgs = {"super_session_key": "SS-TEST-001", "limit": 500}
+    Set tResult = ""
+    Set tSC = ##class(SessionAgent.Tool.Search.SearchBySuperSession).Invoke(tCtx, tArgs, .tResult)
+    Do $$$AssertStatusOK(tSC, "SearchBySuperSession.Invoke returns $$$OK")
+    Do $$$AssertEquals(tResult.structuredContent.%Get("indexed_lead_column"), "SuperSessionKey", "indexed_lead_column = SuperSessionKey")
+    Do $$$AssertEquals(tResult.structuredContent.%Get("super_session_key"), "SS-TEST-001", "super_session_key echoed in envelope")
+    Do $$$AssertEquals(+tResult.structuredContent.%Get("session_count"), 4, "session_count = 4 (4-session fixture)")
+
+    ; All 4 fixture sessions must be present.
+    Set tFound30 = 0, tFound31 = 0, tFound32 = 0, tFound33 = 0
+    Set tIter = tResult.structuredContent.%Get("sessions").%GetIterator()
+    While tIter.%GetNext(.tKey, .tEntry) {
+        Set tSid = +tEntry.%Get("session_id")
+        If tSid = (..#FIXTUREBASESID + 30) Set tFound30 = 1
+        If tSid = (..#FIXTUREBASESID + 31) Set tFound31 = 1
+        If tSid = (..#FIXTUREBASESID + 32) Set tFound32 = 1
+        If tSid = (..#FIXTUREBASESID + 33) Set tFound33 = 1
+    }
+    Do $$$AssertTrue(tFound30, "fixture session BASESID+30 present")
+    Do $$$AssertTrue(tFound31, "fixture session BASESID+31 present")
+    Do $$$AssertTrue(tFound32, "fixture session BASESID+32 present")
+    Do $$$AssertTrue(tFound33, "fixture session BASESID+33 present")
+
+    ; time_window_used is JSON null for keyed-lookup mode (AC-5 parallel
+    ; to SearchBySession's convention from Story 8.3).
+    Do $$$AssertEquals(tResult.structuredContent.%IsDefined("time_window_used"), 1, "time_window_used field present (set to JSON null)")
+    Do $$$AssertEquals(tResult.structuredContent.%Get("time_window_used"), "", "time_window_used = JSON null (visible as empty-string via %Get)")
+    Set tJson = tResult.structuredContent.%ToJSON()
+    Do $$$AssertTrue(tJson [ """time_window_used"":null", "JSON serialization contains 'time_window_used:null'")
+    Quit
+}
+
+/// <p>Story 8.4 AC-7 #2 — same fixture as
+/// <method>TestSearchBySuperSessionByKey</method>; invoke with
+/// <code>seed_session_id</code>. The tool's Phase-1 lookup resolves
+/// the super-session key from the seed's
+/// <CLASS>Ens.SuperSessionIndex</CLASS> row, then Phase-2 returns all
+/// 4 siblings (including the seed itself, since the SQL grouping has
+/// no exclusion).</p>
+Method TestSearchBySuperSessionBySeedSessionId()
+{
+    Set tCtx = ..BuildCtx()
+    Set tSeedSid = ..#FIXTUREBASESID + 30
+    Set tArgs = {"seed_session_id": (tSeedSid), "limit": 500}
+    Set tResult = ""
+    Set tSC = ##class(SessionAgent.Tool.Search.SearchBySuperSession).Invoke(tCtx, tArgs, .tResult)
+    Do $$$AssertStatusOK(tSC, "SearchBySuperSession.Invoke (seed) returns $$$OK")
+    Do $$$AssertEquals(tResult.structuredContent.%Get("super_session_key"), "SS-TEST-001", "super_session_key resolved from seed via Phase-1 lookup")
+    Do $$$AssertEquals(+tResult.structuredContent.%Get("session_count"), 4, "session_count = 4 (seed + 3 siblings)")
+
+    ; Verify seed and siblings present.
+    Set tFoundSeed = 0, tFoundSibs = 0
+    Set tIter = tResult.structuredContent.%Get("sessions").%GetIterator()
+    While tIter.%GetNext(.tKey, .tEntry) {
+        Set tSid = +tEntry.%Get("session_id")
+        If tSid = tSeedSid Set tFoundSeed = 1
+        If (tSid = (..#FIXTUREBASESID + 31)) || (tSid = (..#FIXTUREBASESID + 32)) || (tSid = (..#FIXTUREBASESID + 33)) Set tFoundSibs = tFoundSibs + 1
+    }
+    Do $$$AssertTrue(tFoundSeed, "seed session " _ tSeedSid _ " present in result (no exclusion)")
+    Do $$$AssertEquals(tFoundSibs, 3, "all 3 sibling sessions (BASESID+31, +32, +33) present")
+
+    ; Negative — seed_session_id with no SuperSessionIndex entry returns
+    ; the structured-error envelope (NOT an exception).
+    Set tArgsBad = {"seed_session_id": "9999999"}
+    Set tBadResult = ""
+    Set tSCb = ##class(SessionAgent.Tool.Search.SearchBySuperSession).Invoke(tCtx, tArgsBad, .tBadResult)
+    Do $$$AssertStatusOK(tSCb, "Invoke returns $$$OK on missing seed-supersession (envelope-based error)")
+    Do $$$AssertEquals(+tBadResult.%Get("isError"), 1, "isError = 1 when seed_session_id has no super-session entry")
+    Quit
+}
+
+/// <p>Story 8.4 AC-7 #3 — XOR enforcement. Neither arg → structured
+/// error; both args → structured error. Asserts the Invoke-time XOR
+/// validation (the locked-subset JSON Schema cannot enforce XOR via
+/// <code>oneOf</code>, so the tool body enforces it).</p>
+Method TestSearchBySuperSessionXorRequired()
+{
+    Set tCtx = ..BuildCtx()
+
+    ; Neither arg.
+    Set tNeitherResult = ""
+    Set tSCn = ##class(SessionAgent.Tool.Search.SearchBySuperSession).Invoke(tCtx, {}, .tNeitherResult)
+    Do $$$AssertStatusOK(tSCn, "Invoke returns $$$OK on neither arg (envelope-based error)")
+    Do $$$AssertEquals(+tNeitherResult.%Get("isError"), 1, "isError = 1 when neither super_session_key nor seed_session_id provided")
+    Do $$$AssertTrue(tNeitherResult.%Get("content").%Get(0).%Get("text") [ "neither", "error text mentions 'neither'")
+
+    ; Both args.
+    Set tBothArgs = {"super_session_key":"X","seed_session_id":"Y"}
+    Set tBothResult = ""
+    Set tSCb = ##class(SessionAgent.Tool.Search.SearchBySuperSession).Invoke(tCtx, tBothArgs, .tBothResult)
+    Do $$$AssertStatusOK(tSCb, "Invoke returns $$$OK on both args (envelope-based error)")
+    Do $$$AssertEquals(+tBothResult.%Get("isError"), 1, "isError = 1 when both super_session_key AND seed_session_id provided")
+    Do $$$AssertTrue(tBothResult.%Get("content").%Get(0).%Get("text") [ "both", "error text mentions 'both'")
     Quit
 }
 

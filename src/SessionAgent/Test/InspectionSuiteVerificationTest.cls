@@ -59,13 +59,15 @@ Class SessionAgent.Test.InspectionSuiteVerificationTest Extends %UnitTest.TestCa
 /// the named-tool list in
 /// <method>TestRegistryListsExactlyThirteenTools</method>.</p>
 /// <p>Expected production tool count surfaced by
-/// <method>SessionAgent.Tool.Registry.ListTools</method>. As of Story 8.3
-/// this is <b>19</b> — 13 inspection tools (Stories 2.11 + 4.x) + 6
+/// <method>SessionAgent.Tool.Registry.ListTools</method>. As of Story 8.4
+/// this is <b>20</b> — 13 inspection tools (Stories 2.11 + 4.x) + 7
 /// search tools (Story 8.3: <code>search_by_time</code>,
 /// <code>search_by_status</code>, <code>search_by_source</code>,
 /// <code>search_by_target</code>, <code>search_by_message_class</code>,
-/// <code>search_by_session</code>). Stories 8.4–8.7 will increment further.</p>
-Parameter EXPECTEDTOOLCOUNT As %Integer = 19;
+/// <code>search_by_session</code>; Story 8.4:
+/// <code>search_by_super_session</code>). Stories 8.5–8.7 will
+/// increment further.</p>
+Parameter EXPECTEDTOOLCOUNT As %Integer = 20;
 
 /// <p>Synthetic session id well outside any realistic Ens production
 /// range. Used by every "not found" / "validation error" envelope assertion
@@ -176,6 +178,11 @@ ClassMethod GetRepresentativeArgs(pToolName As %String) As %DynamicObject
         Do tArgs.%Set("limit", 5, "number")
     } ElseIf pToolName = "search_by_session" {
         Do tArgs.%Set("session_id", ..#SYNTHETICSESSIONID, "number")
+    } ElseIf pToolName = "search_by_super_session" {
+        ; Story 8.4 — synthetic super-session key won't match production
+        ; rows (returns empty result set, avoiding fixture coupling).
+        Do tArgs.%Set("super_session_key", "Synthetic.NoMatch.SuperSession")
+        Do tArgs.%Set("limit", 5, "number")
     }
     Quit tArgs
 }
@@ -297,7 +304,7 @@ Method TestRegistryListsExactlyThirteenTools()
     Do $$$AssertEquals(tList.%Size(), ..#EXPECTEDTOOLCOUNT, "exactly " _ ..#EXPECTEDTOOLCOUNT _ " tools registered")
 
     ; Verify every expected name is present (order-independent).
-    Set tExpected = $ListBuild("session_summary", "session_timeline", "message_headers", "event_log", "rule_log", "get_message_body", "get_message_detail", "get_business_process_source", "get_business_process_instance", "list_business_process_methods", "find_related_sessions", "find_sessions_by_body", "explain_error", "search_by_time", "search_by_status", "search_by_source", "search_by_target", "search_by_message_class", "search_by_session")
+    Set tExpected = $ListBuild("session_summary", "session_timeline", "message_headers", "event_log", "rule_log", "get_message_body", "get_message_detail", "get_business_process_source", "get_business_process_instance", "list_business_process_methods", "find_related_sessions", "find_sessions_by_body", "explain_error", "search_by_time", "search_by_status", "search_by_source", "search_by_target", "search_by_message_class", "search_by_session", "search_by_super_session")
     Set tFound = ""
     Set tIter = tList.%GetIterator()
     While tIter.%GetNext(.tKey, .tEntry) {

@@ -325,6 +325,10 @@ ClassMethod BuildMinimalToolArgs(pToolName As %String) As %String
     If pToolName = "search_by_target" Quit "{""target_config_name"":""SyntheticTestTgt_NoMatch"",""limit"":3}"
     If pToolName = "search_by_message_class" Quit "{""message_body_class_name"":""Synthetic.NoMatch.Msg"",""limit"":3}"
     If pToolName = "search_by_session" Quit "{""session_id"":""1""}"
+    ; Story 8.4 — synthetic super-session key won't match production rows
+    ; (returns empty result set, not isError, ensuring the round-trip
+    ; exercises the happy-path envelope shape).
+    If pToolName = "search_by_super_session" Quit "{""super_session_key"":""Synthetic.NoMatch.SuperSession"",""limit"":3}"
     ; Unknown tool — empty object. Will produce a tool-error envelope but
     ; the dispatch round-trip still happens.
     Quit "{}"
@@ -694,14 +698,15 @@ ClassMethod RunMatrix() As %DynamicObject
 /// <p><b>AC-2 — Cardinality lock.</b> Asserts the matrix has the
 /// expected 4 × N cardinality at the current epic close. Locked at
 /// 4 × 13 = 52 for Epic 5; Story 8.3 grew the count to 4 × 19 = 76
-/// (13 inspection + 6 search). When a 5th provider or 20th tool is
+/// (13 inspection + 6 search); Story 8.4 grew it to 4 × 20 = 80
+/// (13 inspection + 7 search). When a 5th provider or 21st tool is
 /// added, this assertion auto-fails so the maintainer updates the
 /// expected count + acknowledges the matrix grew. Defensive against
 /// silent shrinkage too (a regression deleting a tool).</p>
 Method TestMatrixCardinalityIs52()
 {
     Set tMatrix = ..EnumerateMatrix()
-    Do $$$AssertEquals(tMatrix.%Size(), 76, "Matrix cardinality at Story 8.3 close = 4 providers × 19 tools (13 inspection + 6 search) = 76 pairs (got: " _ tMatrix.%Size() _ ")")
+    Do $$$AssertEquals(tMatrix.%Size(), 80, "Matrix cardinality at Story 8.4 close = 4 providers × 20 tools (13 inspection + 7 search) = 80 pairs (got: " _ tMatrix.%Size() _ ")")
 }
 
 /// <p><b>AC-5 — Dispatch policy gate.</b> Structurally verify that every

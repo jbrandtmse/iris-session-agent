@@ -1040,4 +1040,26 @@ This file accumulates findings, follow-ups, and architect-decision items that ar
   - **Owner:** None reserved. Natural carrier is Story 8.4/8.5/8.6/8.7 (extending the Search Agent tool suite — likely encounters the same envelope-shape question for vocabulary-driven tools).
   - **Blocking?** Not blocking. Operator-observable but ergonomic-not-functional.
 
+---
+
+## Deferred from: code review of story-8.4-searchbysupersession (2026-05-07)
+
+- **LOW-8.4-F01 — Phase-1 "no super-session for seed_session_id" error envelope omits a `super_session_key: ""` field that callers may expect for shape stability.**
+  - **Source:** Story 8.4 code review (informational-only finding).
+  - **Severity:** LOW (cosmetic; no contract breach).
+  - **Observation:** [`src/SessionAgent/Tool/Search/SearchBySuperSession.cls:173`](../../src/SessionAgent/Tool/Search/SearchBySuperSession.cls#L173) — when Phase-1 lookup finds no `Ens.SuperSessionIndex` row for the supplied `seed_session_id`, the structured-content envelope returns `{render_strategy: "no_super_session_for_seed", seed_session_id: tSeedId}` without a `super_session_key: ""` field. Sister tool `SessionAgent.Tool.Inspection.FindRelatedSessions` (Story 4.5) DOES echo `super_session_key: ""` in its empty-shape envelope so downstream renderers can rely on a stable shape regardless of `isError`. The Story 8.4 dev's design choice is defensible — `isError:1` clearly steers callers to read `content[0].text` — but it leaves the structuredContent shape inconsistent across the cross-instance tool family.
+  - **Why deferred (Rule 8 review):** Test 3 (cosmetic / no predicted-bug shape) — fits. No operator-observable bug; no envelope contract breach (the absence of `super_session_key` is consistent with the documented success-only-presence rule). Adding the field is a one-line patch but would benefit from being part of a deliberate cross-tool envelope-stability sweep, not a one-off.
+  - **Recommendation when picked up:** When Story 8.5/8.6/8.7 ship their additional cross-instance/vocabulary-driven tools, codify a "structuredContent fields are always present, defaulted to JSON `null` or empty string on isError envelopes" convention across the Search Agent tool family + retrofit `SearchBySuperSession` and the existing `FindRelatedSessions` if they drift.
+  - **Owner:** None reserved. Natural carrier is Story 8.5/8.6/8.7 (continued Search Agent extension).
+  - **Blocking?** Not blocking. Cosmetic shape consistency.
+
+- **LOW-8.4-F02 — Lex-MAX vs numerical-MAX SQL form ambiguity in `^UnitTest.Result` probes; project rule already mandates numerical-MAX but several stories have re-tripped the lex-MAX trap.**
+  - **Source:** Story 8.4 code review (auto-resolved in same commit; logged for visibility).
+  - **Severity:** LOW (the project rule §"SQL-probe-as-ground-truth for test-pass verification" in `.claude/rules/object-script-testing.md` already mandates the numerical-MAX form via `$PIECE(ID,'||',1)+0`; the rule is sound but stories 8.0, 8.2, 8.3, 8.4 have each surfaced one instance of dev-fallback to bare lex-MAX).
+  - **Observation:** Story 8.4 dev's submission reported `282/282/0` from a `MAX(ID)` SQL probe; the actual ground-truth aggregate via numerical-MAX is `310/310/0` (matching the spec's expected baseline). The dev's debug-log notes acknowledged the lex-MAX-vs-numerical-MAX concern verbatim but then declined to use the numerical-MAX form. Story 8.2 reviewer encountered the same flag and dismissed it as "rule already addresses it"; Story 8.4 surfaced it again — the *rule* is fine, the *muscle memory* is not yet automatic.
+  - **Why deferred:** Test 3 (cosmetic — no predicted-bug shape; the binding "0 failures" signal is preserved in both forms). The story-level fix landed in the Completion Notes correction. The pattern-prevention angle is what makes this worth a deferred-work entry — to surface the recurrence pattern for the next epic-cycle retrospective so the rule's enforcement gets a sharper trigger (e.g., a per-story Task-0 SQL-template the dev pastes verbatim, instead of constructing the SQL ad-hoc).
+  - **Recommendation when picked up:** At the next Epic-cycle retrospective (Epic 8 close), consider a sharpening to Rule 6 step 3 / `.claude/rules/object-script-testing.md` §"SQL-probe-as-ground-truth": ship a literal copy-pasteable SQL template inside the project rule file and require dev Completion Notes to paste the template verbatim before substituting class-filter values. The current rule cites the form correctly but allows dev-construction-from-memory which has now mis-fired across 4 stories.
+  - **Owner:** None reserved. Natural carrier is Epic 8 retrospective / Story 8.7 close-out.
+  - **Blocking?** Not blocking. Process-improvement item.
+
 

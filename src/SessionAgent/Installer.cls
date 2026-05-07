@@ -115,7 +115,15 @@ ClassMethod Install(pVars) As %Status
         ; logged, not error). Config.Agent ships in Story 2.4.
         Do ..SeedDefaultAgentConfigs()
 
-        ; (5) Operator reminders to install log (bookmark URLs + README pointer).
+        ; (5) Search Agent seed vocabulary (Story 8.1). Idempotent — re-running
+        ; does NOT duplicate rows because Seed() uses a composite-key
+        ; existence probe before each insert (NFR-R5). Status is propagated
+        ; per project rule "Write Status Checking".
+        Set tSC = ##class(SessionAgent.Search.SeedVocabulary).Seed()
+        If $$$ISERR(tSC) Quit
+        Do ..LogPostSeedVocabularyCount()
+
+        ; (6) Operator reminders to install log (bookmark URLs + README pointer).
         Do ..PrintOperatorReminders()
     }
     Catch ex {
@@ -549,6 +557,39 @@ ClassMethod PrintOperatorReminders() [ Private ]
 ClassMethod LogProgress(pMsg As %String) [ Private ]
 {
     Write !,"[iris-session-agent] ", pMsg
+}
+
+/// <p>Story 8.1 helper — queries the post-Seed row count from
+/// <code>SessionAgent_Search.SeedVocabulary</code> and emits the
+/// operator-visible <code>"&lt;count&gt; seed vocabulary templates ensured"</code>
+/// log line. On a fresh install the count is the full template list
+/// (~10); on a re-install the count is unchanged (idempotency
+/// confirmed at the operator-visible level).</p>
+///
+/// <p>Defensive — if the count query fails for any reason (e.g., the
+/// SeedVocabulary class is somehow not present after Seed() returned
+/// $$$OK), logs a diagnostic line and returns; does NOT propagate as
+/// an error so the overall install succeeds.</p>
+ClassMethod LogPostSeedVocabularyCount() [ Private ]
+{
+    Try {
+        Set tStmt = ##class(%SQL.Statement).%New()
+        Set tPrepSC = tStmt.%Prepare("SELECT COUNT(*) AS Cnt FROM SessionAgent_Search.SeedVocabulary")
+        If $$$ISERR(tPrepSC) {
+            Do ..LogProgress("Failed to prepare seed-vocabulary count query: " _ $System.Status.GetErrorText(tPrepSC))
+            Quit
+        }
+        Set tRS = tStmt.%Execute()
+        If tRS.%Next() {
+            Set tCount = tRS.%Get("Cnt")
+            Do ..LogProgress(tCount _ " seed vocabulary templates ensured")
+        } Else {
+            Do ..LogProgress("Seed vocabulary count query returned no rows")
+        }
+    }
+    Catch ex {
+        Do ..LogProgress("Exception in LogPostSeedVocabularyCount: " _ ex.DisplayString())
+    }
 }
 
 /// <p>Strip UDL doc-comment HTML markup from <var>pText</var> so the

@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-05-02
-last_updated: 2026-05-07 (Story 8.0 review — dev complete; 291/291/0 SQL ground-truth, AC-2 Installer Description propagation verified via iris_task_list envelope, all 8 ACs satisfied)
+last_updated: 2026-05-07 (Story 8.1 review — dev complete; 296/296/0 SQL ground-truth, live install verified twice with idempotent COUNT(*)=10 on both runs, all 7 ACs satisfied)
 project: iris-session-agent
 # Epic 1 complete (retro 2026-05-02); Epic 2 retrospective triage gate (Story 2.0) 2026-05-03
 project_key: NOKEY
@@ -118,7 +118,7 @@ development_status:
 
   epic-8: in-progress
   8-0-epic-7-deferred-cleanup: review
-  8-1-vocabulary-schemas-seed-templates: backlog
+  8-1-vocabulary-schemas-seed-templates: review
   8-2-tool-search-base-bounded-where-invariant-test: backlog
   8-3-6-simple-indexed-access-tools: backlog
   8-4-searchbysupersession: backlog

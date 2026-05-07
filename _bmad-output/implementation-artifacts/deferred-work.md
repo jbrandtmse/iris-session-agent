@@ -1005,4 +1005,17 @@ This file accumulates findings, follow-ups, and architect-decision items that ar
   - **Owner:** None reserved. Same optional-polish bucket as F-02.
   - **Blocking?** Not blocking.
 
+---
+
+## Deferred from: code review of story-8-1-vocabulary-schemas-seed-templates (2026-05-07)
+
+- **LOW-8.1-F01 — `SeedVocabulary.Seed()` lacks DB-level concurrency guard against double-insertion under simultaneous Installer invocations.**
+  - **Source:** Story 8.1 code review (Edge Case Hunter layer, finding F-2).
+  - **Severity:** LOW (no concrete predicted-bug shape under realistic operating conditions; IPM lifecycle is single-threaded).
+  - **Observation:** [`src/SessionAgent/Search/SeedVocabulary.cls:152-207`](../../src/SessionAgent/Search/SeedVocabulary.cls#L152) `InsertIfMissing` uses a TOCTOU pattern — probes via `SELECT TOP 1 ID ... WHERE %EXACT(Alias)=? AND MessageBodyClass IS NULL` then inserts via `%New() + %Save()` without a transactional bracket or DB-level uniqueness constraint on `(Alias, MessageBodyClass)`. If two `Installer.Install` invocations run concurrently (e.g., parallel IPM operations on a shared IRIS instance, or an operator script that loops `zpm install` while another `zpm install` is mid-flight), both probes can return zero rows, both inserts succeed, the SeedVocabulary extent ends up with 20 rows instead of 10. The `AliasIdx` is non-unique (per AC-2 — multiple `MessageBodyClass` values may share an Alias), so it provides no DB-level guard.
+  - **Why deferred (Rule 8 review):** Test 1 (future-epic scope) — not a fit; could land in Story 8.1 itself if pursued. Test 2 (external-dependency blocker) — not a fit. Test 3 (cosmetic / no predicted-bug shape) — borderline. IPM's `<Invoke>` lifecycle invokes `Installer.Install("")` once per `zpm load` / `zpm install` operation; concurrent IPM operations on the same module in the same namespace are not a documented operator workflow and would surface other races first (Audit.Emit.EnsureEvents has the same shape, and ships from Epic 1). The realistic operator's single-threaded install path makes this LOW.
+  - **Recommendation when picked up:** Either (a) add a unique compound `(Alias, MessageBodyClass)` index to `SeedVocabulary.cls` — but this needs careful schema migration since the dev's empirical finding (IRIS stores empty `%String` as SQL NULL) means SQL-level uniqueness on a NULL column is implementation-defined; or (b) wrap the probe-then-insert in `TSTART`/`TCOMMIT` with `LOCK +^SeedVocabularyLock:0`. Option (b) is the safer pattern and aligns with NFR-R5 idempotency hardening.
+  - **Owner:** None reserved. Natural carrier is the v1.5 / Vision-tier vocabulary hardening pass (the same epic that also activates `NamespaceVocabulary` aggregation logic).
+  - **Blocking?** Not blocking. Operator-observable break only under unsupported concurrent-install workflow.
+
 

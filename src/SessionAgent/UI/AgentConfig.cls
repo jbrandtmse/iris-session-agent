@@ -15,12 +15,26 @@
 /// layout testable in isolation per UX-DR11 (matches
 /// <CLASS>EnsPortal.Credentials</CLASS> conventions).</p>
 ///
-/// <p><b>Inheritance.</b> Extends <code>%ZEN.Component.page</code> per
-/// epics.md line 1826. <code>Parameter APPLICATION =
-/// "EnsPortal.Application"</code> wires the page into the Mgmt Portal
-/// stylesheet/header pipeline so the form looks like sibling EnsPortal
-/// pages without re-implementing the chrome (UX-DR26 — no
-/// Material/Tailwind/etc.).</p>
+/// <p><b>Inheritance.</b> Extends
+/// <CLASS>EnsPortal.Template.standardPage</CLASS> so the page renders
+/// inside the standard Mgmt-Portal chrome (title bar, locator/breadcrumb
+/// strip, ribbon, small-menu, session-keepalive, autologout) — matching
+/// the sibling <CLASS>EnsPortal.Credentials</CLASS> page operators
+/// already know. The 2026-05-06 manual-test pass surfaced that the
+/// previous <code>%ZEN.Component.page</code> + <code>APPLICATION =
+/// "EnsPortal.Application"</code> shape inherited the stylesheet but
+/// not the chrome — operators saw a bare unstyled form. Switching the
+/// parent class is the correct fix per UX-DR26 (look like other Mgmt
+/// Portal config pages). The standardPage parent already declares
+/// <code>APPLICATION</code> + <code>DOMAIN</code> so we drop those
+/// duplicate parameters here.</p>
+///
+/// <p>The form layout moves from <code>XData Contents</code> with a
+/// <code>&lt;page&gt;</code> root to <code>XData contentPane</code> with
+/// a <code>&lt;pane&gt;</code> root — the pane is what
+/// <CLASS>EnsPortal.Template.standardPage</CLASS> embeds inside the
+/// chrome. Component IDs and JS handler bindings are unchanged so all
+/// existing tests, screenshots, and operator muscle memory still apply.</p>
 ///
 /// <p><b>Static-text-at-runtime pattern.</b> The XData Contents block
 /// declares form components with NO label/caption/displayList attributes
@@ -59,15 +73,19 @@
 /// <li><CLASS>SessionAgent.EnsPortal.VisualTrace</CLASS> — sibling Zen
 /// subclass; provided the runtime-caption-set workaround for MPP5646.</li>
 /// </ul>
-Class SessionAgent.UI.AgentConfig Extends %ZEN.Component.page
+Class SessionAgent.UI.AgentConfig Extends EnsPortal.Template.standardPage [ System = 4 ]
 {
 
-/// <p>Wire the page into the Mgmt Portal stylesheet/header pipeline so
-/// the form chrome matches sibling EnsPortal pages (UX-DR26).</p>
-Parameter APPLICATION = "EnsPortal.Application";
-
-/// <p>Operator-friendly title rendered in the page title bar.</p>
-Parameter PAGENAME = "Agent Configuration";
+/// <p>Page name is intentionally empty at the parameter level — the
+/// runtime <method>%OnGetPageName</method> override returns the
+/// operator-friendly string. Setting <code>PAGENAME = "Agent
+/// Configuration"</code> at compile time triggers the parent's
+/// <code>$$$Text(..#PAGENAME)</code> code generator to write the new
+/// string into <code>^IRIS.Msg("Ensemble",...)</code> from a non-ENSLIB
+/// build context, raising MPP5646 / <code>&lt;PROTECT&gt;</code> at
+/// compile time. Empty parameter + runtime callback is the pattern
+/// other custom-string EnsPortal subclasses use.</p>
+Parameter PAGENAME = "";
 
 /// <p>Resource gating: operator must have %Ens_Portal:USE (the standard
 /// Mgmt Portal access resource) to view the page. The
@@ -76,10 +94,6 @@ Parameter PAGENAME = "Agent Configuration";
 /// handler) lands in Story 6.2 with EDITRESOURCE wiring.</p>
 Parameter RESOURCE = "%Ens_Portal:USE";
 
-/// <p>Localized strings resolve via the existing Ens domain catalog
-/// (matches <CLASS>EnsPortal.Credentials</CLASS> pattern).</p>
-Parameter DOMAIN = "%Ensemble";
-
 /// <p>Form layout. Thirteen components in the order specified by AC-2.
 /// All <code>label</code> / <code>caption</code> / <code>displayList</code>
 /// attributes are deliberately omitted — they are populated at runtime
@@ -87,9 +101,16 @@ Parameter DOMAIN = "%Ensemble";
 /// <code>&lt;PROTECT&gt;</code> errors against the
 /// <code>^%qMsg("%Ensemble",...)</code> catalog (see class doc-comment).
 /// Tab navigation follows visible order.</p>
-XData Contents [ XMLNamespace = "http://www.intersystems.com/zen" ]
+///
+/// <p><b>Block name + root.</b> Per the
+/// <CLASS>EnsPortal.Template.standardPage</CLASS> contract the form
+/// layout lives in <code>XData contentPane</code> with a
+/// <code>&lt;pane&gt;</code> root — the parent's chrome embeds this
+/// pane inside its rendered title-bar / locator / ribbon / footer.
+/// Sibling <CLASS>EnsPortal.Credentials</CLASS> uses the same pattern.</p>
+XData contentPane [ XMLNamespace = "http://www.intersystems.com/zen" ]
 {
-<page xmlns="http://www.intersystems.com/zen">
+<pane xmlns="http://www.intersystems.com/zen">
 <vgroup cellStyle="padding:6px;">
 
 <select id="agentSelect" valueList="session-inspection,message-search" value="session-inspection" onchange="zenPage.loadAgent();" />
@@ -125,7 +146,7 @@ XData Contents [ XMLNamespace = "http://www.intersystems.com/zen" ]
 </hgroup>
 
 </vgroup>
-</page>
+</pane>
 }
 
 /// <p>Inline CSS for the SystemPromptOverride char-counter color
@@ -161,6 +182,22 @@ XData Style
     padding-top: 4px;
 }
 </style>
+}
+
+/// <p>Page-name callback (parent contract — used by
+/// <method>%GetLocatorLinks</method> to render the breadcrumb /
+/// locator-bar entry for this page).</p>
+Method %OnGetPageName() As %String
+{
+    Quit "Agent Configuration"
+}
+
+/// <p>Title callback (parent contract — used by the title-bar
+/// rendering pipeline). Returning the same string as the page name keeps
+/// the chrome consistent with sibling Mgmt-Portal config pages.</p>
+Method %OnGetTitle() As %String
+{
+    Quit "Agent Configuration"
 }
 
 /// <p>Page-load callback. Sets the page title + every component's
@@ -278,9 +315,39 @@ Method %OnAfterCreatePage() As %Status
 /// (rather than empty). The default agent is
 /// <code>session-inspection</code> per AC-2's "agent selector defaults
 /// to session-inspection" clause.</p>
+///
+/// <p>Also re-populates the <code>credCombo</code> dropdown options at
+/// runtime (in addition to the server-side <code>valueList</code> set in
+/// <method>%OnAfterCreatePage</method>). The server-side property
+/// assignment alone produced an empty option list at first render in
+/// the manual-test pass on 2026-05-06; the client-side re-population
+/// closes that gap so the dropdown shows
+/// <CLASS>Ens.Config.Credentials</CLASS> entries reliably.</p>
 ClientMethod onloadHandler() [ Language = javascript ]
 {
+    if (this.invokeSuper) this.invokeSuper('onloadHandler', arguments);
+    zenPage.populateCredCombo();
     zenPage.loadAgent();
+}
+
+/// <p>Re-populate the <code>credCombo</code> dropdown options at runtime.
+/// The server-side <code>valueList</code> property assignment in
+/// <method>%OnAfterCreatePage</method> serializes the value into the
+/// rendered HTML, but Zen's combobox doesn't always materialize the
+/// option list from the property after first render — operators saw an
+/// empty dropdown despite the server returning four credentials in the
+/// manual-test session 2026-05-06. This setter forces the combobox to
+/// re-build its option list from the freshly-fetched server-side string.</p>
+ClientMethod populateCredCombo() [ Language = javascript ]
+{
+    var combo = zen('credCombo');
+    if (!combo) return;
+    var list = zenPage.GetCredentialsList();
+    combo.valueList = list || '';
+    combo.displayList = list || '';
+    if (typeof combo.refreshContents === 'function') {
+        combo.refreshContents();
+    }
 }
 
 /// <p>Server-side helper — query
@@ -295,7 +362,12 @@ ClientMethod onloadHandler() [ Language = javascript ]
 /// fails — the combobox renders an empty suggestion list, and the
 /// operator can still type a free-text entry (combobox
 /// <code>editable="true"</code>).</p>
-ClassMethod GetCredentialsList() As %String
+///
+/// <p><b>[ZenMethod]</b> — also callable from client-side JS via
+/// <code>zenPage.GetCredentialsList()</code> so
+/// <method>populateCredCombo</method> can refresh the dropdown after
+/// the Zen runtime initializes the combobox.</p>
+ClassMethod GetCredentialsList() As %String [ ZenMethod ]
 {
     Set tList = ""
     Try {
@@ -526,6 +598,36 @@ ClientMethod providerChanged() [ Language = javascript ]
 
     // Endpoint-URL visibility — visible iff provider === openai-compatible.
     zen('endpointUrlText').setHidden(provider !== 'openai-compatible');
+
+    // Provider-aware EnvVarName auto-suggest. The 2026-05-06 manual-test
+    // pass surfaced operator-state drift: a session-inspection row with
+    // Provider=openai but EnvVarName=PATH (left over from a Story 5.3
+    // Ollama-no-auth probe) produced a 401 because $ENV(PATH) — a
+    // Windows path string — was used as a Bearer token. Nudge the
+    // operator toward the canonical env var when they switch providers,
+    // BUT only if the current value is empty or one of the known stale
+    // canonical defaults (so we never overwrite an operator's deliberate
+    // custom value like a per-tenant env-var name). For openai-compatible
+    // (Ollama / vLLM / etc.), there is no canonical default — leave the
+    // field as-is so the operator's chosen value is preserved.
+    var envVar = zen('envVarText');
+    if (envVar) {
+        var current = envVar.getValue() || '';
+        var canonicalDefaults = ['', 'PATH', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'GEMINI_API_KEY', 'GOOGLE_API_KEY'];
+        var isStaleCanonical = (canonicalDefaults.indexOf(current) >= 0);
+        if (isStaleCanonical) {
+            var newDefault = '';
+            switch (provider) {
+                case 'openai':            newDefault = 'OPENAI_API_KEY';    break;
+                case 'anthropic':         newDefault = 'ANTHROPIC_API_KEY'; break;
+                case 'gemini':            newDefault = 'GEMINI_API_KEY';    break;
+                case 'openai-compatible': newDefault = current;             break; // preserve
+            }
+            if (newDefault !== current) {
+                envVar.setValue(newDefault);
+            }
+        }
+    }
 }
 
 /// <p>Client-side handler — fired on credential-type radio change.
@@ -847,21 +949,7 @@ ClassMethod SaveAgentConfig(pAgentName As %String, pProvider As %String, pModel 
 ClientMethod saveConfig() [ Language = javascript ]
 {
     // Clear any prior status/error labels before issuing the save.
-    var statusLabel = zen('saveStatus');
-    if (statusLabel) statusLabel.setValue('');
-
-    var errorFieldIds = [
-        'agentSelect', 'providerSelect', 'maxTokensText', 'temperatureText',
-        'credTypeRadio', 'envVarText', 'credCombo', 'endpointUrlText',
-        'systemPromptText'
-    ];
-    for (var i = 0; i < errorFieldIds.length; i++) {
-        var lbl = self.document.getElementById(errorFieldIds[i] + 'ErrorMessage');
-        if (lbl) {
-            lbl.innerHTML = '';
-            lbl.style.display = 'none';
-        }
-    }
+    zenPage.clearErrorLabels();
 
     // Read form values.
     var agentName     = zen('agentSelect').getValue();
@@ -955,15 +1043,43 @@ ClientMethod saveConfig() [ Language = javascript ]
     }
 }
 
-/// <p>Client-side handler — Cancel button. Re-loads the current
-/// <CLASS>SessionAgent.Config.Agent</CLASS> row via
-/// <method>loadAgent</method>, effectively reverting any pending
-/// changes. The char counter resets to the loaded override's length
-/// because <method>loadAgent</method> calls
+/// <p>Client-side handler — Cancel button. Clears any inline error
+/// labels left over from a prior failed Save (manual-test 2026-05-06
+/// surfaced that stale "Max tokens must be 1–32000" persisted past
+/// Cancel — the field values reverted but the error nodes did not),
+/// then re-loads the current <CLASS>SessionAgent.Config.Agent</CLASS>
+/// row via <method>loadAgent</method>, effectively reverting any
+/// pending changes. The char counter resets to the loaded override's
+/// length because <method>loadAgent</method> calls
 /// <method>spoChanged</method> at the end.</p>
 ClientMethod cancelEdit() [ Language = javascript ]
 {
+    zenPage.clearErrorLabels();
+    var statusLabel = zen('saveStatus');
+    if (statusLabel) statusLabel.setValue('');
     zenPage.loadAgent();
+}
+
+/// <p>Client-side helper — clears all per-field inline error labels
+/// (DOM nodes with id <code>&lt;fieldId&gt;ErrorMessage</code>) so a
+/// fresh interaction starts from a clean slate. Called by both
+/// <method>saveConfig</method> (before issuing a new save) and
+/// <method>cancelEdit</method> (so reverting the form does NOT leave
+/// stale error text on screen).</p>
+ClientMethod clearErrorLabels() [ Language = javascript ]
+{
+    var errorFieldIds = [
+        'agentSelect', 'providerSelect', 'maxTokensText', 'temperatureText',
+        'credTypeRadio', 'envVarText', 'credCombo', 'endpointUrlText',
+        'systemPromptText'
+    ];
+    for (var i = 0; i < errorFieldIds.length; i++) {
+        var lbl = self.document.getElementById(errorFieldIds[i] + 'ErrorMessage');
+        if (lbl) {
+            lbl.innerHTML = '';
+            lbl.style.display = 'none';
+        }
+    }
 }
 
 }

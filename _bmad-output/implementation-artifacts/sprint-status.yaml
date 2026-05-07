@@ -127,14 +127,14 @@ development_status:
   8-7-vocablookup-utility-comprehensive-searchtooltest: done
   epic-8-retrospective: done
 
-  epic-9: in-progress
+  epic-9: done
   9-0-epic-8-deferred-cleanup: done
   9-1-task-0-probes-onaftersave-non-recursion-synthesizealias-determinism: done
   9-2-uservocabulary-recordsuccess-recordfailure-recursion-safe-onaftersave: done
   9-3-search-vocabularydigest-build: done
   9-4-agentloop-integration-first-user-message-prefix-injection: done
   9-5-recordclickthrough-zenmethod-hyperevent-stub: done
-  epic-9-retrospective: optional
+  epic-9-retrospective: done
 
   epic-10: backlog
   10-1-ensportal-messageviewer-subclass-chat-tab-zenmethod-wiring: backlog

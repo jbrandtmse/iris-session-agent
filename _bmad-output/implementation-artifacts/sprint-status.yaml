@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-05-02
-last_updated: 2026-05-07 (Story 9.5 done — code review clean, zero findings; SessionAgent.Search.VocabCapture.RecordClickThrough + 8-method SearchVocabCaptureTest 8/8 PASS; regression 366/366 via canonical numerical-MAX SQL probe; Epic 9 acceptance gate met)
+last_updated: 2026-05-07 (Story 10.0 code review complete — zero findings across all 3 reviewer layers; AC-1 through AC-7 all verbatim-verified; Rule 1 / 8 / 9 all satisfied; status flipped to done)
 project: iris-session-agent
 # Epic 1 complete (retro 2026-05-02); Epic 2 retrospective triage gate (Story 2.0) 2026-05-03
 project_key: NOKEY
@@ -136,7 +136,8 @@ development_status:
   9-5-recordclickthrough-zenmethod-hyperevent-stub: done
   epic-9-retrospective: done
 
-  epic-10: backlog
+  epic-10: in-progress
+  10-0-epic-9-deferred-cleanup: done
   10-1-ensportal-messageviewer-subclass-chat-tab-zenmethod-wiring: backlog
   10-2-search-agent-ui-rendering-sa-search-result-entry-curated-list: backlog
   10-3-click-through-capture-navigation-to-visual-trace: backlog

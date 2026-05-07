@@ -290,6 +290,15 @@ the retro proposal until each bullet's evidence is captured inline:
    that 326 unit tests had not caught. The 4-bullet checklist is the
    structural floor; the 5th bullet is the functional ceiling.
 
+   **Walkthrough-scoping sub-bullet (Story 10.0 / Epic 9 retro AI-1).**
+   When offering walkthrough scope choices to the user, the lead's
+   FIRST action is the credential-resolvability probe per Rule 11
+   §"Credential-resolvability probe at walkthrough-scoping time" — not
+   the user-question. The walkthrough options must be presented as
+   ADDITIVE (live + comprehensive) when credentials resolve, not
+   MUTUALLY EXCLUSIVE. Cite Epic 9 retro C-1 — the lead's binary
+   framing of options was the structural cause of the user-redirect.
+
 **Why a checklist (not just sharpened wording).** Epic 7 retro finding
 C-5 surfaced the lead jumping straight to the retro question without
 emitting the empirical battery transcript inline — third recurrence of
@@ -363,6 +372,47 @@ before completing AC verification — fourth recurrence across Epic 4
 amortization is the structural fix; per-story discovery is the
 recurring failure mode.
 
+### Credential-resolvability matrix at Step 1 (Story 10.0 / Epic 9 retro AI-2)
+
+**Rule.** At /epic-cycle Step 1 (sprint planning), the lead enumerates
+all configured `Ens.Config.Credentials` rows + `.keys` fallback content
++ cross-checks against in-scope external APIs for the epic. The lead
+documents the resolvability matrix BEFORE per-story dispatch in
+`_bmad-output/implementation-artifacts/epic-{N}-operator-state.md`.
+The matrix is the source of truth for which provider live tests can
+run; any "skipped" live test must cite a specific resolvability=0 row
+from the matrix.
+
+**Originating finding.** Epic 9 retro AI-2 sub-cause of C-1 — the
+lead never built the matrix at Step 1, so by retro-time credential
+availability was an unanswered question and the walkthrough-scoping
+proposal degenerated into a binary "live OR comprehensive" framing
+(see Rule 11 §"Credential-resolvability probe at walkthrough-scoping
+time"). The matrix amortizes the answer across the whole epic so
+every story's live-test gate has a pre-answered resolvability call.
+
+**How to apply.**
+
+- At Step 1, the lead runs `Util.EnvSecret.IsResolvable(envVar,
+  credentialName)` against every external API the epic touches —
+  every `<Provider>` configured for any in-scope agent, every
+  third-party service named in any story's Dev Notes.
+- The matrix shape (CSV-like in `epic-{N}-operator-state.md`):
+  | Provider | EnvVar | CredentialName | Resolvable? | First-story-needing |
+- Any provider with `Resolvable? = 0` is flagged at Step 1 — either
+  the lead asks the user to wire the credential before per-story
+  dispatch, or the live-test gate for that provider is explicitly
+  deferred to the retro empirical battery with a cited matrix-row.
+- The matrix is the single source of truth; reviewer / retro-time
+  empirical battery cites matrix rows by row-number, not by ad-hoc
+  re-probe.
+
+**Reviewer enforcement.** A retro-time "live test skipped" claim
+without a citation to a specific matrix row (`Resolvable? = 0`) is a
+HIGH-severity finding per Rule 8 (predicted-bug shape: skipped live
+test masks a real wire-shape gap that the missing credential would
+have caught).
+
 ## Rule 8: Defer threshold raised — "fix now" is the default
 
 **Rule.** Code reviewers may defer a finding ONLY if it passes one of three explicit tests:
@@ -383,6 +433,43 @@ recurring failure mode.
 - Before writing `deferred-work.md`, ask: "Can I articulate this as a predicted bug?" If yes → fix now. If no → check the three explicit tests above. If none pass → fix now.
 - A deferral entry MUST include a one-line justification picking which of the three tests applies. No justification → not a valid deferral.
 - This rule supersedes the prior implicit pattern of "LOW severity = defer". Severity is orthogonal: a LOW-severity predicted-bug still gets fixed now.
+
+### Defensive-surface enumeration in "propagate the status" AC clauses (Story 10.0 / Epic 9 retro AI-3)
+
+**Rule.** When an Acceptance Criterion specifies *"propagate the status
+per project rule Write Status Checking"* (or any equivalent rule-
+reference shorthand), the spec MUST also enumerate the specific
+defensive surfaces required for the change:
+
+- (a) **ByRef returns** when envelope-correctness depends on the inner
+  result (e.g., `ByRef pAuditEmitted` for vocab_lookup save mode);
+- (b) **`If SQLCODE < 0`** checks on every `&sql` operation that
+  mutates state;
+- (c) **error-envelope shaping** when downstream callers expect
+  structured error responses (status code + error reason fields, not
+  just a `%Status` returned to a caller that ignores it).
+
+**Reviewer enforcement.** If the spec relies on the project rule alone
+without surface enumeration, missing defensive surface is a **MEDIUM
+finding per Rule 8** (predicted-bug shape: dev satisfies the
+rule-reference checkbox but misses the specific call-site that the
+rule covers structurally). The reviewer must auto-fix in the same
+story by adding the missing defensive code; the spec author owes a
+cross-check on the next story for the same shape.
+
+**Originating finding.** Epic 9 retro **C-2** — Story 9.2 reviewer
+caught two MEDIUM findings that the dev would not have shipped clean:
+**MEDIUM-F01** (`ByRef pAuditEmitted` envelope-correctness gap on the
+vocab_lookup save mode) and **MEDIUM-F02** (`%OnAfterSave` `SQLCODE <
+0` not propagated through to the caller's status return). Both
+shipped past the dev because the spec wording was rule-reference only
+("propagate the status per project rule Write Status Checking")
+without surface enumeration. The reviewer caught both; the dev's
+self-check did not, because the rule-reference is too abstract to
+trigger a specific code-site search. Surface enumeration in the spec
+makes the search concrete: dev sees "ByRef returns" and audits every
+ByRef return site for envelope-correctness; sees "`If SQLCODE < 0`"
+and audits every `&sql` mutation for the check.
 
 ## Rule 9: Predicted-bug deferrals must be binding on the named successor
 
@@ -433,6 +520,29 @@ Without this line, the lead self-blocks the spec.
 - First line of the test: probe credential availability via `Util.EnvSecret.IsResolvable(envVarName, credentialName)`. If false, mark the test skipped (not failed) so CI without credentials still passes.
 - Test must invoke the actual external API path (real HTTPS, real auth, real wire format) and assert at least one round-trip succeeds.
 - Live tests participate in the epic-end battery (Rule 6 step 4). Lead runs them. Failure = epic not done.
+
+### Credential-resolvability probe at walkthrough-scoping time (Story 10.0 / Epic 9 retro AI-1)
+
+**Rule.** When the lead scopes the epic-end empirical battery (Rule 6),
+the **first action** is to probe `Util.EnvSecret.IsResolvable(envVarName,
+credentialName)` for every external API in scope. Treat the live
+integration smoke test as **DEFAULT AVAILABLE** — only mark it skipped
+if the probe returns 0. Never assume credentials are absent without
+empirical verification, and never frame the walkthrough scope choices
+as mutually exclusive (live OR comprehensive) when the resolvability
+probe shows the credentials are present — present them as ADDITIVE.
+
+**Originating finding.** Epic 9 retro user-selected challenge **C-1** —
+the lead assumed the `.keys` content was unconfigured and offered the
+walkthrough options to the user as a binary "comprehensive (cheap) /
+live (expensive)" framing. The user redirected, the lead probed
+`Util.EnvSecret.IsResolvable("SESSIONAGENT_ANTHROPIC_API_KEY",
+"SessionAgentAnthropic")`, the probe returned 1 (the
+`Ens.Config.Credentials.SessionAgentAnthropic` row was already in
+place), and the live exercise then ran clean post-redirect with Row
+250 cross-turn `CacheHitTokens=5142` against
+`claude-haiku-4-5-20251001`. The empirical-verification-first stanza
+prevents the recurrence: probe before framing, not after.
 
 ## Rule 12: Rendered-text readability — read it as a human (added Epic 3 retro AI-12)
 

@@ -292,6 +292,44 @@ ClassMethod ResolveMockClassName(pProviderClass As %String) As %String
     Quit "SessionAgent.Test.AgentLoopMock" _ tBase
 }
 
+/// <p><b>Story 10.9 close — resolve a real <var>Ens.MessageHeader</var>
+/// session id for fixture use.</b> Returns the highest-numbered SessionId
+/// in the namespace, OR "1" as the legacy-fallback when the table is
+/// empty (a fresh install with no Bootstrap scenario run). The fallback
+/// preserves backwards-compatible behavior for the 3 non-Gemini providers
+/// that tolerate "1"; on a populated dev install the resolver returns a
+/// real id (e.g., 60175) which Gemini's session-ID format heuristic
+/// accepts. See <method>BuildMinimalToolArgs</method> doc-comment for
+/// the originating finding.</p>
+ClassMethod ResolveTestSessionId() As %String
+{
+    Set tId = ""
+    Set tRs = ##class(%SQL.Statement).%ExecDirect(, "SELECT TOP 1 SessionId FROM Ens.MessageHeader WHERE SessionId IS NOT NULL ORDER BY SessionId DESC")
+    If $IsObject(tRs) {
+        If tRs.%Next() {
+            Set tId = tRs.%Get("SessionId")
+        }
+        Do tRs.%Close()
+    }
+    Quit $Case(tId, "": "1", : tId)
+}
+
+/// <p>Story 10.9 close — resolve a real <var>Ens.MessageHeader.ID</var>
+/// for the message-id-driven fixture. Same legacy-fallback pattern as
+/// <method>ResolveTestSessionId</method>.</p>
+ClassMethod ResolveTestMessageId() As %String
+{
+    Set tId = ""
+    Set tRs = ##class(%SQL.Statement).%ExecDirect(, "SELECT TOP 1 ID FROM Ens.MessageHeader ORDER BY ID DESC")
+    If $IsObject(tRs) {
+        If tRs.%Next() {
+            Set tId = tRs.%Get("ID")
+        }
+        Do tRs.%Close()
+    }
+    Quit $Case(tId, "": "1", : tId)
+}
+
 /// <p><b>AC-3 — Build minimal-valid args for each tool.</b> Returns the
 /// JSON arguments string the matrix uses to dispatch <var>pToolName</var>.
 /// The values are minimal-valid (satisfy the <code>required</code> array
@@ -300,18 +338,27 @@ ClassMethod ResolveMockClassName(pProviderClass As %String) As %String
 /// matrix only verifies the round-trip happened.</p>
 ClassMethod BuildMinimalToolArgs(pToolName As %String) As %String
 {
-    ; All session-id-driven tools take session_id="1" — guaranteed to
-    ; either find data or return a not-found envelope (both acceptable).
-    If pToolName = "session_summary" Quit "{""session_id"":""1""}"
-    If pToolName = "session_timeline" Quit "{""session_id"":""1""}"
-    If pToolName = "message_headers" Quit "{""session_id"":""1""}"
-    If pToolName = "event_log" Quit "{""session_id"":""1""}"
-    If pToolName = "rule_log" Quit "{""session_id"":""1""}"
-    If pToolName = "find_related_sessions" Quit "{""session_id"":""1""}"
-    If pToolName = "get_business_process_instance" Quit "{""session_id"":""1""}"
+    ; All session-id-driven tools take a real session id resolved from
+    ; Ens.MessageHeader at fixture-build time. Story 10.9 close (2026-05-07):
+    ; literal "1" deterministically fails Gemini's prescriptive session-ID
+    ; format heuristic on `message_headers` — Gemini refuses to dispatch
+    ; the tool with text-only response "session ID '1' is not valid". The
+    ; other 3 providers tolerate "1" but the matrix's 92/92 gate requires
+    ; all four. Resolving a real ID at fixture time satisfies Gemini's
+    ; heuristic without changing any tool's argument-validation contract
+    ; (the dispatch verification is structural, not data-shaped).
+    Set tRealSid = ..ResolveTestSessionId()
+    Set tRealMid = ..ResolveTestMessageId()
+    If pToolName = "session_summary" Quit "{""session_id"":"""_tRealSid_"""}"
+    If pToolName = "session_timeline" Quit "{""session_id"":"""_tRealSid_"""}"
+    If pToolName = "message_headers" Quit "{""session_id"":"""_tRealSid_"""}"
+    If pToolName = "event_log" Quit "{""session_id"":"""_tRealSid_"""}"
+    If pToolName = "rule_log" Quit "{""session_id"":"""_tRealSid_"""}"
+    If pToolName = "find_related_sessions" Quit "{""session_id"":"""_tRealSid_"""}"
+    If pToolName = "get_business_process_instance" Quit "{""session_id"":"""_tRealSid_"""}"
     ; message-id-driven tools.
-    If pToolName = "get_message_body" Quit "{""message_id"":""1""}"
-    If pToolName = "get_message_detail" Quit "{""message_id"":""1""}"
+    If pToolName = "get_message_body" Quit "{""message_id"":"""_tRealMid_"""}"
+    If pToolName = "get_message_detail" Quit "{""message_id"":"""_tRealMid_"""}"
     ; class-name-driven tools.
     If pToolName = "get_business_process_source" Quit "{""bp_class_name"":""Ens.BusinessProcess""}"
     If pToolName = "list_business_process_methods" Quit "{""bp_class_name"":""Ens.BusinessProcess""}"
@@ -324,7 +371,7 @@ ClassMethod BuildMinimalToolArgs(pToolName As %String) As %String
     If pToolName = "search_by_source" Quit "{""source_config_name"":""SyntheticTestSrc_NoMatch"",""limit"":3}"
     If pToolName = "search_by_target" Quit "{""target_config_name"":""SyntheticTestTgt_NoMatch"",""limit"":3}"
     If pToolName = "search_by_message_class" Quit "{""message_body_class_name"":""Synthetic.NoMatch.Msg"",""limit"":3}"
-    If pToolName = "search_by_session" Quit "{""session_id"":""1""}"
+    If pToolName = "search_by_session" Quit "{""session_id"":"""_tRealSid_"""}"
     ; Story 8.4 — synthetic super-session key won't match production rows
     ; (returns empty result set, not isError, ensuring the round-trip
     ; exercises the happy-path envelope shape).
@@ -842,6 +889,214 @@ ClassMethod ExtractKeyShape(pObj As %DynamicObject) As %String
         Set tList = tList _ $Select(tList="":"",1:";") _ tKey _ tNested
     }
     Quit tList
+}
+
+/// <p><b>Story 10.9 AC-4 — Live-mode matrix variant.</b> Drives the same
+/// 23-tool × 4-provider matrix as <method>RunMatrix</method> but against
+/// REAL provider endpoints (no <CLASS>SessionAgent.Agent.ProviderOverride</CLASS>
+/// injection). Each pair configures <CLASS>SessionAgent.Config.Agent</CLASS>
+/// with the provider's live credentials + endpoint, then drives
+/// <method>SessionAgent.Agent.AgentLoop.RunTurn</method> with a directive
+/// user message naming the tool + the minimal-valid args. Verifies the
+/// real LLM dispatched the named tool.</p>
+///
+/// <p><b>OpenAICompat live target.</b> When no local Ollama is running,
+/// the OpenAICompat provider is pointed at OpenAI's
+/// <code>https://api.openai.com/v1/chat/completions</code> endpoint with
+/// the OpenAI key — exercises the OpenAICompat code path against a live
+/// OpenAI-compatible target. This is the documented pragmatic-acceptance
+/// fallback for v1.0.0 release verification when local Ollama is
+/// unavailable.</p>
+///
+/// <p>Returns <code>{size, successful, failed, failedDetails, elapsed,
+/// perCombination}</code> where <code>perCombination</code> is a
+/// <CLASS>%DynamicArray</CLASS> of per-pair structured results for the
+/// release-notes verbatim capture.</p>
+ClassMethod RunMatrixLive() As %DynamicObject
+{
+    Set tStart = $ZHorolog
+    Set tMatrix = ..EnumerateMatrix()
+    Set tSize = tMatrix.%Size()
+
+    Set tSuccessful = 0
+    Set tFailed = 0
+    Set tFailedDetails = ""
+    Set tPerCombo = ##class(%DynamicArray).%New()
+
+    ; Capture the original Config.Agent state once so we can restore at
+    ; the end. The per-pair ApplyConfigForProviderLive mutates the row.
+    Set tCfg = ##class(SessionAgent.Config.Agent).AgentNameIdxOpen("session-inspection")
+    Set tOrigProvider = ""
+    Set tOrigModel = ""
+    Set tOrigEndpoint = ""
+    Set tOrigEnvVar = ""
+    Set tOrigCred = ""
+    If $IsObject(tCfg) {
+        Set tOrigProvider = tCfg.Provider
+        Set tOrigModel = tCfg.Model
+        Set tOrigEndpoint = tCfg.EndpointUrl
+        Set tOrigEnvVar = tCfg.EnvVarName
+        Set tOrigCred = tCfg.CredentialName
+    }
+
+    For tIdx = 0:1:tSize - 1 {
+        Set tPair = tMatrix.%Get(tIdx)
+        Set tProviderName = tPair.%Get("provider_name")
+        Set tToolName = tPair.%Get("tool_name")
+
+        Do ..ApplyConfigForProviderLive(tProviderName)
+
+        ; Build a directive user message that strongly suggests the named
+        ; tool with the minimal-valid args. The directive is intentionally
+        ; verbose — the goal is the LLM picks the named tool, not that
+        ; it picks the most natural-language-friendly tool. The matrix
+        ; verifies dispatch round-trip, NOT natural-language quality.
+        Set tArgsJson = ..BuildMinimalToolArgs(tToolName)
+        Set tUserMessage = "Use ONLY the " _ tToolName _ " tool with these exact arguments: " _ tArgsJson _ ". Do not call any other tool. Do not interpret the arguments — pass them through verbatim."
+
+        Set tProviderShort = $Case(tProviderName,
+            "anthropic":"a",
+            "gemini":"g",
+            "openai":"o",
+            "openai-compatible":"oc",
+            :tProviderName)
+        Set tSessionKey = ..#SESSIONKEYPREFIX _ "live-" _ tProviderShort _ "-" _ tIdx
+
+        Set tResult = ""
+        Set tDispatchOk = 0
+        Set tFailReason = ""
+        Set tDispatchedToolName = ""
+        Try {
+            Set tResult = ##class(SessionAgent.Agent.AgentLoop).RunTurn(
+                "session-inspection", tSessionKey, "matrix-live-tester",
+                tUserMessage)
+
+            If '$IsObject(tResult) {
+                Set tFailReason = "RunTurn returned NULLOREF"
+            } ElseIf '$IsObject(tResult.ToolCallsRendered) {
+                Set tFailReason = "TurnResult.ToolCallsRendered is not an OREF"
+            } ElseIf tResult.ToolCallsRendered.%Size() = 0 {
+                ; LLM declined to dispatch a tool (text-only response).
+                ; This is a failure under the matrix invariant: a directive
+                ; user message naming the exact tool + args MUST drive
+                ; tool dispatch.
+                Set tMd = $Extract(tResult.AssistantMarkdown, 1, 200)
+                Set tFailReason = "LLM did not dispatch a tool (text-only response: " _ tMd _ ")"
+            } Else {
+                Set tCard = tResult.ToolCallsRendered.%Get(0)
+                If $IsObject(tCard), tCard.%IsDefined("name") {
+                    Set tDispatchedToolName = tCard.%Get("name")
+                }
+                If tDispatchedToolName = tToolName {
+                    Set tDispatchOk = 1
+                } Else {
+                    Set tFailReason = "LLM dispatched wrong tool: expected " _ tToolName _ ", got " _ tDispatchedToolName
+                }
+            }
+        }
+        Catch ex {
+            Set tFailReason = "Exception: " _ ex.DisplayString()
+        }
+
+        ; Per-pair structured record (verbatim release-notes evidence).
+        Set tComboRec = ##class(%DynamicObject).%New()
+        Do tComboRec.%Set("provider", tProviderName)
+        Do tComboRec.%Set("tool", tToolName)
+        Do tComboRec.%Set("dispatched_tool", tDispatchedToolName)
+        Do tComboRec.%Set("ok", tDispatchOk, $Select(tDispatchOk:"boolean",1:"boolean"))
+        Do tComboRec.%Set("reason", tFailReason)
+        Do tPerCombo.%Push(tComboRec)
+
+        If tDispatchOk {
+            Set tSuccessful = tSuccessful + 1
+        } Else {
+            Set tFailed = tFailed + 1
+            Set tFailedDetails = tFailedDetails _ "  [" _ tProviderName _ " x " _ tToolName _ "] " _ tFailReason _ $Char(10)
+        }
+    }
+
+    ; Restore original Config.Agent state.
+    If $IsObject(tCfg) {
+        Set tCfg.Provider = tOrigProvider
+        Set tCfg.Model = tOrigModel
+        Set tCfg.EndpointUrl = tOrigEndpoint
+        Set tCfg.EnvVarName = tOrigEnvVar
+        Set tCfg.CredentialName = tOrigCred
+        Do tCfg.%Save()
+    }
+
+    Set tElapsed = $ZHorolog - tStart
+
+    Set tReport = ##class(%DynamicObject).%New()
+    Do tReport.%Set("size", tSize, "number")
+    Do tReport.%Set("successful", tSuccessful, "number")
+    Do tReport.%Set("failed", tFailed, "number")
+    Do tReport.%Set("failedDetails", tFailedDetails)
+    Do tReport.%Set("elapsed", tElapsed, "number")
+    Do tReport.%Set("perCombination", tPerCombo)
+    Quit tReport
+}
+
+/// <p><b>Story 10.9 AC-4 — Background-job wrapper for the live matrix.</b>
+/// JOB-friendly. Captures the report into <code>^SessionAgentLiveMatrix</code>
+/// for the lead to read after the job completes. Avoids the 60s MCP
+/// envelope timeout that the synchronous call would hit.</p>
+ClassMethod RunMatrixLiveJob()
+{
+    Set ^SessionAgentLiveMatrix("status") = "running"
+    Set ^SessionAgentLiveMatrix("started") = $ZDateTime($ZTimeStamp, 3, 1)
+    Set tReport = ..RunMatrixLive()
+    Set ^SessionAgentLiveMatrix("report") = tReport.%ToJSON()
+    Set ^SessionAgentLiveMatrix("size") = tReport.%Get("size")
+    Set ^SessionAgentLiveMatrix("successful") = tReport.%Get("successful")
+    Set ^SessionAgentLiveMatrix("failed") = tReport.%Get("failed")
+    Set ^SessionAgentLiveMatrix("elapsed") = tReport.%Get("elapsed")
+    Set ^SessionAgentLiveMatrix("finished") = $ZDateTime($ZTimeStamp, 3, 1)
+    Set ^SessionAgentLiveMatrix("status") = "done"
+    Quit
+}
+
+/// <p><b>Story 10.9 AC-4 — Live-mode Config.Agent provisioning.</b>
+/// Configures the session-inspection agent for live calls against
+/// <var>pProviderName</var> using the operator-supplied credentials
+/// from <CLASS>SessionAgent.Util.EnvSecret</CLASS>. OpenAICompat is
+/// pointed at OpenAI's chat-completions endpoint with the OpenAI key —
+/// the documented v1.0.0 pragmatic-acceptance fallback when local
+/// Ollama is not running.</p>
+ClassMethod ApplyConfigForProviderLive(pProviderName As %String)
+{
+    Set tCfg = ##class(SessionAgent.Config.Agent).AgentNameIdxOpen("session-inspection")
+    If '$IsObject(tCfg) Quit
+    Set tCfg.Provider = pProviderName
+    If pProviderName = "openai" {
+        Set tCfg.Model = "gpt-4.1-mini"
+        Set tCfg.EndpointUrl = ""
+        Set tCfg.EnvVarName = "OPENAI_API_KEY"
+        Set tCfg.CredentialName = "SessionAgentOpenAI"
+    } ElseIf pProviderName = "anthropic" {
+        Set tCfg.Model = "claude-haiku-4-5-20251001"
+        Set tCfg.EndpointUrl = ""
+        Set tCfg.EnvVarName = "ANTHROPIC_API_KEY"
+        Set tCfg.CredentialName = "SessionAgentAnthropic"
+    } ElseIf pProviderName = "gemini" {
+        Set tCfg.Model = "gemini-2.0-flash"
+        Set tCfg.EndpointUrl = ""
+        Set tCfg.EnvVarName = "GEMINI_API_KEY"
+        Set tCfg.CredentialName = "SessionAgentGemini"
+    } ElseIf pProviderName = "openai-compatible" {
+        ; Pragmatic fallback: point at OpenAI's chat-completions endpoint
+        ; (which IS OpenAI-compatible by definition) when local Ollama is
+        ; unavailable. Exercises the OpenAICompat code path end-to-end
+        ; against a real wire shape. Documented in the v1.0.0 release
+        ; notes alongside the local-Ollama recommendation for offline
+        ; verification.
+        Set tCfg.Model = "gpt-4.1-mini"
+        Set tCfg.EndpointUrl = "https://api.openai.com/v1/chat/completions"
+        Set tCfg.EnvVarName = "OPENAI_API_KEY"
+        Set tCfg.CredentialName = "SessionAgentOpenAI"
+    }
+    Do tCfg.%Save()
+    Quit
 }
 
 }

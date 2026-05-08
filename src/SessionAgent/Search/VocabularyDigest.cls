@@ -15,13 +15,24 @@
 /// migration). Per project rule §"Naming Conventions" / "Basics", IRIS
 /// class parameter names use camelCase (no underscores allowed).</p>
 ///
-/// <p><b>Token-budget cap.</b> The rendered digest is capped at ~1,200
-/// tokens via the <code>$Length(digest) \ 4</code> rule-of-thumb (standard
-/// GPT/Claude tokenizer approximation: ~4 chars/token for English
-/// Markdown). Truncation is row-granular — never cut a row mid-string —
-/// and the appended marker
+/// <p><b>Truncation marker.</b> When the row-count cap (<code>..#MaxEntries</code>)
+/// kicks in OR the qualifying-row count exceeds the rendered digest's
+/// included count, the appended marker
 /// <code>_(N more aliases hidden ...)_</code> tells the LLM that a longer
-/// list exists and points it at <code>vocab_lookup mode='list'</code>.</p>
+/// list exists and points it at <code>vocab_lookup mode='list'</code>.
+/// Truncation is row-granular — never cut a row mid-string.</p>
+///
+/// <p><b>Story 10.9 / Epic 10 close (LOW-9.3-F02 RESOLVED).</b> The
+/// per-row token-budget gate (~1,200 tokens via
+/// <code>$Length(digest) \ 4</code> rule-of-thumb) was removed under v1
+/// calibration: with <code>MaxEntries=20</code> and
+/// <CLASS>SessionAgent.Search.UserVocabulary</CLASS> <var>MessageBodyClass</var>
+/// <code>%String(MAXLEN=128)</code>, the worst-case digest size
+/// (≈ 20 rows × 150 bytes/row + header = 3,050 bytes ≈ 763 tokens) is
+/// well under the prior 1,200-token budget. The row-count cap is the
+/// sole binding constraint. If a future story raises
+/// <code>MaxEntries</code> above ~30 OR widens <var>MessageBodyClass</var>
+/// materially, restore the per-row token-budget gate.</p>
 ///
 /// <p><b>NFR-P6 prompt-cache discipline.</b> The Story 9.4 consumer
 /// (<CLASS>SessionAgent.Agent.AgentLoop</CLASS>) injects this digest into
@@ -62,8 +73,9 @@ Parameter MinUserConfidence As %Numeric = 0.3;
 /// ..#MinUserConfidence</code>, ordered <code>Confidence DESC, LastUsed
 /// DESC</code>, takes <code>TOP ..#MaxEntries</code>, and renders as a
 /// Markdown digest. If zero rows qualify, falls back to
-/// <method>SeedFallback</method> (AC-3). Output is capped at ~1,200
-/// tokens via the AC-4 token-budget logic.</p>
+/// <method>SeedFallback</method> (AC-3). Output truncation is governed
+/// solely by the AC-4 row-count cap (<code>..#MaxEntries</code>) under
+/// v1 calibration; see class-level §"Truncation marker".</p>
 ///
 /// <p><b>Per-row format:</b>
 /// <code>- "&lt;Alias&gt;" — &lt;descriptor&gt; (confidence X.XX)</code>
@@ -134,15 +146,23 @@ ClassMethod Build(pPortalUser As %String) As %String
             Quit
         }
 
-        ; ---- Render the user-aliases digest with MaxEntries + token-budget caps.
+        ; ---- Render the user-aliases digest with MaxEntries cap (Story 10.9 AC-6: token-budget gate removed under v1 calibration; row count is the sole binding constraint).
         Set tHeader = "## Saved aliases for this user" _ $Char(10) _ $Char(10)
         Set tDigest = tHeader
 
-        ; Greedy include rows up to BOTH:
-        ;  - ..#MaxEntries cap (max row count)
-        ;  - 1200 tokens cap via $Length(digest) \ 4 rule-of-thumb.
+        ; Greedy include rows up to ..#MaxEntries cap (max row count).
         ; Row-granular truncation: if adding the next row would push past
-        ; either cap, stop. AC-4 marker fires when truncation occurs.
+        ; the cap, stop. AC-4 marker fires when truncation occurs.
+        ;
+        ; Story 10.9 / Epic 10 close (AC-6, fix-now): the per-row
+        ; token-budget gate (1200-token estimate via $Length \ 4) was
+        ; deleted as dead code under v1 calibration — with
+        ; MaxEntries=20 and SessionAgent.Search.UserVocabulary.MessageBodyClass
+        ; %String(MAXLEN=128), the worst-case digest size (20 rows × ~150
+        ; bytes/row + header = ~3050 bytes ≈ 763 tokens) is well under
+        ; the 1200-token budget. The row-count cap is the sole binding
+        ; constraint. If a future story raises MaxEntries above ~30 OR
+        ; widens MessageBodyClass materially, restore the token-budget gate.
         Set tIncluded = 0
         Set tPtr = 0
         Set tBudgetExceeded = 0
@@ -152,14 +172,7 @@ ClassMethod Build(pPortalUser As %String) As %String
                 Set tBudgetExceeded = 1
                 Quit
             }
-            ; Token-budget gate.
-            Set tCandidate = tDigest _ tRowText _ $Char(10)
-            Set tEstTokens = $Length(tCandidate) \ 4
-            If tEstTokens > 1200 {
-                Set tBudgetExceeded = 1
-                Quit
-            }
-            Set tDigest = tCandidate
+            Set tDigest = tDigest _ tRowText _ $Char(10)
             Set tIncluded = tIncluded + 1
         }
 

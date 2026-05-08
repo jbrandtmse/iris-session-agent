@@ -3,7 +3,7 @@
 You're an IRIS Platform Lead managing an HSCUSTOM (or plain-IRIS) interop namespace. Every time something goes sideways in production — a partner's HL7 admit silently rejected, a rule fire that didn't, a queue that stalled — you reconstruct the cross-surface picture in your head: `Ens.MessageHeader`, the body class, `Ens.Util.Log`, `Ens.Rule.Log`, BP runtime state. iris-session-agent embeds an AI assistant chat experience directly into the operator surfaces you already use, so *"what happened?"* gets answered with citations back to the underlying log rows. This quickstart walks the install + verify path end-to-end in ~30 minutes.
 
 > [!NOTE]
-> The current build ships **Epic 1** only — installable foundation, RBAC role, audit-event scaffolding. The chat tab, agent runtime, and configuration UI land in Epics 2–6. This quickstart honestly reflects what works **today** vs. what's coming. For the whole product, wait for the MVP-complete tag at end of Epic 4.
+> **The current build is v1.0.0 feature-complete (Epic 10 closed 2026-05-07).** Both agents work end-to-end (Inspection + Search), the search-to-inspection hand-off is empirically validated, and the FR59 cross-matrix gate (23 tools × 4 providers) clears 92/92 in mock-mode plus the live-mode rehearsal across OpenAI / Anthropic / Gemini / OpenAI-compatible. After running through this quickstart, you can pilot today.
 
 ## 1. Run through the prerequisite checklist
 
@@ -28,8 +28,8 @@ If the prereqs are in place, you'll see all six IPM lifecycle phases SUCCESS. Th
 ```
 [HSCUSTOM|iris-session-agent]   Configure START
 [iris-session-agent] Scheduled SessionAgent.PurgeOrphanedChatHistory (Daily at 2:00)
-[iris-session-agent] SessionAgent.Task.PurgeStaleSearchChat not yet implemented; sweep deferred
-[iris-session-agent] SessionAgent.Task.UserVocabularyDecay not yet implemented; sweep deferred
+[iris-session-agent] Scheduled SessionAgent.Task.PurgeStaleSearchChat (Daily at 3:00) — Story 10.6
+[iris-session-agent] Scheduled SessionAgent.Task.UserVocabularyDecay (Weekly Sun 4:00) — Story 10.6
 [iris-session-agent] Config.Agent present — seeding default rows
 [iris-session-agent] session-inspection: row already present; skipping
 [iris-session-agent] message-search: row already present; skipping

@@ -93,11 +93,16 @@ Method TestAnthropicRejectsWindowsPathShape()
     Quit
 }
 
-/// <p>Gemini accepts <code>AIzaSy</code> prefix.</p>
+/// <p>Gemini accepts <code>AIzaSy</code> prefix. Fixture is an
+/// obviously-fake placeholder — never a real-looking key shape — so
+/// secret-scanning bots (Google AI Studio anti-abuse, GitHub secret
+/// scanning) don't flag this committed source. Story 10.9 close
+/// (2026-05-07): a prior real-shaped fixture was scanned + revoked
+/// out-of-band; replaced with the placeholder form below.</p>
 Method TestGeminiAcceptsAIzaSyPrefix()
 {
     Set tProv = ##class(SessionAgent.LLM.GeminiProvider).%New()
-    Do $$$AssertTrue(tProv.IsApiKeyShapeValid("AIzaSyAOmGPyxpYp6_OCkN4NvnMlTtzoCJR8trQ"), "Gemini accepts AIzaSy prefix")
+    Do $$$AssertTrue(tProv.IsApiKeyShapeValid("AIzaSy_TEST_FIXTURE_NOT_REAL"), "Gemini accepts AIzaSy prefix")
     Quit
 }
 

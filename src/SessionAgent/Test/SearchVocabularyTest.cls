@@ -462,20 +462,23 @@ Method TestVocabularyDigestAllRowsBelowThresholdFallsBackToSeed()
     Quit
 }
 
-/// <p>Story 9.3 AC-5 row 5 — token-budget cap enforcement. Constructs a
-/// synthetic user with 50 rows whose rendered digest naturally exceeds
-/// the row-count cap (50 > <code>MaxEntries=20</code>) AND whose rendered
-/// per-row body is large enough that the rendered digest must remain
-/// under the 1,200-token cap. Asserts <code>$Length(digest) \ 4 &lt;= 1200</code>
-/// AND the truncation marker is present.</p>
+/// <p>Story 9.3 AC-5 row 5 — row-count cap enforcement (Story 10.9 AC-6
+/// rename: was "token-budget cap" prior to LOW-9.3-F02 dead-code delete).
+/// Constructs a synthetic user with 50 rows whose rendered digest
+/// naturally exceeds the row-count cap (50 &gt; <code>MaxEntries=20</code>).
+/// Asserts the digest stays under a sane size (kept the
+/// <code>$Length \ 4 &lt;= 1200</code> assertion as a regression sentinel
+/// — under v1 calibration the rendered 20-row digest is ~825 tokens,
+/// well under the historical 1,200-token soft target) AND the truncation
+/// marker is present.</p>
 ///
 /// <p><b>Body sizing.</b> <code>MessageBodyClass</code> column has
 /// <code>MAXLEN=128</code>. Each rendered row is approximately
 /// <code>"- "fatalias-NN" — &lt;128-char body&gt; (confidence 0.50)\n"</code>
 /// ≈ ~165 chars. Capped at <code>MaxEntries=20</code> rows the digest is
-/// ~3,300 chars ≈ ~825 tokens — well under the 1,200 cap; the marker
-/// fires from the row-count cap rather than the token cap, but either
-/// flavor satisfies AC-4's "truncation marker present" contract.</p>
+/// ~3,300 chars ≈ ~825 tokens — well under the 1,200-token sentinel; the
+/// truncation marker fires from the row-count cap (the sole binding
+/// constraint after Story 10.9 AC-6 deleted the per-row token-budget gate).</p>
 Method TestVocabularyDigestTokenCapEnforced()
 {
     Set tUser = "sa-test-93-tokencap"

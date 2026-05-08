@@ -1,13 +1,27 @@
 # iris-session-agent
 
-> [!WARNING]
-> **Under construction — no code has shipped yet.**
+> [!NOTE]
+> **v1.0.0 is feature-complete (Epic 10 closed 2026-05-07).**
 >
-> This project is in active planning. The full v1 scope, architecture, UX, and 64-story breakdown have been authored as BMAD planning artifacts (linked below); implementation begins with [Epic 1, Story 1.1](_bmad-output/planning-artifacts/epics.md). Pre-alpha distribution starts at end of Epic 3 (first-delight demo) and Epic 4 (MVP-complete).
+> Both agents (Session Inspection + Message Search) ship working end-to-end; the search-to-inspection hand-off (Devin Journey 2) is empirically validated against a live sample-production scenario; vocabulary capture (Story 9.x) operates silently on operator click-through; sweep tasks (Story 10.6) keep the audit + chat-history footprint bounded; the vendored Markdown bundle (Story 10.7) renders citations + code blocks against a fresh-tab CDN-blocked browser; and the FR59 cross-matrix gate (23 tools × 4 providers = 92 combinations) clears in **mock-mode 92/92** (15.6s) AND **live-mode 92/92** against OpenAI + Anthropic + Gemini + OpenAI-compatible endpoints (run 4, 342.6s elapsed; runs 1–3 surfaced and resolved a Gemini key-rotation event + a fixture-format hardening + one transient Anthropic mid-flight retry — all documented in the Story 10.9 walkthrough). See [`_bmad-output/implementation-artifacts/10-9-prd-v1-completion-validation-walkthrough.md`](_bmad-output/implementation-artifacts/10-9-prd-v1-completion-validation-walkthrough.md) for the verbatim walkthrough.
+
+> *"v1 is feature-complete. Both agents work, the hand-off works, the vocabulary captures silently, all 10 epics integrate cleanly. Next is Epic 11 — and the operator can already pilot today."* — Joshua Brandt, maintainer (release notes self-quote, 2026-05-07)
 
 An open-source InterSystems IRIS module that adds an AI assistant chat experience to the Interoperability operator's existing Management Portal. Two agents share infrastructure inside one IPM-installable package and run on **IRIS / IRIS for Health 2024.1+** in pure ObjectScript — no embedded Python in the runtime path, no AI Hub dependency.
 
 > *"Chatting with your Interoperability Session to really understand what happened — and finding the right session by asking."*
+
+## v1.0.0 scope-complete summary
+
+| Capability | Story / Epic | Operator-observable surface |
+|---|---|---|
+| Session Inspection agent (read-only Ens.* introspection) | Epic 4 (13 tools) | VisualTrace chat tab |
+| Message Search agent (10 search tools + vocabulary) | Epic 8 (10 tools) | MessageViewer chat tab |
+| Search → Inspection hand-off ("from search" stripe + click-through context) | Epic 10 (Stories 10.1–10.5) | Visible stripe in inspection chat after click-through |
+| Silent vocabulary learning (per-user alias capture) | Epic 9 (Stories 9.2–9.5) | `vocab_lookup` tool surfaces saved aliases; sweep keeps the table bounded |
+| Sweep tasks (audit + chat-history retention) | Epic 7 + Story 10.6 | Mgmt Portal Task Manager (`SessionAgent.PurgeOrphanedChatHistory`, `SessionAgent.PurgeStaleSearchChatHistory`, `SessionAgent.UserVocabularyDecay`) |
+| Vendored Markdown bundle (citations + code blocks render under CDN-blocked browsers) | Story 10.7 | `<script src="markdown-bundle.min.js">` ships with the module |
+| FR59 cross-matrix gate (23 tools × 4 providers = 92) | Story 5.4 + 8.x + 10.9 | `SessionAgent.Test.ToolCallRoundtripIntegrationTest` (mock + live) |
 
 ## Operator Prerequisites
 

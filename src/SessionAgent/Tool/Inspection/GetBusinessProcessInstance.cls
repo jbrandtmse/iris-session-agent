@@ -136,10 +136,8 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
         ; key and is NOT addressable from SQL. Verified empirically Task 0.
         Set tSql = "SELECT TOP 10 ID AS instance_id, %CLASSNAME AS bp_class, %EXACT(""%ConfigName"") AS config_name, ""%TimeCreated"" AS time_created, ""%TimeCompleted"" AS time_completed, ""%IsCompleted"" AS is_completed, ""%IsTerminated"" AS is_terminated, ""%PrimaryRequestHeader"" AS primary_request_header, ""%PrimaryResponseHeader"" AS primary_response_header, ""%RepliedStatus"" AS replied_status FROM Ens.BusinessProcess WHERE ""%SessionId"" = ? ORDER BY ID"
         Set tSCprep = tStmt.%Prepare(tSql)
-        If $$$ISERR(tSCprep) {
-            Set pResult = {"isError":(1), "content":[{"type":"text","text":($System.Status.GetErrorText(tSCprep))}]}
-            Quit
-        }
+        ; Story 11.2 — centralized prepare-failure gate.
+        If ##class(SessionAgent.Tool.Base).EnsureIsErrorOnPrepareFailure(pResult, tSCprep, ..#ToolName) Quit
         Set tRs = tStmt.%Execute(tSessionId)
 
         Set tBpFound = 0

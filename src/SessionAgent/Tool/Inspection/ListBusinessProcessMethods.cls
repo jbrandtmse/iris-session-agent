@@ -123,10 +123,8 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
         Set tSql = "SELECT %EXACT(Name) AS name, FormalSpec AS formal_spec, %EXACT(ReturnType) AS return_type, %EXACT(Description) AS description, ClassMethod AS is_classmethod, %EXACT(Origin) AS origin FROM %Dictionary.CompiledMethod WHERE Parent = ? AND CompilerGenerated = 0 AND Internal = 0 AND %EXACT(Origin) <> '' AND NOT Name %STARTSWITH '%%' ORDER BY Name"
         Set tStmt = ##class(%SQL.Statement).%New()
         Set tSCprep = tStmt.%Prepare(tSql)
-        If $$$ISERR(tSCprep) {
-            Set pResult = {"isError":(1), "content":[{"type":"text","text":($System.Status.GetErrorText(tSCprep))}]}
-            Quit
-        }
+        ; Story 11.2 — centralized prepare-failure gate.
+        If ##class(SessionAgent.Tool.Base).EnsureIsErrorOnPrepareFailure(pResult, tSCprep, ..#ToolName) Quit
         Set tRs = tStmt.%Execute(tClassName)
 
         Set tMethods = []

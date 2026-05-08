@@ -240,13 +240,10 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
         ; is the integer the SearchTable extent stores.
         Set tStmtProp = ##class(%SQL.Statement).%New()
         Set tSCp = tStmtProp.%Prepare("SELECT PropID FROM Ens_Config.SearchTableProp WHERE %EXACT(ClassExtent) = ? AND %EXACT(Name) = ?")
-        If $$$ISERR(tSCp) {
-            ; Treat prepare failure as query_error — defensive.
-            Set tErrText = "PropId-lookup prepare failed: " _ $System.Status.GetErrorText(tSCp)
-            Set pResult = {"isError":(1), "content":[{"type":"text","text":(tErrText)}]}
-            Set pResult.structuredContent = {"render_strategy":"query_error", "error_text":(tErrText)}
-            Quit
-        }
+        ; Story 11.2 — centralized prepare-failure gate (was: render_strategy="query_error"
+        ; with "PropId-lookup prepare failed:" prefix; normalized to canonical
+        ; prepare_error envelope per AC-2).
+        If ##class(SessionAgent.Tool.Base).EnsureIsErrorOnPrepareFailure(pResult, tSCp, ..#ToolName) Quit
         Set tRsProp = tStmtProp.%Execute(tSearchClass, tPropName)
         Set tPropId = ""
         If tRsProp.%Next() {
@@ -320,12 +317,9 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
 
         Set tStmt = ##class(%SQL.Statement).%New()
         Set tSCs = tStmt.%Prepare(tSql)
-        If $$$ISERR(tSCs) {
-            Set tErrText = "search SQL prepare failed: " _ $System.Status.GetErrorText(tSCs)
-            Set pResult = {"isError":(1), "content":[{"type":"text","text":(tErrText)}]}
-            Set pResult.structuredContent = {"render_strategy":"query_error", "error_text":(tErrText)}
-            Quit
-        }
+        ; Story 11.2 — centralized prepare-failure gate (was: render_strategy="query_error"
+        ; with "search SQL prepare failed:" prefix; normalized per AC-2).
+        If ##class(SessionAgent.Tool.Base).EnsureIsErrorOnPrepareFailure(pResult, tSCs, ..#ToolName) Quit
         Set tRs = tStmt.%Execute(tLimit, tPropId, tPropValue, tLowerOdbc)
 
         ; --- Step 7: collect rows.

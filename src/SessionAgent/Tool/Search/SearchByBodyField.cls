@@ -265,12 +265,9 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
         ; mapping), the tool returns no_matches gracefully — NOT an error.
         Set tStmtProp = ##class(%SQL.Statement).%New()
         Set tSCp = tStmtProp.%Prepare("SELECT PropID FROM Ens_Config.SearchTableProp WHERE %EXACT(ClassExtent) = ? AND %EXACT(Name) = ?")
-        If $$$ISERR(tSCp) {
-            Set tErrText = "PropId-lookup prepare failed: " _ $System.Status.GetErrorText(tSCp)
-            Set pResult = {"isError":(1), "content":[{"type":"text","text":(tErrText)}]}
-            Set pResult.structuredContent = {"render_strategy":"prepare_error", "error_text":(tErrText)}
-            Quit
-        }
+        ; Story 11.2 — centralized prepare-failure gate (was: custom
+        ; "PropId-lookup prepare failed:" prefix; normalized per AC-2).
+        If ##class(SessionAgent.Tool.Base).EnsureIsErrorOnPrepareFailure(pResult, tSCp, ..#ToolName) Quit
         Set tRsProp = tStmtProp.%Execute(tSearchClass, tPropName)
         Set tPropId = ""
         If tRsProp.%Next() {
@@ -352,12 +349,9 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
 
         Set tStmt = ##class(%SQL.Statement).%New()
         Set tSCs = tStmt.%Prepare(tSql)
-        If $$$ISERR(tSCs) {
-            Set tErrText = "search SQL prepare failed: " _ $System.Status.GetErrorText(tSCs)
-            Set pResult = {"isError":(1), "content":[{"type":"text","text":(tErrText)}]}
-            Set pResult.structuredContent = {"render_strategy":"prepare_error", "error_text":(tErrText)}
-            Quit
-        }
+        ; Story 11.2 — centralized prepare-failure gate (was: custom
+        ; "search SQL prepare failed:" prefix; normalized per AC-2).
+        If ##class(SessionAgent.Tool.Base).EnsureIsErrorOnPrepareFailure(pResult, tSCs, ..#ToolName) Quit
 
         ; Variadic %Execute via canonical multi-dim local-array apply.
         Kill tArgs

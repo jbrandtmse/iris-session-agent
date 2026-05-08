@@ -273,4 +273,54 @@ ClassMethod FormatExceptionForOperator(pEx As %Exception.AbstractException) As %
     Quit tStripped
 }
 
+/// <p>Story 11.2 helper — centralized prepare-failure gate for every
+/// concrete tool that calls <code>%SQL.Statement.%Prepare</code>. Returns
+/// <code>1</code> when the prepare failed (and <code>pResult</code> was
+/// mutated to the canonical <code>{isError:1, render_strategy:"prepare_error"}</code>
+/// envelope shape), <code>0</code> when the prepare succeeded (no
+/// mutation). Caller pattern is <code>If ##class(SessionAgent.Tool.Base).EnsureIsErrorOnPrepareFailure(pResult, tSCp, ..#ToolName) Quit</code>
+/// — the trailing <code>Quit</code> exits the Try cleanly and the
+/// outer-Catch safety net is bypassed because the helper short-circuited
+/// the failure path.</p>
+///
+/// <p><b>Why centralize.</b> Every <code>%Prepare</code> call-site
+/// previously emitted ~5-7 lines of identical boilerplate — get the
+/// error text, build a <code>{isError:1, content:[...], structuredContent:{render_strategy:"prepare_error", error_text:...}}</code>
+/// envelope, <code>Quit</code>. The boilerplate drifted across Stories
+/// 4.1 → 4.7 (some tools used <code>render_strategy:"query_error"</code>,
+/// others used <code>render_strategy:"composition_error"</code>, others
+/// the bare <code>Quit:$$$ISERR(tSCp)</code> gap-shape pattern that
+/// returned a success-shaped envelope with empty content). Story 4.5
+/// reviewer first surfaced the gap-shape risk; the cross-cutting
+/// cleanup was deferred 4 times across 6 stories
+/// (4.5 → 4.7 → 8.0 → 9.0 → 10.9 → fourth-recovery threshold reached)
+/// per the Story 9.0 AC-6 compounding-recovery clause. This helper
+/// closes the deferral and normalizes every call-site to the canonical
+/// envelope shape so future schema-change-driven prepare failures
+/// surface as operator-readable errors instead of silent empty
+/// envelopes.</p>
+///
+/// <p><b>Mutation contract.</b> Caller MUST pre-initialize
+/// <code>pResult</code> to the success-shape envelope
+/// <code>{"content":[{"type":"text","text":""}], "structuredContent":{...}}</code>
+/// before invoking the helper. The helper mutates
+/// <code>pResult.isError</code> → <code>1</code>, overwrites
+/// <code>pResult.content[0].text</code> with the operator-readable error,
+/// and adds <code>render_strategy</code> + <code>error_text</code> to
+/// <code>pResult.structuredContent</code>. The pre-existing
+/// <code>structuredContent</code> shape (<code>events:[]</code>,
+/// <code>related_sessions:[]</code>, etc.) is left in place so any
+/// downstream renderer that inspects shape-presence still sees the
+/// expected fields.</p>
+ClassMethod EnsureIsErrorOnPrepareFailure(pResult As %DynamicObject, pPrepareStatus As %Status, pToolName As %String) As %Boolean
+{
+    If $$$ISOK(pPrepareStatus) Quit 0
+    Set tErrText = $System.Status.GetErrorText(pPrepareStatus)
+    Do pResult.%Set("isError", 1, "boolean")
+    Do pResult.%Get("content").%Get(0).%Set("text", "Tool '" _ pToolName _ "' SQL prepare failed: " _ tErrText)
+    Do pResult.structuredContent.%Set("render_strategy", "prepare_error")
+    Do pResult.structuredContent.%Set("error_text", tErrText)
+    Quit 1
+}
+
 }

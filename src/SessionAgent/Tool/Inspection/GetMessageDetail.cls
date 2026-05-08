@@ -115,10 +115,9 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
         ; ---- Step 1 — header read ----
         Set tStmtHdr = ##class(%SQL.Statement).%New()
         Set tSCprep = tStmtHdr.%Prepare("SELECT ID AS id, %EXACT(MessageBodyClassName) AS body_class, %EXACT(MessageBodyId) AS body_id, %EXACT(SourceConfigName) AS source_config_name, %EXACT(TargetConfigName) AS target_config_name, Status AS status, TimeCreated AS time_created, IsError AS is_error, SessionId AS session_id FROM Ens.MessageHeader WHERE ID = ?")
-        If $$$ISERR(tSCprep) {
-            Set pResult = {"isError":(1), "content":[{"type":"text","text":($System.Status.GetErrorText(tSCprep))}], "structuredContent":{"render_strategy":"composition_error", "error_text":($System.Status.GetErrorText(tSCprep))}}
-            Quit
-        }
+        ; Story 11.2 — centralized prepare-failure gate (was: render_strategy="composition_error";
+        ; normalized to canonical prepare_error envelope per AC-2).
+        If ##class(SessionAgent.Tool.Base).EnsureIsErrorOnPrepareFailure(pResult, tSCprep, ..#ToolName) Quit
         Set tRsHdr = tStmtHdr.%Execute(tMessageId)
         Set tFound = 0
         Set tHeader = {}
@@ -216,11 +215,9 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
         Set tRuleCount = 0
         Set tStmtRule = ##class(%SQL.Statement).%New()
         Set tSCprepR = tStmtRule.%Prepare("SELECT TOP ? ID AS id, %EXACT(RuleName) AS rule_name, %EXACT(ConfigName) AS component, %EXACT(ReturnValue) AS return_value, TimeExecuted AS time_executed, %EXACT(Reason) AS reason FROM Ens_Rule.Log WHERE %EXACT(CurrentHeaderId) = ? ORDER BY TimeExecuted ASC, ID ASC")
-        If $$$ISERR(tSCprepR) {
-            Set tPrepErr = $System.Status.GetErrorText(tSCprepR)
-            Set pResult = {"isError":(1), "content":[{"type":"text","text":(tPrepErr)}], "structuredContent":{"render_strategy":"composition_error", "error_text":(tPrepErr)}}
-            Quit
-        }
+        ; Story 11.2 — centralized prepare-failure gate (was: render_strategy="composition_error";
+        ; normalized to canonical prepare_error envelope per AC-2).
+        If ##class(SessionAgent.Tool.Base).EnsureIsErrorOnPrepareFailure(pResult, tSCprepR, ..#ToolName) Quit
         Set tRsRule = tStmtRule.%Execute(..#RuleDecisionLimit, tMessageId)
         While tRsRule.%Next() {
             Set tDec = {}

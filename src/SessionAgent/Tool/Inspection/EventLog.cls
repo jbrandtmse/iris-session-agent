@@ -153,13 +153,9 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
 
         Set tStmt = ##class(%SQL.Statement).%New()
         Set tSC = tStmt.%Prepare(tSql)
-        ; Story 4.7 AC-7 — emit isError envelope on prepare failure
-        ; (Story 4.5 R-1 carry-forward fix).
-        If $$$ISERR(tSC) {
-            Set tErr = $System.Status.GetErrorText(tSC)
-            Set pResult = {"isError":(1), "content":[{"type":"text","text":(tErr)}], "structuredContent":{"render_strategy":"prepare_error", "error_text":(tErr)}}
-            Quit
-        }
+        ; Story 11.2 — centralized prepare-failure gate (Story 4.5 R-1
+        ; closure via fourth-recovery commitment per Story 9.0 AC-6).
+        If ##class(SessionAgent.Tool.Base).EnsureIsErrorOnPrepareFailure(pResult, tSC, ..#ToolName) Quit
 
         ; Dispatch %Execute arity — TOP is always first, then SessionId,
         ; then Type cap, then optional MessageId.

@@ -159,11 +159,8 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
             Set tSqlLookup = "SELECT TOP 1 %EXACT(ssi.SuperSession) AS super_session FROM Ens.SuperSessionIndex ssi JOIN Ens.MessageHeader mh ON ssi.MessageHeader = mh.ID WHERE mh.SessionId = ?"
             Set tStmtLookup = ##class(%SQL.Statement).%New()
             Set tSCp = tStmtLookup.%Prepare(tSqlLookup)
-            If $$$ISERR(tSCp) {
-                Set tErrText = $System.Status.GetErrorText(tSCp)
-                Set pResult = {"isError":(1), "content":[{"type":"text","text":(tErrText)}], "structuredContent":{"render_strategy":"prepare_error", "error_text":(tErrText)}}
-                Quit
-            }
+            ; Story 11.2 — centralized prepare-failure gate.
+            If ##class(SessionAgent.Tool.Base).EnsureIsErrorOnPrepareFailure(pResult, tSCp, ..#ToolName) Quit
             Set tRsLookup = tStmtLookup.%Execute(tSeedId)
             Set tResolved = ""
             If tRsLookup.%Next() {
@@ -191,11 +188,8 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
         Set tSql = "SELECT TOP ? mh.SessionId AS sid, MIN(mh.TimeCreated) AS tc, MIN(%EXACT(mh.SourceConfigName)) AS src, MIN(%EXACT(mh.TargetConfigName)) AS tgt, COUNT(*) AS message_count FROM Ens.SuperSessionIndex ssi JOIN Ens.MessageHeader mh ON ssi.MessageHeader = mh.ID WHERE " _ tFragment _ " GROUP BY mh.SessionId ORDER BY MIN(mh.TimeCreated) DESC"
         Set tStmt = ##class(%SQL.Statement).%New()
         Set tSCp2 = tStmt.%Prepare(tSql)
-        If $$$ISERR(tSCp2) {
-            Set tErrText = $System.Status.GetErrorText(tSCp2)
-            Set pResult = {"isError":(1), "content":[{"type":"text","text":(tErrText)}], "structuredContent":{"render_strategy":"prepare_error", "error_text":(tErrText)}}
-            Quit
-        }
+        ; Story 11.2 — centralized prepare-failure gate.
+        If ##class(SessionAgent.Tool.Base).EnsureIsErrorOnPrepareFailure(pResult, tSCp2, ..#ToolName) Quit
 
         ; Variadic %Execute via canonical multi-dim local-array apply form.
         Kill tArgs

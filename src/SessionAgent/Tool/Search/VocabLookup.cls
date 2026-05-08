@@ -247,11 +247,8 @@ ClassMethod InvokeList(pPortalUser As %String, pLimit As %String, ByRef pResult 
     Set tSql = "SELECT TOP ? %EXACT(Alias) AS al, %EXACT(MessageBodyClass) AS bc, Confidence AS cf, %EXACT(LastUsed) AS lu, %EXACT(CreatedAt) AS ca, %EXACT(CreatedVia) AS cv, SuccessCount AS sc, FailureCount AS fc FROM SessionAgent_Search.UserVocabulary WHERE " _ tFragment _ " ORDER BY Confidence DESC, %EXACT(LastUsed) DESC"
     Set tStmt = ##class(%SQL.Statement).%New()
     Set tSCp = tStmt.%Prepare(tSql)
-    If $$$ISERR(tSCp) {
-        Set tErrText = $System.Status.GetErrorText(tSCp)
-        Set pResult = {"isError":(1), "content":[{"type":"text","text":(tErrText)}], "structuredContent":{"render_strategy":"prepare_error", "error_text":(tErrText)}}
-        Quit
-    }
+    ; Story 11.2 — centralized prepare-failure gate.
+    If ##class(SessionAgent.Tool.Base).EnsureIsErrorOnPrepareFailure(pResult, tSCp, ..#ToolName) Quit
 
     ; Variadic %Execute via multi-dim local-array apply.
     Kill tArgs
@@ -358,11 +355,8 @@ ClassMethod InvokeSave(pPortalUser As %String, pAlias As %String, pDescription A
     Set tFoundIdBefore = ""
     Set tStmt = ##class(%SQL.Statement).%New()
     Set tPrepSC = tStmt.%Prepare("SELECT TOP 1 ID FROM SessionAgent_Search.UserVocabulary WHERE %EXACT(PortalUser) = ? AND %EXACT(Alias) = ?")
-    If $$$ISERR(tPrepSC) {
-        Set tErrText = $System.Status.GetErrorText(tPrepSC)
-        Set pResult = {"isError":(1), "content":[{"type":"text","text":(tErrText)}]}
-        Quit
-    }
+    ; Story 11.2 — centralized prepare-failure gate.
+    If ##class(SessionAgent.Tool.Base).EnsureIsErrorOnPrepareFailure(pResult, tPrepSC, ..#ToolName) Quit
     Set tRsBefore = tStmt.%Execute(pPortalUser, pAlias)
     If tRsBefore.%Next() Set tFoundIdBefore = tRsBefore.%Get("ID")
     Set tAction = $Select(tFoundIdBefore '= "": "incremented", 1: "created")
@@ -390,11 +384,8 @@ ClassMethod InvokeSave(pPortalUser As %String, pAlias As %String, pDescription A
     Set tNewSuccessCount = 0
     Set tStmt2 = ##class(%SQL.Statement).%New()
     Set tPrepSC2 = tStmt2.%Prepare("SELECT TOP 1 SuccessCount FROM SessionAgent_Search.UserVocabulary WHERE %EXACT(PortalUser) = ? AND %EXACT(Alias) = ?")
-    If $$$ISERR(tPrepSC2) {
-        Set tErrText = $System.Status.GetErrorText(tPrepSC2)
-        Set pResult = {"isError":(1), "content":[{"type":"text","text":(tErrText)}]}
-        Quit
-    }
+    ; Story 11.2 — centralized prepare-failure gate.
+    If ##class(SessionAgent.Tool.Base).EnsureIsErrorOnPrepareFailure(pResult, tPrepSC2, ..#ToolName) Quit
     Set tRsAfter = tStmt2.%Execute(pPortalUser, pAlias)
     If tRsAfter.%Next() Set tNewSuccessCount = +tRsAfter.%Get("SuccessCount")
 
@@ -445,11 +436,8 @@ ClassMethod InvokeSearch(pPortalUser As %String, pAlias As %String, pLimit As %S
     Set tSql = "SELECT TOP ? %EXACT(Alias) AS al, %EXACT(MessageBodyClass) AS bc, Confidence AS cf, %EXACT(LastUsed) AS lu, %EXACT(CreatedAt) AS ca, %EXACT(CreatedVia) AS cv, SuccessCount AS sc, FailureCount AS fc FROM SessionAgent_Search.UserVocabulary WHERE " _ tFragment _ " ORDER BY Confidence DESC, %EXACT(LastUsed) DESC"
     Set tStmt = ##class(%SQL.Statement).%New()
     Set tSCp = tStmt.%Prepare(tSql)
-    If $$$ISERR(tSCp) {
-        Set tErrText = $System.Status.GetErrorText(tSCp)
-        Set pResult = {"isError":(1), "content":[{"type":"text","text":(tErrText)}], "structuredContent":{"render_strategy":"prepare_error", "error_text":(tErrText)}}
-        Quit
-    }
+    ; Story 11.2 — centralized prepare-failure gate.
+    If ##class(SessionAgent.Tool.Base).EnsureIsErrorOnPrepareFailure(pResult, tSCp, ..#ToolName) Quit
 
     Kill tArgs
     Set tArgs(1) = tLimit

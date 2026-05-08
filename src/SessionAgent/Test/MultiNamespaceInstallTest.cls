@@ -347,6 +347,78 @@ Method TestInstallIntoNamespaceIdempotency()
     Quit
 }
 
+/// <p>Story 11.3 AC-5 — verify <method>InstallIntoNamespace</method>
+/// programmatically copies the Story 10.7 vendored static bundle from
+/// <code>${cspdir}/hscustom/sa-static/</code> to
+/// <code>${cspdir}/satest64/sa-static/</code>. Asserts that the canonical
+/// per-namespace asset <code>marked.min.js</code> exists at the expected
+/// target path after the install runs.</p>
+///
+/// <p>Skips gracefully if the runner lacks create-namespace permission
+/// or if <code>TESTNS</code> failed to prepare. Also skips gracefully if
+/// the source bundle directory is not present on this IRIS instance —
+/// e.g., a fresh checkout where the original Story 10.7 IPM
+/// <code>&lt;FileCopy&gt;</code> has not run yet (the helper logs the
+/// bail-out and returns OK; the install still succeeds, but no files
+/// arrive at the target).</p>
+Method TestInstallIntoNamespaceCopiesStaticBundle()
+{
+    If '..HasCreatePermission {
+        Do $$$AssertSkipped("Test requires create-namespace permission; skipped on this runner")
+        Quit
+    }
+    If '..PreparedTestNs {
+        Do $$$AssertSkipped("Test requires SATEST64 prepared (interop-enabled + package-mapped)")
+        Quit
+    }
+
+    Set tOrigNS = $NAMESPACE
+    Try {
+        ; Resolve canonical paths cross-platform — same strategy as
+        ; SessionAgent.Installer:CopyStaticBundleToNamespace.
+        Set tCspRoot = ##class(%File).SubDirectoryName($System.Util.InstallDirectory(), "csp", 1)
+        Set tSourceDir = ##class(%File).SubDirectoryName(##class(%File).SubDirectoryName(tCspRoot, "hscustom", 1), "sa-static", 1)
+        Set tTargetDir = ##class(%File).SubDirectoryName(##class(%File).SubDirectoryName(tCspRoot, $ZConvert(..#TESTNS, "L"), 1), "sa-static", 1)
+
+        ; Skip if the source bundle is not present (operator never ran the
+        ; original Story 10.7 IPM <FileCopy>).
+        If '##class(%File).DirectoryExists(tSourceDir) {
+            Do $$$AssertSkipped("Source bundle directory not present at " _ tSourceDir _ " — Story 10.7 <FileCopy> may not have fired in HSCUSTOM yet")
+            Quit
+        }
+
+        ; Run InstallIntoNamespace — the bundle-copy step is the last action.
+        Set tInstallSC = ##class(SessionAgent.Installer).InstallIntoNamespace(..#TESTNS)
+        Do $$$AssertStatusOK(tInstallSC, "InstallIntoNamespace OK on prepared TESTNS")
+
+        ; Assert target directory exists post-install.
+        Do $$$AssertTrue(##class(%File).DirectoryExists(tTargetDir), "Target bundle directory exists after install: " _ tTargetDir)
+
+        ; Assert the canonical marked.min.js asset arrived at the target.
+        Set tMarkedPath = ##class(%File).NormalizeFilename("marked.min.js", tTargetDir)
+        Do $$$AssertTrue(##class(%File).Exists(tMarkedPath), "marked.min.js exists at " _ tMarkedPath)
+
+        ; Assert at least 2 files were copied (idempotence smoke — the bundle
+        ; is 13 files in v1.0.1; tolerate variance for future bundle drift).
+        Set tFileCount = 0
+        Set tRs = ##class(%ResultSet).%New("%File:FileSet")
+        Do tRs.Execute(tTargetDir, "*", "Name", 1)
+        While tRs.Next() {
+            If '##class(%File).DirectoryExists(tRs.Get("Name")) {
+                Set tFileCount = tFileCount + 1
+            }
+        }
+        Do tRs.Close()
+        Do $$$AssertTrue(tFileCount >= 2, "Target directory contains >= 2 files (actual: " _ tFileCount _ ")")
+    }
+    Catch ex {
+        Set $NAMESPACE = tOrigNS
+        Do $$$AssertTrue(0, "Unexpected exception: " _ ex.DisplayString())
+    }
+    Set $NAMESPACE = tOrigNS
+    Quit
+}
+
 /// <p>Helper — ensures <code>TESTNS</code> is prepared for the integration
 /// tests (created + interop-enabled + package-mapped). Idempotent: if
 /// each prerequisite is already met, the method is a no-op (sub-second).

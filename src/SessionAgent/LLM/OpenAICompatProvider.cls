@@ -525,6 +525,16 @@ Method IssueHttpsPost(pPayloadJson As %String, pAuthHeader As %String, pEndpoint
         Set tLocation = tParsed.%Get("location")
         Set tPort = +tParsed.%Get("port")
         Set tHttps = +tParsed.%Get("https")
+        ; Story 11.4 — smart suffix detection. If the operator-supplied
+        ; EndpointUrl does NOT already end in /chat/completions (e.g.,
+        ; Ollama base URL "http://localhost:11434/v1" — Location=/v1),
+        ; append /chat/completions so the POST hits the canonical OpenAI-
+        ; compatible Chat Completions path. If the operator already supplied
+        ; the full path (e.g., "https://api.openai.com/v1/chat/completions" —
+        ; Location=/v1/chat/completions), use as-is — no double-suffix.
+        ; Trailing-slash form ("/v1/") is normalized first so the resulting
+        ; Location has exactly one slash separator (NOT "/v1//chat/completions").
+        Set tLocation = ..NormalizeChatCompletionsLocation(tLocation)
 
         Set tReq = ##class(%Net.HttpRequest).%New()
         Set tReq.Https = tHttps
@@ -577,6 +587,61 @@ Method IssueHttpsPost(pPayloadJson As %String, pAuthHeader As %String, pEndpoint
     }
 
     Quit tResp
+}
+
+/// <p>Story 11.4 — normalize the parsed Location piece so it always ends
+/// in <code>/chat/completions</code>. Input is the <code>location</code>
+/// field returned by <method>SessionAgent.LLM.Provider.ParseEndpointUrl</method>.</p>
+///
+/// <p><b>Cases.</b></p>
+/// <ul>
+/// <li><b>Suffix already present</b> (e.g.,
+/// <code>/v1/chat/completions</code>) — return as-is. Operator supplied
+/// the full OpenAI-canonical URL.</li>
+/// <li><b>Suffix absent, no trailing slash</b> (e.g., <code>/v1</code>) —
+/// append <code>/chat/completions</code> → <code>/v1/chat/completions</code>.
+/// Operator supplied the Ollama / vLLM base URL.</li>
+/// <li><b>Suffix absent, trailing slash</b> (e.g., <code>/v1/</code>) —
+/// strip the trailing slash, append <code>/chat/completions</code> →
+/// <code>/v1/chat/completions</code> (one separator, not two).</li>
+/// <li><b>Empty / root</b> (e.g., <code>/</code>) — append
+/// <code>/chat/completions</code> minus the duplicated leading slash →
+/// <code>/chat/completions</code>. Defensive — should not happen in
+/// production because <method>ParseEndpointUrl</method> defaults Location
+/// to <code>/</code> only when the EndpointUrl had no path; CallMessages's
+/// Step 1 already rejects empty EndpointUrl.</li>
+/// </ul>
+///
+/// <p><b>Detection rule.</b> The check uses substring presence
+/// (<code>$Find</code>) so a hypothetical sub-resource path like
+/// <code>/v1/chat/completions/audio</code> is also treated as
+/// "already-suffixed" — the operator knows what they want and we don't
+/// override. Most paid OpenAI-compatible endpoints (Together AI, OpenRouter,
+/// Anyscale) accept the canonical <code>/chat/completions</code> path; the
+/// rare deployment that exposes a non-canonical sub-resource still gets
+/// passed through unchanged.</p>
+ClassMethod NormalizeChatCompletionsLocation(pLocation As %String) As %String [ Internal ]
+{
+    Set tLoc = $Get(pLocation)
+
+    ; Case 1 — suffix already present. Pass through.
+    If $Find(tLoc, "/chat/completions") > 0 {
+        Quit tLoc
+    }
+
+    ; Case 2/3 — strip a trailing "/" so we end up with exactly one
+    ; separator after concatenation.
+    If $Length(tLoc) > 1, $Extract(tLoc, *) = "/" {
+        Set tLoc = $Extract(tLoc, 1, * - 1)
+    }
+
+    ; Case 4 — empty or root "/" → produce "/chat/completions" with one
+    ; leading slash. Otherwise concatenate.
+    If tLoc = "" || (tLoc = "/") {
+        Quit "/chat/completions"
+    }
+
+    Quit tLoc _ "/chat/completions"
 }
 
 /// <p>Per-instance hook returning MaxAttempts. Defaults to <code>4</code>;

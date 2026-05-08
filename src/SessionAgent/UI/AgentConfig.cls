@@ -555,6 +555,15 @@ ClientMethod loadAgent() [ Language = javascript ]
     zen('envVarText').setValue(data.EnvVarName || '');
     zen('credCombo').setValue(data.CredentialName || '');
     zen('maxTokensText').setValue(data.MaxTokens || 32000);
+
+    // Story 11.1 — capture the loaded Provider so the rotation cascade
+    // (onChangeProvider) can compute the OLD provider's canonical
+    // MaxTokens default and apply the preserve-when-customized
+    // heuristic. Without this initialization the first rotation has
+    // no notion of "what was the old provider" and falls back to the
+    // legacy stomp-the-MaxTokens behavior.
+    zenPage._loadedProvider = data.Provider || 'openai';
+    zenPage._previousProvider = zenPage._loadedProvider;
     zen('temperatureText').setValue(data.Temperature || 0.1);
     zen('systemPromptText').setValue(data.SystemPromptOverride || '');
     zen('enabledCheck').setValue(data.Enabled ? 1 : 0);
@@ -589,6 +598,27 @@ ClientMethod loadAgent() [ Language = javascript ]
     zenPage.providerChanged();
     zenPage.credTypeChanged();
     zenPage.spoChanged();
+
+    // Story 11.1 (review fix-now) — providerChanged() above runs the
+    // same stale-canonical guard set as the rotation cascade and will
+    // stomp an operator-saved MaxTokens=4000 (or 4096 against a
+    // hyperscaler row) to the loaded provider's NEW canonical default
+    // on every form-load. Same operator-observable bug shape Story 11.1
+    // was created to fix, different trigger. Apply the
+    // preserve-when-customized heuristic mirroring onChangeProvider:
+    // if the loaded MaxTokens (data.MaxTokens) differs from the
+    // loaded provider's canonical default, the operator had customized
+    // the value — restore it over whatever providerChanged() wrote.
+    var loadedMaxTokens = String(data.MaxTokens || '');
+    var loadedCanonicalMax = zenPage.getCanonicalMaxTokens(zenPage._loadedProvider);
+    if (loadedMaxTokens !== '' && loadedCanonicalMax !== ''
+        && loadedMaxTokens !== loadedCanonicalMax) {
+        // Operator-customized — restore over providerChanged()'s stomp.
+        var maxTokensFieldOnLoad = zen('maxTokensText');
+        if (maxTokensFieldOnLoad) {
+            maxTokensFieldOnLoad.setValue(loadedMaxTokens);
+        }
+    }
 
     // Clear any stale save-status message from a prior interaction.
     zen('saveStatus').setValue('');
@@ -668,6 +698,26 @@ ClassMethod LoadProviderDefaults(pProvider As %String) As %String [ ZenMethod ]
 /// re-populates fields when the dropdown selection changes).</p>
 ClientMethod onChangeProvider(value) [ Language = javascript ]
 {
+    // Story 11.1 — capture pre-cascade MaxTokens + the OLD provider
+    // BEFORE any cascade fires. The preserve-when-customized heuristic
+    // (AC-2) needs both:
+    //   - the OLD provider's canonical MaxTokens default
+    //   - the operator's pre-cascade MaxTokens value (which providerChanged
+    //     would otherwise stomp via its stale-canonical guard set)
+    // After the existing cascades run, we apply the heuristic: if the
+    // pre-cascade value DIFFERS from the OLD canonical default, the
+    // operator has customized — restore the pre-cascade value over
+    // whatever the cascade wrote. If the pre-cascade value EQUALS the
+    // OLD canonical default, leave the cascade-applied NEW canonical
+    // default in place (fresh-state semantic).
+    var oldProvider = zenPage._previousProvider || zenPage._loadedProvider || 'openai';
+    var oldCanonicalMax = zenPage.getCanonicalMaxTokens(oldProvider);
+    var maxTokensField = zen('maxTokensText');
+    var preCascadeMaxTokens = '';
+    if (maxTokensField) {
+        preCascadeMaxTokens = String(maxTokensField.getValue() || '');
+    }
+
     var json = zenPage.LoadProviderDefaults(value);
     var data;
     try {
@@ -705,6 +755,26 @@ ClientMethod onChangeProvider(value) [ Language = javascript ]
     // have flipped above.
     zenPage.credTypeChanged();
 
+    // Story 11.1 — preserve-when-customized heuristic for MaxTokens.
+    // providerChanged() above may have updated maxTokensText to the
+    // NEW provider's canonical default (its stale-canonical guard set
+    // includes 4000/4096/32000, so a 4000 value rotating to a
+    // hyperscaler gets stomped to 32000). Apply the AC-2 heuristic:
+    // if the operator's pre-cascade value differs from the OLD
+    // provider's canonical default (and was non-empty), they had
+    // customized it — restore. Otherwise leave the cascade-applied
+    // NEW canonical default. Empty pre-cascade values are treated
+    // as "fresh state" — let the cascade apply the new default.
+    if (maxTokensField && preCascadeMaxTokens !== '' && oldCanonicalMax !== '') {
+        if (preCascadeMaxTokens !== String(oldCanonicalMax)) {
+            // Operator-customized — restore the pre-cascade value.
+            maxTokensField.setValue(preCascadeMaxTokens);
+        }
+        // else: pre-cascade value == OLD canonical → fresh state,
+        // leave the NEW canonical default that providerChanged()
+        // applied.
+    }
+
     // Story 10.13 F-3 (defense-in-depth) — when rotating to openai-
     // compatible, EXPLICITLY ensure endpointUrlText is unhidden. The
     // upstream providerChanged() handler already toggles visibility via
@@ -719,6 +789,32 @@ ClientMethod onChangeProvider(value) [ Language = javascript ]
         if (endpointForceUnhide) {
             endpointForceUnhide.setHidden(false);
         }
+    }
+
+    // Story 11.1 — update _previousProvider for the NEXT rotation so
+    // the heuristic computes against the correct OLD canonical on
+    // subsequent rotations.
+    zenPage._previousProvider = value;
+}
+
+/// <p><b>Story 11.1.</b> Returns the canonical default MaxTokens value
+/// for a given provider. Mirrors the per-provider switch in
+/// <method>providerChanged</method> exactly so the preserve-when-customized
+/// heuristic in <method>onChangeProvider</method> agrees with the
+/// stale-canonical guard that providerChanged uses internally.</p>
+///
+/// <p>If a future story adds a provider, the new arm must be added to
+/// BOTH <method>providerChanged</method>'s switch AND this helper —
+/// otherwise the rotation cascade and the preservation heuristic will
+/// disagree on what counts as "the old canonical".</p>
+ClientMethod getCanonicalMaxTokens(provider) [ Language = javascript ]
+{
+    switch (provider) {
+        case 'openai':            return '32000';
+        case 'anthropic':         return '32000';
+        case 'gemini':            return '32000';
+        case 'openai-compatible': return '4096';
+        default:                  return '';
     }
 }
 

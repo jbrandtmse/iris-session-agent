@@ -109,13 +109,8 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
 
         Set tStmt = ##class(%SQL.Statement).%New()
         Set tSC = tStmt.%Prepare(tSql)
-        ; Story 4.7 AC-7 — emit isError envelope on prepare failure
-        ; (Story 4.5 R-1 carry-forward fix).
-        If $$$ISERR(tSC) {
-            Set tErr = $System.Status.GetErrorText(tSC)
-            Set pResult = {"isError":(1), "content":[{"type":"text","text":(tErr)}], "structuredContent":{"render_strategy":"prepare_error", "error_text":(tErr)}}
-            Quit
-        }
+        ; Story 11.2 — centralized prepare-failure gate.
+        If ##class(SessionAgent.Tool.Base).EnsureIsErrorOnPrepareFailure(pResult, tSC, ..#ToolName) Quit
 
         ; Dispatch the right %Execute arity based on which bounds we appended.
         If (tFromOdbc = "") && (tToOdbc = "") {

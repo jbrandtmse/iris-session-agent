@@ -166,10 +166,8 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
         ; ---- Step 1 — header lookup ----
         Set tStmt = ##class(%SQL.Statement).%New()
         Set tSCprep = tStmt.%Prepare("SELECT %EXACT(MessageBodyClassName) AS body_class, %EXACT(MessageBodyId) AS body_id FROM Ens.MessageHeader WHERE ID = ?")
-        If $$$ISERR(tSCprep) {
-            Set pResult = {"isError":(1), "content":[{"type":"text","text":($System.Status.GetErrorText(tSCprep))}]}
-            Quit
-        }
+        ; Story 11.2 — centralized prepare-failure gate.
+        If ##class(SessionAgent.Tool.Base).EnsureIsErrorOnPrepareFailure(pResult, tSCprep, ..#ToolName) Quit
         Set tRs = tStmt.%Execute(tMessageId)
         Set tBodyClass = ""
         Set tBodyId = ""

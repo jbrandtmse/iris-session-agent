@@ -298,11 +298,9 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
         ; the AC-7 NOTE bullet without paying for >cap actual rows.
         Set tProbeCap = tCandidateCap + 1
         Set tSCs = tStmt.%Prepare(tSql)
-        If $$$ISERR(tSCs) {
-            Set tErrText = "prefilter SQL prepare failed: " _ $System.Status.GetErrorText(tSCs)
-            Set pResult = {"isError":(1), "content":[{"type":"text","text":(tErrText)}], "structuredContent":{"render_strategy":"prepare_error", "error_text":(tErrText)}}
-            Quit
-        }
+        ; Story 11.2 — centralized prepare-failure gate (was: custom
+        ; "prefilter SQL prepare failed:" prefix; normalized per AC-2).
+        If ##class(SessionAgent.Tool.Base).EnsureIsErrorOnPrepareFailure(pResult, tSCs, ..#ToolName) Quit
 
         ; Variadic %Execute via canonical multi-dim local-array apply.
         Kill tArgs

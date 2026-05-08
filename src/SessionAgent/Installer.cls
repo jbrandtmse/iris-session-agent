@@ -270,6 +270,19 @@ ClassMethod InstallIntoNamespace(pNamespace As %String) As %Status
         Set $NAMESPACE = tOrigNS
         ; tSC propagates unchanged — operator sees the same actionable
         ; text the single-namespace Install() path would produce.
+
+        ; (5) Story 11.3 — Programmatically copy the Story 10.7 vendored
+        ; static bundle from ${cspdir}/hscustom/sa-static/ to
+        ; ${cspdir}/<pNamespace>/sa-static/ so the per-NS chat panel's
+        ; vendored Markdown rendering works end-to-end without the
+        ; operator running a manual robocopy/cp -r per the README
+        ; workaround. Non-fatal: if the copy fails, the install still
+        ; succeeds (the operator can recover via the deprecated manual
+        ; copy fallback documented in the README).
+        Set tCopySC = ..CopyStaticBundleToNamespace(pNamespace)
+        If $$$ISERR(tCopySC) {
+            Do ..LogProgress("WARN: bundle copy failed for " _ pNamespace _ " — see manual robocopy fallback in README §""Multi-Namespace Install"". Error: " _ $System.Status.GetErrorText(tCopySC))
+        }
     }
     Catch ex {
         Set $NAMESPACE = tOrigNS
@@ -642,6 +655,124 @@ ClassMethod StripDocMarkup(pText As %String) As %String [ Private ]
         Set tOut = $Replace(tOut, "  ", " ")
     }
     Quit $ZStrip(tOut, "<>W")
+}
+
+/// <p>Story 11.3 — Programmatically copies the Story 10.7 vendored static
+/// bundle (<code>marked.min.js</code>, <code>prism*.js</code>,
+/// <code>dompurify.min.js</code>, etc.) from the canonical install
+/// location <code>${cspdir}/hscustom/sa-static/</code> to
+/// <code>${cspdir}/&lt;lower(pNamespace)&gt;/sa-static/</code> so the
+/// per-namespace chat panel's vendored Markdown rendering resolves
+/// correctly under <code>/csp/&lt;NS&gt;/sa-static/</code>.</p>
+///
+/// <p><b>Why this exists:</b> the IPM <code>&lt;FileCopy&gt;</code> directive
+/// in <code>module.xml</code> only fires at the original
+/// <code>zpm install</code> (typically into <code>HSCUSTOM</code>). When
+/// operators run <method>InstallIntoNamespace</method> for a non-HSCUSTOM
+/// namespace, the static bundle is NOT copied to
+/// <code>${cspdir}/OTHERNS/sa-static/</code> — the per-namespace
+/// <code>/csp/OTHERNS/sa-static/marked.min.js</code> URL returns HTTP 404
+/// and the chat panel falls back to Story 3.2 MVP rendering. Story 10.7
+/// shipped with a manual <code>robocopy</code>/<code>cp -r</code>
+/// README workaround; this helper is the v1.0.1 programmatic fix that
+/// closes the gap.</p>
+///
+/// <p><b>Path resolution strategy</b> (Task 0 chosen approach — walk back
+/// from canonical install location):</p>
+/// <ol>
+/// <li><code>${cspdir}</code> resolves via
+/// <code>##class(%File).SubDirectoryName($System.Util.InstallDirectory(), "csp", 1)</code>
+/// — produces <code>C:\InterSystems\IRISHealth\CSP\</code> on Windows
+/// and <code>/usr/irissys/csp/</code> on Linux without hardcoded
+/// separators.</li>
+/// <li>Source: <code>&lt;csp&gt;/hscustom/sa-static/</code> — the canonical
+/// post-Story-10.7 install location.</li>
+/// <li>Target: <code>&lt;csp&gt;/&lt;lower(pNamespace)&gt;/sa-static/</code> —
+/// IRIS lowercases namespace folder names under <code>${cspdir}</code>.</li>
+/// </ol>
+///
+/// <p><b>Idempotency (NFR-R5):</b> safe to re-run on the same namespace
+/// any number of times. Uses <code>%File:CreateDirectoryChain</code>
+/// (no-op when target already exists) and <code>%File:CopyFile</code>
+/// with <var>overwrite=1</var> (replaces any partially-populated target).</p>
+///
+/// <p><b>Source-missing bail-out:</b> if
+/// <code>&lt;csp&gt;/hscustom/sa-static/</code> does not exist (e.g., the
+/// original <code>zpm install</code> ran into a different namespace, or
+/// the bundle was never installed because the operator is on a pre-10.7
+/// version), the helper logs a diagnostic line and returns
+/// <code>$$$OK</code> — the operator can recover by manually copying
+/// the bundle per the deprecated README workaround.</p>
+///
+/// <p><b>Non-fatal failure contract</b> (AC-3): every error path returns
+/// a <code>%Status</code>; the caller (<method>InstallIntoNamespace</method>)
+/// logs the failure but does not propagate it as an install error so the
+/// rest of the install (audit-event registration, RBAC role, agent
+/// configs, etc.) still succeeds. The operator sees a single WARN line
+/// in the install log pointing at the README's manual fallback.</p>
+///
+/// <p><b>Cross-platform path concerns</b> (Dev Notes): uses
+/// <code>%File:NormalizeFilename</code> + <code>%File:SubDirectoryName</code>
+/// + <code>%File:CreateDirectoryChain</code> for all path construction
+/// (no string concatenation with hardcoded separators). The bundle
+/// filenames are lowercase (<code>marked.min.js</code> etc.) — case-
+/// sensitive match on Linux but case-insensitive on Windows;
+/// <code>%File:FileSet</code> handles both.</p>
+ClassMethod CopyStaticBundleToNamespace(pNamespace As %String) As %Status [ Private ]
+{
+    Set tSC = $$$OK
+    Try {
+        ; Resolve ${cspdir} cross-platform — works on Windows + Linux.
+        Set tCspRoot = ##class(%File).SubDirectoryName($System.Util.InstallDirectory(), "csp", 1)
+        Set tSourceDir = ##class(%File).SubDirectoryName(##class(%File).SubDirectoryName(tCspRoot, "hscustom", 1), "sa-static", 1)
+        Set tTargetDir = ##class(%File).SubDirectoryName(##class(%File).SubDirectoryName(tCspRoot, $ZConvert(pNamespace, "L"), 1), "sa-static", 1)
+
+        ; Source-missing bail-out: log + return OK so the install proceeds.
+        If '##class(%File).DirectoryExists(tSourceDir) {
+            Do ..LogProgress("Bundle source not found at " _ tSourceDir _ " — bundle copy skipped (operator can manually copy per README)")
+            Quit
+        }
+
+        ; Idempotent: ensure target directory chain exists.
+        Set tCreateOK = ##class(%File).CreateDirectoryChain(tTargetDir, .tCreateReturn)
+        If 'tCreateOK {
+            Set tSC = $$$ERROR($$$GeneralError, "CopyStaticBundleToNamespace: failed to create target directory '" _ tTargetDir _ "' (return=" _ tCreateReturn _ ")")
+            Quit
+        }
+
+        ; Walk source files (non-recursive — bundle is flat) and copy each
+        ; with overwrite=1 for idempotence.
+        Set tCount = 0
+        Set tRs = ##class(%ResultSet).%New("%File:FileSet")
+        Set tExecSC = tRs.Execute(tSourceDir, "*", "Name", 1)
+        If $$$ISERR(tExecSC) {
+            Set tSC = tExecSC
+            Quit
+        }
+        While tRs.Next() {
+            Set tSourcePath = tRs.Get("Name")
+            Set tFileName = ##class(%File).GetFilename(tSourcePath)
+            ; FileSet returns directories too when recurse=0 with default type;
+            ; skip any directory entries defensively.
+            If ##class(%File).DirectoryExists(tSourcePath) Continue
+            Set tTargetPath = ##class(%File).NormalizeFilename(tFileName, tTargetDir)
+            Set tCopyOK = ##class(%File).CopyFile(tSourcePath, tTargetPath, 1, .tCopyReturn)
+            If 'tCopyOK {
+                Set tSC = $$$ERROR($$$GeneralError, "CopyStaticBundleToNamespace: failed to copy '" _ tSourcePath _ "' to '" _ tTargetPath _ "' (return=" _ tCopyReturn _ ")")
+                Do tRs.Close()
+                Quit
+            }
+            Set tCount = tCount + 1
+        }
+        Do tRs.Close()
+        If $$$ISERR(tSC) Quit
+
+        Do ..LogProgress("Copied " _ tCount _ " static bundle file(s) to " _ tTargetDir)
+    }
+    Catch ex {
+        Set tSC = ex.AsStatus()
+    }
+    Quit tSC
 }
 
 }

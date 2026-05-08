@@ -881,4 +881,174 @@ Method TestOpenAICompatCascadeProducesSuccessfulSave()
     Quit
 }
 
+/// <p><b>Story 11.1 AC-4 Test 1 — preservation contract end-to-end.</b>
+/// Simulates the post-cascade Save: an operator who has previously
+/// persisted MaxTokens=4000 on an openai-shape row, rotates Provider
+/// to anthropic via the form, and the JS-side preserve-when-customized
+/// heuristic kept the 4000 value. Drives SaveAgentConfig with the
+/// post-cascade values the heuristic WOULD have produced
+/// (Provider=anthropic + Model=claude-haiku-4-5-20251001 + MaxTokens=4000)
+/// and asserts the row persists with the operator's customized
+/// MaxTokens=4000 — NOT the new provider's canonical default of
+/// 32000. Restores the row's original openai shape at the end so the
+/// test is self-cleaning.</p>
+///
+/// <p>The JS-side heuristic itself is verified by the AC-6 chrome-
+/// devtools-mcp walkthrough (the JS cascade is a client-side
+/// computation that has no ObjectScript surface). This test verifies
+/// the persistence contract: when the operator's customized MaxTokens
+/// flows through the Save handler, the row stores it faithfully.</p>
+Method TestMaxTokensCascadePreservesCustomized()
+{
+    Set tAgentName = "message-search"
+
+    ; Capture FULL original row state for faithful restoration (matches
+    ; the Story 10.13 capture pattern — every field SaveAgentConfig
+    ; writes is captured so the restore is genuinely self-cleaning).
+    Set tCfg0 = ##class(SessionAgent.Config.Agent).AgentNameIdxOpen(tAgentName)
+    Set tOrigProvider = "openai"
+    Set tOrigModel = "gpt-4.1-mini"
+    Set tOrigEnabled = 0
+    Set tOrigEndpoint = ""
+    Set tOrigEnvVar = "OPENAI_API_KEY"
+    Set tOrigCred = ""
+    Set tOrigMaxTokens = 32000
+    Set tOrigRetention = 30
+    If $IsObject(tCfg0) {
+        Set tOrigProvider = tCfg0.Provider
+        Set tOrigModel = tCfg0.Model
+        Set tOrigEnabled = tCfg0.Enabled
+        Set tOrigEndpoint = tCfg0.EndpointUrl
+        If tOrigEndpoint = $Char(0) Set tOrigEndpoint = ""
+        Set tOrigEnvVar = tCfg0.EnvVarName
+        If tOrigEnvVar = $Char(0) Set tOrigEnvVar = ""
+        If tOrigEnvVar = "" Set tOrigEnvVar = "OPENAI_API_KEY"
+        Set tOrigCred = tCfg0.CredentialName
+        If tOrigCred = $Char(0) Set tOrigCred = ""
+        Set tOrigMaxTokens = +tCfg0.MaxTokens
+        If tOrigMaxTokens < 1 Set tOrigMaxTokens = 32000
+        Set tOrigRetention = +tCfg0.SearchChatRetentionDays
+        If tOrigRetention < 1 Set tOrigRetention = 30
+        Do tCfg0.%Close()
+    }
+
+    ; Drive the post-cascade Save: operator's customized MaxTokens=4000
+    ; survives the rotation from openai → anthropic (per the Story 11.1
+    ; preserve-when-customized heuristic). Use the anthropic canonical
+    ; Model + a creds-flavored Save shape to mirror what onChangeProvider
+    ; cascades onto the form.
+    Set tEnabledStr = $Select(tOrigEnabled = 1 : "1", 1 : "0")
+    Set tJson = ##class(SessionAgent.UI.AgentConfig).SaveAgentConfig(
+        tAgentName, "anthropic", "claude-haiku-4-5-20251001",
+        "", "creds",
+        "ANTHROPIC_API_KEY", "SessionAgentAnthropic",
+        "4000", "0.1", "", tEnabledStr, tOrigRetention)
+    Set tObj = ##class(%DynamicObject).%FromJSON(tJson)
+    Do $$$AssertEquals(tObj.%Get("success"), 1, "Story 11.1: post-cascade Save with MaxTokens=4000 succeeds (got: " _ tJson _ ")")
+
+    ; Re-read the row and assert the operator's customized MaxTokens
+    ; persisted as 4000 — NOT the anthropic canonical 32000.
+    Set tCfgNew = ##class(SessionAgent.Config.Agent).AgentNameIdxOpen(tAgentName)
+    Do $$$AssertTrue($IsObject(tCfgNew), "Row resolves after preserved-MaxTokens save")
+    If $IsObject(tCfgNew) {
+        Do $$$AssertEquals(tCfgNew.Provider, "anthropic", "Provider rotated to anthropic")
+        Do $$$AssertEquals(+tCfgNew.MaxTokens, 4000, "Story 11.1: operator's customized MaxTokens=4000 persists after Provider rotation (NOT the 32000 canonical default)")
+        Do tCfgNew.%Close()
+    }
+
+    ; Faithful restore. SaveAgentConfig validates pCredTypeRadio against
+    ; the radio's valueList ["env", "creds"] (line 1085 of AgentConfig.cls);
+    ; the alternative is "creds" not "credential". Pre-existing test at
+    ; line 877 has the same string-mismatch bug but happens to pass
+    ; because message-search.CredentialName is empty in this dev's
+    ; environment so the "env" arm is always picked. Fix-now in the
+    ; new tests so the restore is genuinely faithful in any env.
+    Set tCredType = $Select(tOrigCred = "" : "env", 1 : "creds")
+    Do ##class(SessionAgent.UI.AgentConfig).SaveAgentConfig(
+        tAgentName, tOrigProvider, tOrigModel, tOrigEndpoint, tCredType,
+        tOrigEnvVar, tOrigCred, tOrigMaxTokens, "0.1", "", tEnabledStr, tOrigRetention)
+    Quit
+}
+
+/// <p><b>Story 11.1 AC-4 Test 2 — fresh-state cascade applies canonical.</b>
+/// Simulates the fresh-state cascade: an operator on a row whose
+/// MaxTokens still equals the OLD provider's canonical default
+/// (e.g., 32000 for openai) rotates to openai-compatible. The JS
+/// heuristic permits the cascade to apply the NEW canonical default
+/// (4096) because the operator never customized away from the old
+/// canonical. Drives SaveAgentConfig with the post-cascade values
+/// (Provider=openai-compatible + canonical Ollama Model + MaxTokens=4096)
+/// and asserts the row persists with the new canonical MaxTokens.</p>
+///
+/// <p>Pairs with <method>TestMaxTokensCascadePreservesCustomized</method>
+/// to demonstrate both AC-1 (preserve when customized) AND AC-2
+/// (apply canonical when fresh-state) end-to-end through the Save
+/// handler.</p>
+Method TestMaxTokensCascadeAppliesCanonicalForFreshRow()
+{
+    Set tAgentName = "message-search"
+
+    ; Capture FULL original row state for faithful restoration.
+    Set tCfg0 = ##class(SessionAgent.Config.Agent).AgentNameIdxOpen(tAgentName)
+    Set tOrigProvider = "openai"
+    Set tOrigModel = "gpt-4.1-mini"
+    Set tOrigEnabled = 0
+    Set tOrigEndpoint = ""
+    Set tOrigEnvVar = "OPENAI_API_KEY"
+    Set tOrigCred = ""
+    Set tOrigMaxTokens = 32000
+    Set tOrigRetention = 30
+    If $IsObject(tCfg0) {
+        Set tOrigProvider = tCfg0.Provider
+        Set tOrigModel = tCfg0.Model
+        Set tOrigEnabled = tCfg0.Enabled
+        Set tOrigEndpoint = tCfg0.EndpointUrl
+        If tOrigEndpoint = $Char(0) Set tOrigEndpoint = ""
+        Set tOrigEnvVar = tCfg0.EnvVarName
+        If tOrigEnvVar = $Char(0) Set tOrigEnvVar = ""
+        If tOrigEnvVar = "" Set tOrigEnvVar = "OPENAI_API_KEY"
+        Set tOrigCred = tCfg0.CredentialName
+        If tOrigCred = $Char(0) Set tOrigCred = ""
+        Set tOrigMaxTokens = +tCfg0.MaxTokens
+        If tOrigMaxTokens < 1 Set tOrigMaxTokens = 32000
+        Set tOrigRetention = +tCfg0.SearchChatRetentionDays
+        If tOrigRetention < 1 Set tOrigRetention = 30
+        Do tCfg0.%Close()
+    }
+
+    ; Drive the fresh-state cascade Save: operator on openai-shape with
+    ; MaxTokens=32000 (old canonical) rotates to openai-compatible →
+    ; cascade applies new canonical 4096.
+    Set tEnabledStr = $Select(tOrigEnabled = 1 : "1", 1 : "0")
+    Set tJson = ##class(SessionAgent.UI.AgentConfig).SaveAgentConfig(
+        tAgentName, "openai-compatible", "qwen2.5:32b",
+        "http://localhost:11434/v1", "env",
+        "OLLAMA_API_KEY", "",
+        "4096", "0.1", "", tEnabledStr, tOrigRetention)
+    Set tObj = ##class(%DynamicObject).%FromJSON(tJson)
+    Do $$$AssertEquals(tObj.%Get("success"), 1, "Story 11.1: fresh-state cascade Save with MaxTokens=4096 (new canonical) succeeds (got: " _ tJson _ ")")
+
+    ; Re-read the row and assert the new canonical MaxTokens persisted.
+    Set tCfgNew = ##class(SessionAgent.Config.Agent).AgentNameIdxOpen(tAgentName)
+    Do $$$AssertTrue($IsObject(tCfgNew), "Row resolves after fresh-state cascade save")
+    If $IsObject(tCfgNew) {
+        Do $$$AssertEquals(tCfgNew.Provider, "openai-compatible", "Provider rotated to openai-compatible")
+        Do $$$AssertEquals(+tCfgNew.MaxTokens, 4096, "Story 11.1: fresh-state cascade applies new canonical MaxTokens=4096 (openai-compatible canonical)")
+        Do tCfgNew.%Close()
+    }
+
+    ; Faithful restore. SaveAgentConfig validates pCredTypeRadio against
+    ; the radio's valueList ["env", "creds"] (line 1085 of AgentConfig.cls);
+    ; the alternative is "creds" not "credential". Pre-existing test at
+    ; line 877 has the same string-mismatch bug but happens to pass
+    ; because message-search.CredentialName is empty in this dev's
+    ; environment so the "env" arm is always picked. Fix-now in the
+    ; new tests so the restore is genuinely faithful in any env.
+    Set tCredType = $Select(tOrigCred = "" : "env", 1 : "creds")
+    Do ##class(SessionAgent.UI.AgentConfig).SaveAgentConfig(
+        tAgentName, tOrigProvider, tOrigModel, tOrigEndpoint, tCredType,
+        tOrigEnvVar, tOrigCred, tOrigMaxTokens, "0.1", "", tEnabledStr, tOrigRetention)
+    Quit
+}
+
 }

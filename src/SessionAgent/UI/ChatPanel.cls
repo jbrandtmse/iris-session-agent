@@ -275,6 +275,25 @@ ClassMethod EmitStyle() As %Status
     &html<.sa-search-result-sid { font-weight: 600; }>
     &html<.sa-search-truncation-note { font-style: italic; margin: 6px 0; padding: 4px 8px; color: var(--sa-muted-fg, #666); }>
 
+    ; --- Story 12.5 (BUG-05) — "Load N sessions into table" button +
+    ; "Filtered by agent search" badge above the central filter form.
+    ; Both surfaces re-use the existing --sa-accent-color /
+    ; --sa-citation-chip-text token family (same hues operators already
+    ; recognize from Story 10.4's from-search stripe + 10.2's
+    ; search-result-entry hover). No hex/rgba literals beyond the token
+    ; fallback values — fallbacks are the rendered values today (parent
+    ; palette doesn't publish these vars yet) per the same convention
+    ; used by Story 10.4's stripe rules above.
+    &html<.sa-load-into-table-btn { display: block; margin: 10px 0 4px 0; padding: 6px 14px; background: var(--sa-accent-color, #0066cc); color: var(--sa-button-fg, #ffffff); border: 1px solid var(--sa-accent-color, #0066cc); border-radius: 4px; font-size: 0.95em; font-weight: 500; cursor: pointer; transition: opacity 100ms; }>
+    &html<.sa-load-into-table-btn:hover, .sa-load-into-table-btn:focus { opacity: 0.9; outline: 2px solid var(--sa-citation-chip-text, #0066cc); outline-offset: 1px; }>
+    &html<.sa-load-into-table-btn:active { opacity: 0.75; }>
+
+    ; Badge surface — pill above the parent's filter form.
+    &html<.sa-agent-filter-badge { display: inline-flex; align-items: center; gap: 8px; margin: 0 0 8px 0; padding: 4px 10px; background: var(--sa-from-search-stripe-bg, rgba(0, 102, 204, 0.08)); border-left: 3px solid var(--sa-accent-color, #0066cc); border-radius: 3px; font-size: 0.92em; }>
+    &html<.sa-agent-filter-badge-text { color: var(--sa-citation-chip-text, #0066cc); font-weight: 500; }>
+    &html<.sa-agent-filter-badge-clear { background: transparent; border: 1px solid var(--sa-accent-color, #0066cc); border-radius: 3px; padding: 0 6px; cursor: pointer; color: var(--sa-citation-chip-text, #0066cc); font-size: 1em; line-height: 1.2; }>
+    &html<.sa-agent-filter-badge-clear:hover, .sa-agent-filter-badge-clear:focus { background: var(--sa-from-search-stripe-bg, rgba(0, 102, 204, 0.12)); }>
+
     ; --- Story 10.4 AC-4 — from-search stripe (UX-DR5). The stripe is a
     ; thin horizontal bar above the chat transcript with the literal
     ; search query, an Accept button, and an × Dismiss button. Both

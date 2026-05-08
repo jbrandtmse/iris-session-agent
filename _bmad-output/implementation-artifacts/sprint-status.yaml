@@ -166,7 +166,7 @@ development_status:
   12-2-agent-reliability-provider-error-and-tool-fallback: done
   12-3-messageviewer-session-link-override: done
   12-4-agentloop-max-iterations-configurable: done
-  12-5-search-results-drive-messageviewer-table: backlog
+  12-5-search-results-drive-messageviewer-table: done
   12-6-chat-history-tile-replay: done
   12-7-readme-rewrite-quickstart-screenshots-cleanns: backlog
   epic-12-retrospective: optional

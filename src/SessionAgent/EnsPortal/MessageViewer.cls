@@ -86,6 +86,30 @@ Class SessionAgent.EnsPortal.MessageViewer Extends EnsPortal.MessageViewer [ Sys
 /// runtime via <method>%OnGetPageName</method> instead.</p>
 Parameter PAGENAME = "";
 
+/// <p>Story 12.5 (BUG-05) — comma-separated session IDs the operator
+/// pulled from a Search-Agent tile list via the "Load N sessions into
+/// table" button. When non-empty, <method>CreateResultSet</method>
+/// wraps the parent's generated SQL with a
+/// <code>WHERE Session IN (CSV)</code> sub-query restriction so the
+/// central results table shows ONLY those sessions (with all the table's
+/// existing sort / paginate / export affordances intact).</p>
+///
+/// <p><b>Storage shape — CSV not JSON.</b> Per Story 12.5 spec Dev Notes
+/// §"Why semicolon-separated CSV (not JSON)": Zen
+/// <code>%ZEN.Datatype.string</code> is a single line, no encoding
+/// overhead. The button click hands JSON to
+/// <method>ApplyAgentSessionFilter</method>, which converts to CSV at
+/// the JS boundary; the server-side <method>CreateResultSet</method>
+/// reads the CSV directly and emits <code>Session IN (CSV)</code>.</p>
+///
+/// <p><b>SQL injection guard.</b> The session IDs are integers from the
+/// agent's tool result. <method>ApplyAgentSessionFilter</method>
+/// validates at the JS boundary (<code>/^\d+(,\d+)*$/</code>) before
+/// assigning to this property. <method>CreateResultSet</method>
+/// re-validates server-side before SQL concatenation — never trust
+/// input crossing a Zen boundary.</p>
+Property agentSessionFilterIds As %ZEN.Datatype.string;
+
 /// <p>Runtime page-name resolution — supplies the browser tab title
 /// without triggering the parent's compile-time
 /// <code>$$$Text(..#PAGENAME)</code> codegen path.</p>
@@ -803,6 +827,409 @@ ClientMethod onTabChange() [ Language = javascript ]
     if (!this._tabDisplay) { this._tabDisplay = new Object(); }
     this._tabDisplay['Agent'] = '__rendered__';
     // No re-render call — see Story 10.13 F-2 doc-comment above.
+}
+
+/// <p>Story 12.5 (BUG-05) — override the grandparent's
+/// <CLASS>EnsPortal.Template.filteredViewer</CLASS>:<code>XData
+/// searchPane</code> to inject a "Filtered by agent search" badge host
+/// element ABOVE the existing filter form. The override re-states the
+/// parent's searchPane verbatim and prepends a single
+/// <code>&lt;html id="agentFilterBadgeHost"&gt;</code> element whose
+/// <code>OnDrawContent="DrawAgentFilterBadge"</code> callback emits the
+/// badge HTML when <property>agentSessionFilterIds</property> is non-
+/// empty. When the property is empty the callback writes nothing, so
+/// the host element renders as a zero-height stub and the form layout
+/// is unchanged.</p>
+///
+/// <p>Verbatim XData duplication is the same trade-off documented in
+/// the class doc-comment for <code>XData detailsPane</code> — Zen has
+/// no XData merge semantic, so we re-state the parent's body and accept
+/// the version-pinning concession (if InterSystems adds new search
+/// criteria in a future IRIS release we will not pick them up
+/// automatically; this is a known cost).</p>
+XData searchPane [ XMLNamespace = "http://www.intersystems.com/zen" ]
+{
+<pane xmlns="http://www.intersystems.com/zen">
+
+<pane id="jsonPane" paneName="jsonPane" hidden="true" />
+<jsonProvider id="queryHistory" OnGetArray="GetQueryHistory" />
+
+<!-- Story 12.5 (BUG-05) — agent-search filter badge host. Renders
+     a "Filtered by agent search: N sessions" pill above the filter
+     form when ..agentSessionFilterIds is non-empty. The callback
+     writes nothing when empty so the host degrades to zero height. -->
+<html id="agentFilterBadgeHost" OnDrawContent="DrawAgentFilterBadge" />
+
+<form id="searchForm" labelPosition="top" cellStyle="padding:3px;">
+
+<hgroup>
+<vgroup cellStyle="padding:3px;">
+<select label="Sort Order" id="SortOrder" name="SortOrder" displayList="Newest First,Oldest First" valueList="2,1" value="2" showEmpty="false" onchange="zenPage.updateSearchState(); return true;"/>
+<select id="TimeFormat" label="Time Format" name="TimeFormat" showEmpty="false" value="999" valueList="999,12" displayList="Complete,Time Only" onchange="zenPage.updateSearchState(); return true;"/>
+</vgroup>
+<vgroup cellStyle="padding:3px;">
+<combobox label="Page Size" id="pageSize" name="pageSize" onchange="zenPage.searchIfValidPageSize(zenThis.value);" editable="true"
+	unrestricted="true" size="4" title="Select Page Size in rows or enter a number" valueList="1,5,10,20,30,50,100,200,500,1000" value="100"/>
+<text label="Page" id="pageNumber" name="pageNumber" readOnly="true" size="4" />
+</vgroup>
+</hgroup>
+
+
+<expando id="simpleCriteria" caption="Basic Criteria" animate="true">
+
+<hgroup cellStyle="padding:3px;">
+<select label="Status" name="Status" displayList="All,Completed,Error,Created,Queued,Delivered,Discarded,Suspended,Deferred,Aborted"
+	valueList=",9,8,1,2,3,4,5,6,7" value="" showEmpty="false" onchange="zenPage.updateSearchState(); return true;"/>
+<select label="Type" id="Type" name="Type" displayList="Session Start,Request,Response,All" valueList="0,1,2,3" value="0" showEmpty="false" onchange="zenPage.updateSearchState(); return true;"/>
+</hgroup>
+
+<hgroup cellStyle="padding:3px;">
+<dateText label="Start Time" name="StartTime" size="18" showTime="true" defaultTime="00:00:00" onchange="zenPage.updateSearchState(); return true;"/>
+<text label="Start ID" name="StartId" size="9" onchange="zenPage.updateSearchState(); return true;"/>
+</hgroup>
+
+<hgroup cellStyle="padding:3px;">
+<dateText label="End Time" name="EndTime" size="18" showTime="true" defaultTime="23:59:59" onchange="zenPage.updateSearchState(); return true;"/>
+<text label="End ID" name="EndId" size="9" onchange="zenPage.updateSearchState(); return true;"/>
+</hgroup>
+
+<selector id="Source" label="Source" name="Source" size="33" context="Ens/MsgSource" onchange="zenPage.updateSearchState(); return true;"/>
+
+<selector id="Target" label="Target" name="Target" size="33" context="Ens/MsgTarget" onchange="zenPage.updateSearchState(); return true;"/>
+<text id="SequenceManagerSearch" name="SequenceManagerSearch" hidden="true" />
+</expando>
+
+<expando id="extendedCriteria" caption="Extended Criteria" expanded="false" animate="true">
+<hgroup>
+<spacer width="5" />
+<html>
+<div id="addCriterion" class="critLink wrapper" title="#(%page.tipAddCriterionTitle)#" onclick="zenPage.addCriterion(); return false;">
+<img id="addCriterionBtn"  src="portal/add_24.gif" style="vertical-align: middle;" ></img>
+<span id="addCriterionTxt" class="linkText">#(%page.tipAddCriterion)#</span>
+</div>
+</html>
+<spacer width="15" />
+<html>
+<div id="addOR" class="critLink wrapper" title="#(%page.tipAddORTitle)#" onclick="zenPage.addOR(); return false;">
+<img id="addORBtn" src="portal/views_add_48.gif" width="24px" height="24px" style="vertical-align: middle;" ></img>
+<span id="addORTxt" class="linkText">#(%page.tipAddOR)#</span>
+</div>
+</html>
+</hgroup>
+<spacer height="5"/>
+<html id="criteria">
+</html>
+</expando>
+
+<expando id="savedSearches" caption="Saved Searches" expanded="false" animate="true">
+<hgroup>
+<html>
+<div id="saveSearch" class="critLink wrapper" title="#(%page.tipSave)#" onclick="zenPage.saveSearch();">
+<img id="saveSearchBtn" src="deepsee/insert_table_48.png" width="24px" height="24px" style="vertical-align: middle;" ></img>
+<span id="saveSearchTxt" class="linkText">#(%page.tipSave)#</span>
+</div>
+</html>
+<spacer width="10" />
+<html>
+<div id="saveSearchAs" class="critLink wrapper" title="#(%page.tipSaveAs)#" onclick="zenPage.toggleSaveAs(true);">
+<img id="saveSearchAsBtn" src="deepsee/insert_table_fav_48.png" width="24px" height="24px" style="vertical-align: middle;" ></img>
+<span id="saveSearchAsTxt" class="linkText">#(%page.tipSaveAs)#</span>
+</div>
+</html>
+<spacer width="10" />
+<html>
+<div id="searchDelete" class="critLink wrapper" title="#(%page.tipDelete)#" onclick="zenPage.deleteSearch(zen('savedList').getValue());">
+<img id="searchDeleteBtn" src="deepsee/close_a_24.png" width="24px" height="24px" style="vertical-align: middle;" ></img>
+<span id="searchDeleteTxt" class="linkText">#(%page.tipDelete)#</span>
+</div>
+</html>
+</hgroup>
+<spacer height="10" />
+<hgroup id="searchSaveGroup">
+<select id="savedList" showEmpty="true" title="Choose a saved search" queryClass="EnsPortal.MsgFilter.SavedSearch" queryName="ListPermanent" controlStyle="width: 200px;" onchange="zenPage.loadSearch(zenThis.getValue(), false);" />
+</hgroup>
+<hgroup id="searchSaveAsGroup" hidden="true" cellVAlign="top">
+<text id="saveAsName" hint="Enter a name for the search" />
+<spacer width="5" />
+<image id="saveAsGo" title="Save this search" onclick="zenPage.saveSearch(zen('saveAsName').getValue(),true);" controlClass="critLink" src="deepsee/ok_24.png" />
+<spacer width="5" />
+<image id="saveAsExit" title="Don't save search" onclick="zenPage.toggleSaveAs(false);" controlClass="critLink" src="deepsee/close_a_24.png" />
+</hgroup>
+</expando>
+</form>
+</pane>
+}
+
+/// <p>Story 12.5 (BUG-05) — Zen <code>OnDrawContent</code> callback for
+/// the <code>&lt;html id="agentFilterBadgeHost"&gt;</code> element above
+/// the filter form. Emits the "Filtered by agent search: N sessions"
+/// badge HTML with a small ✕ button when
+/// <property>agentSessionFilterIds</property> is non-empty; emits
+/// nothing (zero-height host) otherwise.</p>
+///
+/// <p>The badge clear-button calls
+/// <method>ClearAgentSessionFilter</method> which resets the property,
+/// refreshes this host, and triggers <code>doSearch()</code> to
+/// re-render the table without the filter (AC-5).</p>
+Method DrawAgentFilterBadge(pSeed As %String) As %Status
+{
+    Set tIds = ..agentSessionFilterIds
+    ; $Char(0) sentinel guard — Zen string properties may be re-read after
+    ; an UPDATE through the SQL projection of the form session; normalize
+    ; per project rule §"$Char(0) sentinel".
+    If tIds = $Char(0) Set tIds = ""
+    If tIds = "" Quit $$$OK
+
+    ; Count the IDs server-side so the badge text is independent of any
+    ; client-side state. The validation guard in CreateResultSet covers
+    ; the SQL-injection surface; here we only count items separated by ','.
+    Set tCount = $Length(tIds, ",")
+
+    &html<<div class="sa-agent-filter-badge" role="status" aria-live="polite">>
+    &html<<span class="sa-agent-filter-badge-text">Filtered by agent search: #(tCount)# sessions</span>>
+    &html<<button type="button" class="sa-agent-filter-badge-clear" title="Clear agent-search filter" aria-label="Clear agent-search filter" onclick="zenPage.ClearAgentSessionFilter(); return false;">×</button>>
+    &html<</div>>
+    Quit $$$OK
+}
+
+/// <p>Story 12.5 (BUG-05) — apply the agent-search filter to the
+/// central results table. Called by the
+/// <code>chat-panel.js</code>'s "Load N sessions into table" button.</p>
+///
+/// <p><b>Input.</b> <var>pSessionIdsJson</var> is a JSON-stringified
+/// array of integer session IDs (e.g., <code>"[100,101,102]"</code>).
+/// The button's click handler passes
+/// <code>JSON.stringify(sessionIds)</code> directly so this method
+/// owns the JSON-to-CSV conversion at the JS boundary, and then the
+/// page property holds CSV (cheaper for the SQL-emit path).</p>
+///
+/// <p><b>Validation contract.</b> Each parsed array element is
+/// validated against <code>/^\d+$/</code>; any non-numeric element
+/// rejects the whole filter (no-op, alert the operator). The
+/// SQL-injection guard is double-coverage: this client-side
+/// validation + server-side re-validation in
+/// <method>CreateResultSet</method>.</p>
+///
+/// <p><b>Re-search trigger.</b> After setting the property, refresh
+/// the badge host (<code>zen('agentFilterBadgeHost').refreshContents()</code>)
+/// so the badge appears, then call <code>zenPage.doSearch()</code>
+/// to re-execute the parent's search path with our new filter
+/// active. The parent's <code>doSearch()</code> calls
+/// <method>CreateResultSet</method> internally via the tablePane's
+/// query lifecycle.</p>
+ClientMethod ApplyAgentSessionFilter(pSessionIdsJson) [ Language = javascript ]
+{
+    if (!pSessionIdsJson) {
+        return;
+    }
+    var ids;
+    try {
+        ids = JSON.parse(pSessionIdsJson);
+    } catch (e) {
+        if (typeof console !== 'undefined' && console.warn) {
+            console.warn('[sa-search] ApplyAgentSessionFilter: malformed JSON', e);
+        }
+        return;
+    }
+    if (!Array.isArray(ids) || ids.length === 0) {
+        if (typeof console !== 'undefined' && console.warn) {
+            console.warn('[sa-search] ApplyAgentSessionFilter: empty or non-array input');
+        }
+        return;
+    }
+    // Validate each element is a positive integer (or the string form
+    // thereof). Reject the whole filter on any non-numeric element —
+    // SQL-injection-guard double-coverage (server-side re-validates).
+    var csv = '';
+    for (var i = 0; i < ids.length; i++) {
+        var raw = ids[i];
+        var n = Number(raw);
+        if (!isFinite(n) || n <= 0 || Math.floor(n) !== n || String(raw).match(/^\d+$/) === null) {
+            if (typeof console !== 'undefined' && console.warn) {
+                console.warn('[sa-search] ApplyAgentSessionFilter: non-numeric session id rejected', raw);
+            }
+            return;
+        }
+        csv += (i > 0 ? ',' : '') + String(n);
+    }
+    // Persist on the Zen page property (server-readable in
+    // CreateResultSet via ..agentSessionFilterIds).
+    zenPage.agentSessionFilterIds = csv;
+
+    // Refresh the badge host so the operator sees confirmation.
+    try {
+        var host = zen('agentFilterBadgeHost');
+        if (host) {
+            host.refreshContents();
+        }
+    } catch (e2) {
+        // Non-fatal — the filter still works without the badge.
+    }
+
+    // Trigger the parent's search path so the tablePane re-queries
+    // with our filter active.
+    try {
+        zenPage.doSearch();
+    } catch (e3) {
+        if (typeof console !== 'undefined' && console.warn) {
+            console.warn('[sa-search] doSearch() threw after ApplyAgentSessionFilter', e3);
+        }
+    }
+}
+
+/// <p>Story 12.5 (BUG-05) — override the parent's
+/// <CLASS>EnsPortal.Template.filteredViewer</CLASS>:<method>loadSearch</method>
+/// so that the existing Reset button on the page Ribbon (which fires
+/// <code>zenPage.loadSearch('',true)</code> per
+/// <CLASS>EnsPortal.MessageViewer</CLASS>:<method>OnGetRibbonInfo</method>
+/// line 138) ALSO clears <property>agentSessionFilterIds</property> +
+/// refreshes the badge host. Without this override Reset would clear
+/// the form fields but leave the agent filter active — the badge would
+/// still show "Filtered by agent search: N sessions" and the table
+/// would still narrow to those IDs, contradicting operator intent
+/// (Story 12.5 AC-5: "Clear-filter button (✕ on the badge OR existing
+/// Reset button) clears agent-session-filter mode"). Code-review
+/// finding fix.</p>
+///
+/// <p><b>Reset semantics.</b> The parent dispatches Reset by calling
+/// <code>loadSearch('',true)</code> — empty <var>searchName</var> +
+/// <var>run=true</var>. We detect that signature and clear the agent
+/// filter BEFORE delegating to the parent so the parent's
+/// <code>doSearch()</code> at the tail re-runs against the cleared
+/// state.</p>
+ClientMethod loadSearch(searchName, run) [ Language = javascript ]
+{
+    // Story 12.5 — Reset button path also clears the agent filter.
+    if (searchName === '' || searchName == null) {
+        zenPage.agentSessionFilterIds = '';
+        try {
+            var host = zen('agentFilterBadgeHost');
+            if (host) {
+                host.refreshContents();
+            }
+        } catch (e) {
+            // Non-fatal — badge refresh is cosmetic; the filter state
+            // is already cleared.
+        }
+    }
+    // Delegate to the parent's loadSearch which handles the saved-search
+    // load path AND triggers doSearch() when run=true.
+    return this.invokeSuper('loadSearch', arguments);
+}
+
+/// <p>Story 12.5 (BUG-05) — clear the agent-search filter and
+/// re-render the table without the SessionId restriction. Called by
+/// the ✕ button on the badge AND can be called externally (e.g., by
+/// the existing Reset button via a future wiring).</p>
+ClientMethod ClearAgentSessionFilter() [ Language = javascript ]
+{
+    zenPage.agentSessionFilterIds = '';
+
+    // Refresh the badge host so the badge disappears.
+    try {
+        var host = zen('agentFilterBadgeHost');
+        if (host) {
+            host.refreshContents();
+        }
+    } catch (e2) {
+        // Non-fatal.
+    }
+
+    // Trigger re-search without the filter.
+    try {
+        zenPage.doSearch();
+    } catch (e3) {
+        if (typeof console !== 'undefined' && console.warn) {
+            console.warn('[sa-search] doSearch() threw after ClearAgentSessionFilter', e3);
+        }
+    }
+}
+
+/// <p>Story 12.5 (BUG-05) — override the grandparent's
+/// <CLASS>EnsPortal.Template.filteredViewer</CLASS>:<method>CreateResultSet</method>
+/// so that when <property>agentSessionFilterIds</property> is non-empty
+/// the central results table shows ONLY the agent-supplied sessions.
+/// When the property is empty the override is a transparent
+/// pass-through to <code>##super()</code>.</p>
+///
+/// <p><b>Minimum-blast-radius design.</b> Per Story 12.5 spec Dev Notes
+/// §"Why minimum-blast-radius on CreateResultSet": call
+/// <code>##super()</code> first to build the base ResultSet (preserving
+/// every parent-side filter, sort, pagination, and warning behavior),
+/// then if the agent-filter is active, build a wrapper
+/// <code>%SQL.Statement</code> whose query is
+/// <code>SELECT * FROM (&lt;original SQL&gt;) ms_sub WHERE ms_sub.Session
+/// IN (CSV)</code> and return the wrapper's
+/// <code>%SQL.StatementResult</code>. The original SQL is read from
+/// <property>searchQuery</property> which the parent populates as a
+/// side-effect of <code>##super()</code>.</p>
+///
+/// <p><b>SQL injection guard (server-side, second line of defense).</b>
+/// The CSV is re-validated against
+/// <code>$Match(tIds, "^[0-9]+(,[0-9]+)*$")</code> before
+/// concatenation. If validation fails, fall back to the unfiltered
+/// parent ResultSet (the JS boundary's validation should have caught
+/// it; failing safe is still the right behavior).</p>
+///
+/// <p><b>Column name "Session".</b> The parent's underlying query
+/// (<CLASS>EnsPortal.MsgFilter.Assistant</CLASS>:<method>GenerateSQL</method>)
+/// emits <code>head.SessionId As Session</code> — confirmed via Task 0
+/// probe of <code>irislib/EnsPortal/MsgFilter/Assistant.cls</code> line
+/// 247 / 493. So the wrapper's WHERE clause references
+/// <code>ms_sub.Session</code>.</p>
+Method CreateResultSet(Output pSC As %Status, pInfo As %ZEN.Auxiliary.QueryInfo) As %ResultSet
+{
+    Set tBaseRS = ##super(.pSC, pInfo)
+    If $$$ISERR(pSC) Quit tBaseRS
+
+    ; Property read with $Char(0) normalization (project rule).
+    Set tIds = ..agentSessionFilterIds
+    If tIds = $Char(0) Set tIds = ""
+    If tIds = "" Quit tBaseRS
+
+    ; SQL injection guard — server-side re-validation of the CSV. If the
+    ; pattern doesn't match, fall back to unfiltered (the JS boundary
+    ; should have caught this; defense-in-depth).
+    If '$Match(tIds, "^[0-9]+(,[0-9]+)*$") Quit tBaseRS
+
+    ; The parent populates ..searchQuery from tFilter.GeneratedSQL as a
+    ; side-effect of ##super(). If empty (e.g., search-warning early
+    ; exit), there's nothing to wrap — return base unchanged.
+    Set tBaseSql = ..searchQuery
+    If tBaseSql = "" Quit tBaseRS
+
+    ; Build the wrapper SQL. Column name "Session" is the parent's
+    ; SELECT alias for head.SessionId. The CSV has been pattern-validated
+    ; so direct concatenation is safe.
+    Set tWrappedSql = "SELECT * FROM (" _ tBaseSql _ ") ms_sub WHERE ms_sub.Session IN (" _ tIds _ ")"
+
+    Set tStmt = ##class(%SQL.Statement).%New()
+    Set tPrepSC = tStmt.%Prepare(tWrappedSql)
+    If $$$ISERR(tPrepSC) {
+        ; Wrapper %Prepare failed — return base RS so the operator still
+        ; sees results, but emit a parent-rendered search warning so the
+        ; operator is NOT misled by the badge claiming a filter is active
+        ; while the table shows the unfiltered base. Story 12.5 review-
+        ; finding fix: silent leak when wrapper prepare fails.
+        Do ..searchWarnings.Insert("Agent-search filter (" _ $Length(tIds, ",") _ " sessions) could not be applied — wrapper SQL failed to prepare. Showing unfiltered results. Use the badge × button to clear the filter.")
+        Quit tBaseRS
+    }
+    Set tWrappedRS = tStmt.%Execute()
+    If '$IsObject(tWrappedRS) {
+        Do ..searchWarnings.Insert("Agent-search filter (" _ $Length(tIds, ",") _ " sessions) could not be applied — wrapper SQL did not return a result set. Showing unfiltered results.")
+        Quit tBaseRS
+    }
+    If tWrappedRS.%SQLCODE < 0 {
+        Do ..searchWarnings.Insert("Agent-search filter (" _ $Length(tIds, ",") _ " sessions) could not be applied — wrapper SQL execution failed (SQLCODE " _ tWrappedRS.%SQLCODE _ "). Showing unfiltered results.")
+        Quit tBaseRS
+    }
+
+    ; Update the parent's searchQuery so the "Show Query" diagnostic
+    ; reflects the actually-executed query (operator-observability).
+    Set ..searchQuery = tWrappedSql
+    Set pInfo.queryText = tWrappedSql
+
+    Quit tWrappedRS
 }
 
 /// <p>Story 12.3 (BUG-04, HIGH severity) — override the parent's

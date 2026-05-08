@@ -1629,6 +1629,77 @@
             note.textContent = 'Showing first ' + sessions.length + ' of ' + totalCount + ' matches — refine your query to narrow results.';
             state.transcriptEl.appendChild(note);
         }
+
+        // Story 12.5 (BUG-05) — "Load N sessions into table" affordance.
+        // Collect the validated session IDs from the just-rendered tile
+        // list, then append a button that hands them to
+        // zenPage.ApplyAgentSessionFilter so the central tablePane filters
+        // down to those exact sessions. Skips emission when no valid IDs
+        // (defensive — should not happen given the early-return on empty
+        // sessions[] above, but the array could in theory contain only
+        // null/missing-session_id entries).
+        var validIds = [];
+        for (var bj = 0; bj < sessions.length; bj++) {
+            var sb = sessions[bj];
+            if (!sb) {
+                continue;
+            }
+            var rawSid = sb.session_id;
+            if (rawSid == null || rawSid === '') {
+                continue;
+            }
+            var nSid = Number(rawSid);
+            if (!isFinite(nSid) || nSid <= 0 || Math.floor(nSid) !== nSid) {
+                continue;
+            }
+            // Re-validate the string-form pattern guard (defense-in-depth).
+            if (String(rawSid).match(/^\d+$/) === null) {
+                continue;
+            }
+            validIds.push(String(nSid));
+        }
+        if (validIds.length > 0) {
+            var loadBtn = document.createElement('button');
+            loadBtn.setAttribute('type', 'button');
+            loadBtn.setAttribute('class', 'sa-load-into-table-btn');
+            loadBtn.setAttribute('data-session-ids', validIds.join(','));
+            loadBtn.textContent = 'Load ' + validIds.length + ' sessions into table';
+            loadBtn.setAttribute('aria-label', 'Load ' + validIds.length + ' sessions into the central message viewer table');
+            loadBtn.addEventListener('click', function (ev) {
+                if (ev && typeof ev.preventDefault === 'function') {
+                    ev.preventDefault();
+                }
+                var btn = ev && ev.currentTarget ? ev.currentTarget : loadBtn;
+                var idsAttr = btn.getAttribute('data-session-ids') || '';
+                if (!idsAttr) {
+                    return;
+                }
+                var idsList = idsAttr.split(',');
+                // Re-validate at click time (defense-in-depth — protects
+                // against DOM tampering between render and click).
+                var filtered = [];
+                for (var ck = 0; ck < idsList.length; ck++) {
+                    if (String(idsList[ck]).match(/^\d+$/) !== null) {
+                        filtered.push(Number(idsList[ck]));
+                    }
+                }
+                if (filtered.length === 0) {
+                    return;
+                }
+                try {
+                    if (typeof zenPage !== 'undefined' && zenPage && typeof zenPage.ApplyAgentSessionFilter === 'function') {
+                        zenPage.ApplyAgentSessionFilter(JSON.stringify(filtered));
+                    } else if (typeof console !== 'undefined' && console.warn) {
+                        console.warn('[sa-search] zenPage.ApplyAgentSessionFilter unavailable — Load-into-table no-op');
+                    }
+                } catch (loadErr) {
+                    if (typeof console !== 'undefined' && console.warn) {
+                        console.warn('[sa-search] ApplyAgentSessionFilter threw:', loadErr);
+                    }
+                }
+            });
+            state.transcriptEl.appendChild(loadBtn);
+        }
     }
 
     /**

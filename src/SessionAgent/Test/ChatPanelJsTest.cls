@@ -505,4 +505,41 @@ Method TestPriorTranscriptReplaysToolCalls()
     Do $$$AssertTrue(..FileContents [ "BUG-07", "Story 12.6: renderPriorTranscript carries a BUG-07 comment anchor")
 }
 
+/// <p>Test (Story 12.5 BUG-05 AC-1, AC-6) — assert
+/// <code>renderSearchResultList</code> in <code>static/chat-panel.js</code>
+/// emits the "Load N sessions into table" button:</p>
+/// <ul>
+/// <li>The CSS class <code>sa-load-into-table-btn</code> is referenced.</li>
+/// <li>The label <code>Load</code> + <code>sessions into table</code>
+/// substrings are present (the count <code>N</code> is interpolated at
+/// render time so we can't assert the literal full string).</li>
+/// <li>The click handler invokes
+/// <code>zenPage.ApplyAgentSessionFilter(JSON.stringify(...))</code>.</li>
+/// <li>Per-element validation regex <code>/^\d+$/</code> is present
+/// (SQL-injection JS-side guard, AC-3 prerequisite).</li>
+/// </ul>
+/// <p>AC-6 (replayed tile lists also emit the button) is satisfied
+/// automatically because the new emission lives inside the SAME
+/// <code>renderSearchResultList</code> function that
+/// <code>renderPriorTranscript</code> already calls in the replay path
+/// (per Story 12.6's wiring) — this test confirms the live-path emission
+/// surface, the replay path inherits it for free.</p>
+Method TestRenderSearchResultListEmitsLoadButton()
+{
+    Do $$$AssertStatusOK(..LoadFile(), "LoadFile resolved chat-panel.js at " _ ..FilePath)
+
+    ; Load-bearing CSS class on the button surface.
+    Do $$$AssertTrue(..FileContents [ "sa-load-into-table-btn", "Story 12.5 AC-1: renderSearchResultList emits the .sa-load-into-table-btn class")
+    ; Operator-readable label fragments (count N is interpolated at render time).
+    Do $$$AssertTrue(..FileContents [ "sessions into table", "Story 12.5 AC-1: button label contains 'sessions into table'")
+    Do $$$AssertTrue(..FileContents [ "'Load '", "Story 12.5 AC-1: button label literal 'Load ' present")
+    ; Click handler invokes the ZenMethod with JSON-serialized array.
+    Do $$$AssertTrue(..FileContents [ "zenPage.ApplyAgentSessionFilter(", "Story 12.5 AC-1: click handler calls zenPage.ApplyAgentSessionFilter")
+    Do $$$AssertTrue(..FileContents [ "JSON.stringify(filtered)", "Story 12.5 AC-1: click handler passes JSON.stringify(filtered) (validated array)")
+    ; Per-element numeric validation — SQL-injection JS-side guard.
+    Do $$$AssertTrue(..FileContents [ "/^\d+$/", "Story 12.5 AC-3 SQL-injection guard: per-element regex /^\d+$/ present in renderSearchResultList")
+    ; BUG-05 comment anchor.
+    Do $$$AssertTrue(..FileContents [ "BUG-05", "Story 12.5: chat-panel.js carries a BUG-05 comment anchor")
+}
+
 }

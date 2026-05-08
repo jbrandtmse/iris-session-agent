@@ -260,6 +260,48 @@ Method TestOnTabChangeOverridePresent()
     Quit
 }
 
+/// <p>Test (Story 12.3, BUG-04 HIGH) — assert the
+/// <method>showTrace</method> ClientMethod override is declared on the
+/// subclass and that its body navigates to the CUSTOM
+/// <CLASS>SessionAgent.EnsPortal.VisualTrace</CLASS> page, NOT the
+/// standard <code>EnsPortal.VisualTrace.zen</code>. The grep gotcha:
+/// the custom-page string contains the standard-page string as a
+/// substring, so we (a) assert presence of the custom URL, then
+/// (b) strip the custom URL out of the body and assert no remaining
+/// occurrences of the bare standard URL. Pattern documented in story
+/// Dev Notes §"The substring grep gotcha".</p>
+Method TestShowTraceOverridePresent()
+{
+    Set tDef = ##class(%Dictionary.CompiledMethod).%OpenId("SessionAgent.EnsPortal.MessageViewer||showTrace")
+    Do $$$AssertTrue($IsObject(tDef), "Story 12.3: showTrace ClientMethod override is declared on SessionAgent.EnsPortal.MessageViewer")
+    If '$IsObject(tDef) Quit
+
+    Do tDef.Implementation.Rewind()
+    Set tBody = ""
+    While 'tDef.Implementation.AtEnd {
+        Set tBody = tBody _ tDef.Implementation.Read(32000)
+    }
+
+    ; Positive — the override navigates to the custom page.
+    Do $$$AssertTrue($Find(tBody, "SessionAgent.EnsPortal.VisualTrace.zen") > 0, "Story 12.3: showTrace override navigates to SessionAgent.EnsPortal.VisualTrace.zen (custom page)")
+
+    ; Negative — strip out every occurrence of the custom URL, then assert
+    ; that no bare standard-page string remains. The custom URL contains
+    ; the standard URL as a substring, so a naive grep for
+    ; 'EnsPortal.VisualTrace.zen' would match BOTH and give a false-positive.
+    ; The strip-and-grep pattern is the precise check.
+    Set tStripped = $Replace(tBody, "SessionAgent.EnsPortal.VisualTrace.zen", "")
+    Do $$$AssertTrue($Find(tStripped, "EnsPortal.VisualTrace.zen") = 0, "Story 12.3: showTrace override does NOT navigate to bare EnsPortal.VisualTrace.zen (standard page) — strip-and-grep precise check")
+
+    ; Behavioral preservation — bubble-cancel + sessionId guard verbatim
+    ; from the parent.
+    Do $$$AssertTrue(tBody [ "evt.cancelBubble = true", "Story 12.3 AC-2: override preserves parent's bubble-cancel behavior")
+    Do $$$AssertTrue(tBody [ "stopPropagation", "Story 12.3 AC-2: override preserves parent's stopPropagation call")
+    Do $$$AssertTrue(tBody [ "sessionId != -1", "Story 12.3 AC-2: override preserves parent's sessionId guard (sessionId != -1)")
+    Do $$$AssertTrue(tBody [ "window.open", "Story 12.3 AC-2: override preserves parent's window.open dispatch")
+    Quit
+}
+
 /// <p>Test (Story 10.10 hotfix) — assert
 /// <method>DrawChatPanel</method> reads <code>%session.Data("...")</code>
 /// via <code>$Get(...)</code> to avoid the <code>&lt;UNDEFINED&gt;</code>

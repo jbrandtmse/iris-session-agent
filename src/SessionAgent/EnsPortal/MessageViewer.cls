@@ -688,4 +688,41 @@ ClientMethod onTabChange() [ Language = javascript ]
     // No re-render call — see Story 10.13 F-2 doc-comment above.
 }
 
+/// <p>Story 12.3 (BUG-04, HIGH severity) — override the parent's
+/// <code>showTrace</code> ClientMethod so the green session-ID link in
+/// the search-results table opens the CUSTOM
+/// <CLASS>SessionAgent.EnsPortal.VisualTrace</CLASS> page (with the
+/// "Ask the agent" 4th tab) instead of the standard
+/// <code>EnsPortal.VisualTrace.zen</code> page (3 tabs only —
+/// Header / Body / Contents). Without this override the operator
+/// loses the cross-page hand-off from Search-Agent results into the
+/// per-session Inspection-Agent surface.</p>
+///
+/// <p><b>Body — verbatim copy of the parent
+/// (<code>irislib/EnsPortal/MessageViewer.cls</code> lines 178-188)
+/// with the URL substring</b> <code>'EnsPortal.VisualTrace.zen'</code>
+/// <b>changed to</b>
+/// <code>'SessionAgent.EnsPortal.VisualTrace.zen'</code> — every other
+/// behavior (bubble-cancel, sessionId guard, <code>window.open</code>
+/// dispatch) preserved verbatim.</p>
+///
+/// <p><b>Coverage of both invocation paths.</b> The parent's
+/// <method>%OnGetTableLinkMenu</method> (line 160) and
+/// <method>%OnGetDetailsLinkMenu</method> (line 173) both bind their
+/// menu entries to <code>"zenPage.showTrace"</code> — so this single
+/// override covers (a) the green column-link click AND (b) the
+/// right-click "Visual Trace" context-menu entry. Confirmed via Task 0
+/// probe of <code>irislib/EnsPortal/MessageViewer.cls</code>.</p>
+ClientMethod showTrace(sessionId, evt) [ Language = javascript ]
+{
+	if (evt) {
+		evt.cancelBubble = true;
+		if (evt.stopPropagation) evt.stopPropagation();
+	}
+	if (sessionId != -1) {
+		var URI = zenLink('SessionAgent.EnsPortal.VisualTrace.zen?SESSIONID='+sessionId);
+		window.open(URI);
+	}
+}
+
 }

@@ -11,6 +11,35 @@ An open-source InterSystems IRIS module that adds an AI assistant chat experienc
 
 > *"Chatting with your Interoperability Session to really understand what happened — and finding the right session by asking."*
 
+## Quick start — using the agents
+
+Two agents that read your Ensemble sessions and answer questions in plain English. The **Search Agent** finds the sessions you care about by natural-language query (no SQL); the **Inspection Agent** chats about a specific session you've selected, reading across the six message-trace surfaces (`Ens.MessageHeader`, message bodies, search-table extents, `Ens.Util.Log`, `Ens.Rule.Log`, BP runtime state) and citing what it sees.
+
+**Try these prompts** against the [sample interoperability production](#sample-interoperability-production-for-testing) (run a few `RunScenario(...)` calls first):
+
+- On the **Message Viewer + Search Agent** screen — *"Find sessions with errors in the last hour"* — the Search Agent narrows the table to matching sessions and offers a "Load N sessions into table" button so you can keep investigating.
+- On the **Visual Trace + Inspection Agent** screen — *"Why did this session fail?"* — the Inspection Agent reads the rule log, event log, and message headers in parallel and answers with citations back to the underlying rows.
+- On either screen — *"Show me the source of the OrderRouter business process"* — the Inspection Agent's BP-introspection tools surface the routing rule + class definition.
+
+![Search Agent finding failed sessions and offering to load them into the Message Viewer table](documentation/images/readme/search-agent-finding-failed-sessions.png)
+
+![Search results applied as a table filter — the table narrows to the agent's matching sessions](documentation/images/readme/search-results-filter-table.png)
+
+![Per-agent configuration form (provider, model, max-iter) at SessionAgent.UI.AgentConfig.zen](documentation/images/readme/agent-config-form.png)
+
+### Launching the agents
+
+The custom Search and Inspection screens do **not** appear as new menu entries in the Mgmt Portal nav — they replace the standard Message Viewer and Visual Trace pages from the Mgmt Portal breadcrumb. Two ways to reach each one:
+
+- **Search Agent (Message Viewer screen):**
+  - Direct URL: `http://<host>:<port>/csp/<lower-namespace>/SessionAgent.EnsPortal.MessageViewer.zen` *(bookmarkable)*
+  - Mgmt Portal breadcrumb: `Interoperability → Message Viewer + Search Agent`
+- **Inspection Agent (Visual Trace screen):**
+  - Direct URL: `http://<host>:<port>/csp/<lower-namespace>/SessionAgent.EnsPortal.VisualTrace.zen?SESSIONID=<id>` *(bookmarkable; pin the URL with a specific session id to land on a known incident)*
+  - From the Search Agent screen: clicking a session-ID badge in any agent reply opens that session in the custom Visual Trace screen (Story 12.3 fix — session-ID links route through the SessionAgent VisualTrace, not the standard one).
+
+For HealthShare deployments the path includes `/healthshare/` between `csp/` and the namespace — see [§ "8. Bookmark URLs"](#8-bookmark-urls) for the full pattern.
+
 ## v1.0.0 scope-complete summary
 
 | Capability | Story / Epic | Operator-observable surface |
@@ -22,6 +51,62 @@ An open-source InterSystems IRIS module that adds an AI assistant chat experienc
 | Sweep tasks (audit + chat-history retention) | Epic 7 + Story 10.6 | Mgmt Portal Task Manager (`SessionAgent.PurgeOrphanedChatHistory`, `SessionAgent.PurgeStaleSearchChatHistory`, `SessionAgent.UserVocabularyDecay`) |
 | Vendored Markdown bundle (citations + code blocks render under CDN-blocked browsers) | Story 10.7 | `<script src="markdown-bundle.min.js">` ships with the module |
 | FR59 cross-matrix gate (23 tools × 4 providers = 92) | Story 5.4 + 8.x + 10.9 | `SessionAgent.Test.ToolCallRoundtripIntegrationTest` (mock + live) |
+
+## Try it in a clean namespace (recommended for evaluation)
+
+If you want to evaluate iris-session-agent without touching your main `HSCUSTOM` namespace, this is the linear end-to-end recipe. Substitute `SATEST` with any namespace name you prefer; commands are run from the `%SYS` shell unless noted.
+
+1. **Create the namespace** (interop-enabled). From the Mgmt Portal: *System Administration → Configuration → System Configuration → Namespaces → Create New Namespace*. Set the name (e.g., `SATEST`), assign a database (a fresh one is fine), and tick **"Make this an interoperability-enabled namespace"** so `Ens.*` tables are projected.
+
+2. **Map the `SessionAgent.PKG` package** from the source database (typically `HSCUSTOM`) into the new namespace:
+
+   ```objectscript
+   %SYS> Set props("Database") = "HSCUSTOM"
+   %SYS> Set sc = ##class(Config.MapPackages).Create("SATEST", "SessionAgent", .props)
+   %SYS> If 'sc Write !,$System.Status.GetErrorText(sc)
+   ```
+
+   See [§ "Multi-Namespace Install"](#multi-namespace-install) step 2 for details and substitution rules.
+
+3. **Run `InstallIntoNamespace`** to wire the audit events, RBAC role grants, sweep tasks, and the per-namespace `Config.Agent` seed rows:
+
+   ```objectscript
+   USER> Set sc = ##class(SessionAgent.Installer).InstallIntoNamespace("SATEST")
+   USER> If 'sc Write !,$System.Status.GetErrorText(sc)
+   ```
+
+4. **Wire LLM provider credentials.** Pick at least one provider — OpenAI is the simplest first run. Either set the `OPENAI_API_KEY` env-var visible to the IRIS process, or create the `Ens.Config.Credentials` row in the `SATEST` namespace named `SessionAgentOpenAI` with your key in the `Password` field. See [§ "6. LLM provider API keys"](#6-llm-provider-api-keys) for the canonical credential names per provider and the env-var fallback rules.
+
+5. **Configure the agents.** Browse to `http://<host>:<port>/csp/satest/SessionAgent.UI.AgentConfig.zen`. The form lists both agents (`session-inspection` and `message-search`); for each one set `Provider` (e.g., `openai`), `Model` (e.g., `gpt-4.1-mini`), tick `Enabled`, and `Save`. The form runs against the *namespace you opened it in*, so the saved values are scoped to `SATEST` only.
+
+6. **Install the sample interop production.** From a `SATEST` terminal session:
+
+   ```objectscript
+   SATEST> Do ##class(SessionAgent.Sample.Bootstrap).InstallProduction()
+   SATEST> Do ##class(Ens.Director).StartProduction("SessionAgent.Sample.Production")
+   ```
+
+7. **Generate sample sessions.** Each `RunScenario` call produces one fresh `Ens` session id with a different failure shape (see the [scenario-mode table below](#sample-interoperability-production-for-testing)):
+
+   ```objectscript
+   SATEST> Do ##class(SessionAgent.Sample.BS.OrderIngest).RunScenario("none")
+   SATEST> Do ##class(SessionAgent.Sample.BS.OrderIngest).RunScenario("businessProcessFailure")
+   SATEST> Do ##class(SessionAgent.Sample.BS.OrderIngest).RunScenario("businessOperationFailure")
+   SATEST> Do ##class(SessionAgent.Sample.BS.OrderIngest).RunScenario("partialSuccess")
+   ```
+
+8. **Launch the agent UI.** Open `http://<host>:<port>/csp/satest/SessionAgent.EnsPortal.MessageViewer.zen` to drive the Search Agent against the new sessions, then click any session-ID badge to hand off into the Inspection Agent on the Visual Trace screen. See [§ "Quick start — using the agents → Launching the agents"](#launching-the-agents) for both URLs.
+
+9. **Tear down when done** (optional). Stop the production, uninstall the sample classes, and drop the namespace if you no longer need it:
+
+   ```objectscript
+   SATEST> Do ##class(Ens.Director).StopProduction()
+   SATEST> Do ##class(SessionAgent.Sample.Bootstrap).UninstallProduction()
+   ```
+
+   Dropping the namespace itself is a Mgmt Portal step (*System Administration → Configuration → System Configuration → Namespaces → SATEST → Delete*); the audit + chat-history rows live inside the namespace and are removed with it.
+
+This entire recipe takes ~10 minutes on a fresh IRIS 2024.1+ install once the [Operator Prerequisites](#operator-prerequisites) below are in place (IPM, Web Gateway timeout, RBAC, package mapping, API key, SSL/TLS, daily purge task — they apply once per IRIS instance, not once per namespace).
 
 ## Operator Prerequisites
 

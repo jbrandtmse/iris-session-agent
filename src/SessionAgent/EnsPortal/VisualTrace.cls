@@ -460,13 +460,36 @@ Method %OnDrawHTMLHead() As %Status
     Set tStyleSC = ##class(SessionAgent.UI.ChatPanel).EmitStyle()
     If $$$ISERR(tStyleSC) Quit tStyleSC
 
+    ; URL prefix derives from $NAMESPACE so the same page works on every
+    ; namespace mapped to SessionAgent.PKG.
+    Set tNSLower = $ZCONVERT($NAMESPACE, "L")
+    Set tStaticBase = "/csp/" _ tNSLower _ "/sa-static/"
+
+    ; Story 10.7 — vendored Markdown bundle. Emit in dependency order so
+    ; the JS pipeline (marked → DOMPurify → Prism) is available at
+    ; chat-panel.js execution time. The Prism stock language packs
+    ; (csharp/clike for the objectscript stub; sql/javascript/json/markup
+    ; for direct Markdown code-fence highlighting) load AFTER prism.min.js
+    ; (the core registers Prism.languages first).
+    Write "<link rel=""stylesheet"" type=""text/css"" href=""", tStaticBase, "prism.min.css"" />", !
+    Write "<script type=""text/javascript"" src=""", tStaticBase, "marked.min.js""></script>", !
+    Write "<script type=""text/javascript"" src=""", tStaticBase, "prism.min.js""></script>", !
+    Write "<script type=""text/javascript"" src=""", tStaticBase, "prism-clike.js""></script>", !
+    Write "<script type=""text/javascript"" src=""", tStaticBase, "prism-csharp.js""></script>", !
+    Write "<script type=""text/javascript"" src=""", tStaticBase, "prism-markup.js""></script>", !
+    Write "<script type=""text/javascript"" src=""", tStaticBase, "prism-sql.js""></script>", !
+    Write "<script type=""text/javascript"" src=""", tStaticBase, "prism-javascript.js""></script>", !
+    Write "<script type=""text/javascript"" src=""", tStaticBase, "prism-json.js""></script>", !
+    Write "<script type=""text/javascript"" src=""", tStaticBase, "prism-objectscript.js""></script>", !
+    Write "<script type=""text/javascript"" src=""", tStaticBase, "prism-hl7.js""></script>", !
+    Write "<script type=""text/javascript"" src=""", tStaticBase, "dompurify.min.js""></script>", !
+
     ; Emit the chat-panel.js include. URL derives from $NAMESPACE so the
     ; same script tag works on every namespace mapped to SessionAgent.PKG.
     ; Story 3.6 fix-now: replaces the broken
     ; /csp/static/iris-session-agent/chat-panel.js dedicated-static path
     ; with the class-served /csp/<ns>/SessionAgent.UI.ChatPanelAsset.cls.
-    Set tNSLower = $ZCONVERT($NAMESPACE, "L")
-    Write "<script type=""text/javascript"" src=""/csp/" _ tNSLower _ "/SessionAgent.UI.ChatPanelAsset.cls""></script>", !
+    Write "<script type=""text/javascript"" src=""/csp/", tNSLower, "/SessionAgent.UI.ChatPanelAsset.cls""></script>", !
 
     Quit $$$OK
 }

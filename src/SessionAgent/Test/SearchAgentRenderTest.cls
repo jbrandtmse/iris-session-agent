@@ -218,10 +218,18 @@ Method TestChatPanelJsParsesCleanly()
     ; clicks through to onSearchResultClick.
     Do $$$AssertTrue(..FileContents [ "closest('.sa-search-result-entry')", "Transcript click delegation finds .sa-search-result-entry (Story 10.2 AC-4)")
     Do $$$AssertTrue(..FileContents [ "onSearchResultClick(entry, event)", "Delegation invokes onSearchResultClick with anchor + event (Story 10.2 AC-4)")
-    ; XSS-safety — no innerHTML introduced by the new rendering surface.
-    ; Reuses the AC-6 bullet 7 invariant from Story 3.2 / Story 4.0.
-    Do $$$AssertTrue('(..FileContents [ ".innerHTML ="), "ZERO .innerHTML= assignments (Story 10.2 XSS-safety)")
-    Do $$$AssertTrue('(..FileContents [ ".innerHTML="), "ZERO .innerHTML= (no-space) assignments (Story 10.2 XSS-safety)")
+    ; XSS-safety — bound innerHTML occurrences to AT MOST 1 (Story 10.7
+    ; Growth-tier exception, gated by DOMPurify.sanitize). Story 3.2's
+    ; original ZERO-innerHTML invariant was relaxed by Story 10.7 — see
+    ; ChatPanelJsTest.TestNoInnerHtml for the canonical assertion. This
+    ; test reuses the same relaxed bound so search-agent-rendering
+    ; tests don't regress when chat-panel.js gains the renderMarkdownGrowth
+    ; pipeline. The DOMPurify.sanitize gating call is asserted in the
+    ; ChatPanelJsTest sibling.
+    Set tCountSpaced = $Length(..FileContents, ".innerHTML =") - 1
+    Set tCountTight = $Length(..FileContents, ".innerHTML=") - 1
+    Set tCount = $Select(tCountSpaced > tCountTight: tCountSpaced, 1: tCountTight)
+    Do $$$AssertTrue(tCount '> 1, "AT MOST ONE .innerHTML= assignment (Story 10.7 Growth-tier exception); found " _ tCount)
     ; aria-label per AC-2 — descriptive screen-reader announcement.
     Do $$$AssertTrue(..FileContents [ "anchor.setAttribute('aria-label'", "Search-result entry sets aria-label (Story 10.2 AC-2)")
     ; data-* attribute contract per AC-2 — Story 10.3 reads these.

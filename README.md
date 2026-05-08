@@ -198,6 +198,15 @@ By default, the IPM `<Invoke>` install path scopes all install-time work to the 
 
    The SessionAgent ChatPanel asset is automatically available at `/csp/<lower-namespace>/SessionAgent.UI.ChatPanelAsset.cls` for any namespace where the package is mapped (no separate static-asset deployment per the Story 3.6 asset-class pivot).
 
+   **Story 10.7 vendored Markdown bundle — manual copy required for additional namespaces.** The `marked.js` + `Prism.js` + `DOMPurify` bundle (Story 10.7) ships at `${cspdir}/<install-namespace>/sa-static/` via IPM `<FileCopy>`, which fires only at the original `zpm install` (typically into `HSCUSTOM`). For each additional namespace where you run `InstallIntoNamespace`, copy the bundle directory once from your filesystem so the per-namespace `/csp/<NS>/sa-static/` URL resolves to real files:
+
+   ```cmd
+   REM From an OS shell on the IRIS host, with admin rights:
+   robocopy C:\InterSystems\IRISHealth\CSP\hscustom\sa-static C:\InterSystems\IRISHealth\CSP\OTHERNS\sa-static /E
+   ```
+
+   On Linux: `cp -r /usr/irissys/csp/hscustom/sa-static /usr/irissys/csp/OTHERNS/sa-static`. Without this copy the chat panel falls back to Story 3.2 MVP rendering (Markdown text + code-fence-only blocks; no syntax highlighting) — functional but visually degraded. Tracked in `deferred-work.md` for a future programmatic fix.
+
 5. **Configure each namespace separately.** Browse to the Story 6.1 Zen form at `/csp/<lower-namespace>/SessionAgent.UI.AgentConfig.zen` (substitute the actual lowercase namespace name in the URL — e.g., `/csp/otherns/SessionAgent.UI.AgentConfig.zen`). The same form layout, but the saved values are scoped to the namespace you accessed it from. Set `Provider`, `EnvVarName`, `Model`, etc., and check `Enabled` to flip the agent on for that namespace.
 
 **API key supply.** API keys are looked up via `Ens.Config.Credentials` rows scoped to the namespace where the agent runs (per Story 2.3). Each target namespace must have its own credential rows installed; see [§ "6. LLM provider API keys"](#6-llm-provider-api-keys) above for the credential-row creation steps, and run them once per target namespace.

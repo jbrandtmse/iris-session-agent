@@ -11,12 +11,29 @@
       <!-- Class packages compiled into HSCUSTOM (the namespace's code database).
            Includes SessionAgent.UI.ChatPanelAsset (the CSP page that serves
            static/chat-panel.js at /csp/<ns>/SessionAgent.UI.ChatPanelAsset.cls)
-           — eliminates the need for a separate static-asset CSPApplication
-           + FileCopy. Story 3.6 fix-now (2026-05-03): dropped the broken
-           ${cspdir}-template-based dedicated CSP application after the
-           lead-driven AC-5 smoke proved the template variable does not
-           expand at install time. -->
+           — historical static-asset path before Story 10.7. -->
       <Resource Name="SessionAgent.PKG"/>
+
+      <!-- Story 10.7 — vendored Markdown bundle (marked + Prism + DOMPurify
+           + 4 stock language packs + 2 STUB grammars + theme CSS). Shipped
+           via FileCopy to the install namespace's CSP directory under a
+           sa-static/ sub-folder, then served at /csp/<NS>/sa-static/<file>
+           by the IRIS-managed /csp/<NS>/ Web Application that already
+           exists with ServeFiles=1.
+
+           Architecture decision (Story 10.7 Task 0): an earlier attempt to
+           ship via a dedicated /csp/static/iris-session-agent Web App
+           with ${cspdir}/static/iris-session-agent/ failed because Web
+           Gateway routes only specific URL prefixes that pre-exist in
+           Apache mod_alias config — a brand-new top-level path requires
+           operator-level Apache config changes. The /csp/<NS>/ path is
+           already routed and serves *.js / *.css cleanly (verified Task 0).
+           Mirrors Story 3.6's pivot from /csp/static/iris-session-agent/
+           to /csp/<NS>/SessionAgent.UI.ChatPanelAsset.cls — same root cause,
+           same family of workaround. The ${cspdir}/<NS>/ resolution at
+           install time produces e.g. C:\InterSystems\IRISHealth\CSP\hscustom\sa-static\
+           per the FileCopy target below. -->
+      <FileCopy Name="src/static/" Target="${cspdir}/${namespace}/sa-static/" />
 
       <!-- Install-time hooks (activated in Story 1.5 — orchestrator + audit + RBAC). -->
       <Invoke Method="Install" Class="SessionAgent.Installer"/>

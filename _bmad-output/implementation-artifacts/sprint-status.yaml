@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-05-02
-last_updated: 2026-05-07 (Story 10.6 done — code review complete: 0 HIGH, 0 MEDIUM, 1 LOW deferred (LOW-10.6-F01 — hardcoded storage-hash globals in test cleanup; cosmetic, no bug shape). Reviewer-side empirical verification: regression 404/404/0; both `%SYS.Task` Description columns populated; both `Security.Events` triples present with operator-readable Description; Tasks 3+4 confirmed pre-wired in shipped code from Stories 7.2/8.0. Story ready to ship.)
+last_updated: 2026-05-07 (Story 10.7 done — code review complete: 0 HIGH; 2 MEDIUM auto-fixed (F2 walker `CITE_RE.test()` `/g`-flag `lastIndex` mutation in `upgradeInlineCitationsInPlace` — multi-paragraph citation chips now upgrade correctly; F1 multi-namespace bundle gap closed-with-workaround — README §"Multi-Namespace Install" documents manual `robocopy`/`cp -r`, deferred-work entry captures programmatic-fix recommendation); 1 LOW auto-fixed (F3 misleading comment in `TestNoInnerHtml`); 2 LOW deferred per Rule 8 test 3 (F4 SweepRunner Super substring, F5 MarkdownBundleTest hardcoded path — both cosmetic, no bug shape). Reviewer-side regression on touched surfaces: ChatPanelJsTest 18/18, MarkdownBundleTest 4/4, SearchAgentRenderTest 4/4, MultiNamespaceInstallTest 3/3. Story ready to ship.)
 project: iris-session-agent
 # Epic 1 complete (retro 2026-05-02); Epic 2 retrospective triage gate (Story 2.0) 2026-05-03
 project_key: NOKEY
@@ -144,7 +144,7 @@ development_status:
   10-4-sa-from-search-stripe-inspection-side-from-search-handling: done
   10-5-sa-concurrent-tab-banner-non-modal-banner: done
   10-6-purgestalesearchchat-uservocabularydecay-sweep-tasks: done
-  10-7-vendored-markdown-bundle-chat-panel-js-growth-tier-render-upgrade: backlog
+  10-7-vendored-markdown-bundle-chat-panel-js-growth-tier-render-upgrade: done
   10-8-full-token-resolution-growth-tier-ux-components: backlog
   10-9-prd-v1-completion-validation-walkthrough: backlog
   epic-10-retrospective: optional

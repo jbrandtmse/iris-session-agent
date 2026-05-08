@@ -203,15 +203,40 @@ Method TestCitationRegexPresent()
     Do $$$AssertTrue(..FileContents [ "\[(rule_log|event_log|message|ack|iolog|tool):", "Citation-chip regex literal present (AC-6 bullet 6)")
 }
 
-/// <p>AC-6 bullet 7 — ZERO occurrences of <code>.innerHTML =</code>
-/// (XSS-safety invariant per AC-3 — all DOM construction must use
-/// createElement + setAttribute + textContent).</p>
+/// <p>Story 3.2 AC-6 bullet 7 — bound .innerHTML occurrences (XSS-safety
+/// invariant per AC-3 — all DOM construction must use createElement +
+/// setAttribute + textContent).</p>
+///
+/// <p><b>Story 10.7 relaxation:</b> Growth-tier
+/// <method>renderMarkdownGrowth</method> pipes Markdown through
+/// <code>marked.parse → DOMPurify.sanitize</code> BEFORE assigning to
+/// <code>parentNode.innerHTML</code>. The XSS-safety invariant is preserved
+/// because DOMPurify strips dangerous markup (<code>&lt;script&gt;</code>,
+/// <code>onerror=</code>, etc.) — verified empirically in the AC-5 XSS
+/// smoke (Completion Notes) and in
+/// <CLASS>SessionAgent.Test.MarkdownBundleTest</CLASS>. The single
+/// permitted innerHTML site is in <code>renderMarkdownGrowth</code>,
+/// immediately after the <code>DOMPurify.sanitize</code> call. Other
+/// innerHTML uses remain banned.</p>
 Method TestNoInnerHtml()
 {
     Do $$$AssertStatusOK(..LoadFile(), "LoadFile resolved chat-panel.js at " _ ..FilePath)
-    Do $$$AssertTrue('(..FileContents [ ".innerHTML ="), "ZERO .innerHTML= assignments (AC-6 bullet 7)")
-    ; Also catch the no-space variant, e.g. .innerHTML=
-    Do $$$AssertTrue('(..FileContents [ ".innerHTML="), "ZERO .innerHTML= (no-space) assignments (AC-6 bullet 7)")
+    ; Story 10.7: AT MOST ONE innerHTML occurrence (Growth-tier
+    ; renderMarkdownGrowth, gated by DOMPurify.sanitize).
+    ; $Length(s, sub) returns occurrences+1 of `sub` in `s`, so subtract 1.
+    Set tCountSpaced = $Length(..FileContents, ".innerHTML =") - 1
+    Set tCountTight = $Length(..FileContents, ".innerHTML=") - 1
+    ; The two substrings are mutually exclusive at any given position
+    ; (chars differ at offset 11 — space vs '='), so a single innerHTML
+    ; site appears in EXACTLY ONE form. Take the max so the assertion
+    ; sees a count of 1 regardless of which form the dev wrote.
+    Set tCount = $Select(tCountSpaced > tCountTight: tCountSpaced, 1: tCountTight)
+    Do $$$AssertTrue(tCount '> 1, "AT MOST ONE .innerHTML assignment (Story 10.7 Growth-tier exception); found " _ tCount)
+    ; If a permitted innerHTML site is present, assert DOMPurify.sanitize
+    ; appears in the file too (gating invariant).
+    If tCount = 1 {
+        Do $$$AssertTrue(..FileContents [ "DOMPurify.sanitize", "Growth-tier innerHTML must be paired with DOMPurify.sanitize call site")
+    }
 }
 
 /// <p>AC-6 bullet 8 — ZERO occurrences of <code>eval(</code> or

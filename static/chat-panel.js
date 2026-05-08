@@ -562,9 +562,12 @@
             var block = document.createElement('div');
             block.setAttribute('class', 'sa-message-block sa-msg-' + role);
             if (role === 'agent') {
-                // Use the Markdown fallback path so citation chips +
-                // code fences render correctly in the prior transcript.
-                renderMarkdownFallback(content, block);
+                // Story 10.7 — use the Growth-tier pipeline (marked →
+                // DOMPurify → Prism) so citation chips + code fences +
+                // syntax highlighting render correctly in the prior
+                // transcript. Falls back to the Story 3.2 MVP path when
+                // the vendored bundle is not loaded.
+                renderMarkdownGrowth(content, block);
             } else {
                 // Operator turns are plain text per Story 3.1's
                 // submitTurn() echo path.
@@ -935,12 +938,14 @@
             }
         }
 
-        // AC-3: render the final assistant answer in fallback Markdown
-        // mode. Use the helper that builds the DOM XSS-safely.
+        // AC-3: render the final assistant answer in Growth-tier Markdown
+        // mode (Story 10.7). renderMarkdownGrowth uses marked → DOMPurify
+        // → Prism when the vendored bundle is loaded; falls back to
+        // Story 3.2's MVP path (renderMarkdownFallback) when not.
         var assistantMarkdown = (envelope && envelope.assistantMarkdown) || '';
         var assistantBlock = document.createElement('div');
         assistantBlock.setAttribute('class', 'sa-message-block sa-msg-agent');
-        renderMarkdownFallback(assistantMarkdown, assistantBlock);
+        renderMarkdownGrowth(assistantMarkdown, assistantBlock);
         state.transcriptEl.appendChild(assistantBlock);
 
         // Story 10.3 AC-3 — cache the most-recent agent turn's
@@ -1155,6 +1160,99 @@
         details.appendChild(resultBlock);
 
         return details;
+    }
+
+    /**
+     * Story 10.7 — Growth-tier render pipeline. Uses the vendored
+     * marked.js + DOMPurify + Prism bundle (loaded by VisualTrace /
+     * MessageViewer's %OnDrawHTMLHead) to convert Markdown into
+     * sanitized HTML with syntax-highlighted code blocks.
+     *
+     * Pipeline (per AC-4):
+     *   marked.parse(md) → raw HTML
+     *   DOMPurify.sanitize(html) → XSS-safe HTML (AC-5: <script>
+     *      stripped; <img onerror> stripped while keeping <img>)
+     *   render the sanitized HTML into parentNode (the only innerHTML
+     *      site in chat-panel.js, gated by DOMPurify per Story 10.7
+     *      relaxation of Story 3.2 AC-3)
+     *   Prism.highlightAllUnder(parentNode) → apply language-* classes
+     *   parseInlineCitations(...) → convert [tool:name] / [message:42]
+     *      / [rule_log:N] / etc. markers to <a class="sa-citation-chip">
+     *
+     * Defense-in-depth: when the bundle is NOT loaded (host page never
+     * included the scripts, or a CDN-blocked browser environment),
+     * fall back to renderMarkdownFallback (Story 3.2 MVP path).
+     */
+    function renderMarkdownGrowth(markdown, parentNode) {
+        if (typeof marked === 'undefined' || typeof DOMPurify === 'undefined') {
+            // Bundle not loaded — fall back to MVP path (Story 3.2).
+            renderMarkdownFallback(markdown, parentNode);
+            return;
+        }
+        var html = marked.parse(markdown || '');
+        var clean = DOMPurify.sanitize(html, { USE_PROFILES: { html: true } });
+        parentNode.innerHTML = clean;
+        if (typeof Prism !== 'undefined' && Prism.highlightAllUnder) {
+            Prism.highlightAllUnder(parentNode);
+        }
+        // Re-run citation-chip parsing on the rendered DOM. Story 3.2's
+        // pattern detection still works post-Markdown render — citation
+        // chips are visible as inline-text patterns ([tool:name],
+        // [message:42], etc.) in the rendered HTML's textContent.
+        // We walk text nodes only (avoiding re-tokenizing inside <pre>
+        // / <code> so citation-chip-shaped strings inside code blocks
+        // don't get hijacked).
+        upgradeInlineCitationsInPlace(parentNode);
+    }
+
+    /**
+     * Walk parentNode's descendant text nodes and replace any citation-
+     * chip pattern matches with <a class="sa-citation-chip"> elements.
+     * Skips text nodes inside <pre>, <code>, or <a> ancestors so code
+     * blocks don't get re-parsed and existing chips don't get nested.
+     */
+    function upgradeInlineCitationsInPlace(parentNode) {
+        if (!parentNode || !parentNode.childNodes) {
+            return;
+        }
+        // Collect text nodes first (Walker pattern), then mutate after
+        // collection so the iterator doesn't trip over our DOM edits.
+        var textNodes = [];
+        var walker = document.createTreeWalker(
+            parentNode, NodeFilter.SHOW_TEXT,
+            { acceptNode: function (node) {
+                var p = node.parentNode;
+                while (p && p !== parentNode) {
+                    var tag = p.nodeName.toLowerCase();
+                    if (tag === 'pre' || tag === 'code' || tag === 'a') {
+                        return NodeFilter.FILTER_REJECT;
+                    }
+                    p = p.parentNode;
+                }
+                // Reset lastIndex BEFORE each .test() call: CITE_RE has the
+                // /g flag, and RegExp.prototype.test on a /g regex advances
+                // lastIndex across calls. Without this reset, a text node
+                // tested AFTER an accepted match could begin matching from
+                // a non-zero offset and silently FILTER_REJECT a real chip
+                // in a later paragraph (review F2 — Story 10.7).
+                CITE_RE.lastIndex = 0;
+                return CITE_RE.test(node.nodeValue || '') ?
+                    NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+            } }
+        );
+        var n;
+        while ((n = walker.nextNode())) {
+            textNodes.push(n);
+        }
+        for (var i = 0; i < textNodes.length; i++) {
+            var node = textNodes[i];
+            var fragment = document.createDocumentFragment();
+            // Re-use parseInlineCitations against an empty codeBlocks list
+            // (we already excluded code-block contents via the walker
+            // filter — there are no inline `CB{idx}` placeholders here).
+            parseInlineCitations(node.nodeValue, fragment, []);
+            node.parentNode.replaceChild(fragment, node);
+        }
     }
 
     /**

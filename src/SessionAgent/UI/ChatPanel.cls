@@ -186,7 +186,7 @@ ClassMethod EmitStyle() As %Status
     ; position:fixed, no z-index, no @keyframes per UX-DR28.
 
     &html<.sa-chat-panel { display: flex; flex-direction: column; height: 100%; }>
-    &html<.sa-message-transcript { flex: 1 1 auto; overflow-y: auto; }>
+    &html<.sa-message-transcript { flex: 1 1 auto; overflow-y: auto; overflow-x: hidden; }>
     &html<.sa-input-area { display: flex; }>
     &html<.sa-input-field { flex: 1 1 auto; }>
     &html<.sa-status-text { color: var(--sa-status-text-color); font-style: italic; }>
@@ -208,7 +208,7 @@ ClassMethod EmitStyle() As %Status
     ; metadata not body content. Error variant inherits agent styling
     ; with a left border in --sa-error-text-color for at-a-glance
     ; visibility (color + structural cue per UX-DR21).
-    &html<.sa-message-block { padding: 0.5em 0.75em; margin: 0.25em 0; border-radius: 4px; }>
+    &html<.sa-message-block { padding: 0.5em 0.75em; margin: 0.25em 0; border-radius: 4px; overflow-wrap: break-word; }>
     &html<.sa-msg-operator { background: var(--sa-message-operator-bg); }>
     &html<.sa-msg-agent { background: var(--sa-message-agent-bg); }>
     &html<.sa-msg-operator::before { content: "You — "; font-weight: bold; }>

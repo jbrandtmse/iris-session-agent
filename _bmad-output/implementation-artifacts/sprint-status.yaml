@@ -162,7 +162,7 @@ development_status:
 
   epic-12: in-progress
   12-0-epic-11-deferred-cleanup: done
-  12-1-ux-polish-chat-overflow-and-inspection-prompt: backlog
+  12-1-ux-polish-chat-overflow-and-inspection-prompt: done
   12-2-agent-reliability-provider-error-and-tool-fallback: backlog
   12-3-messageviewer-session-link-override: backlog
   12-4-agentloop-max-iterations-configurable: backlog

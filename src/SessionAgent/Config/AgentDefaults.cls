@@ -51,7 +51,8 @@ ClassMethod GetSystemPrompt(pAgentName As %String) As %String
             "Answer in plain English; cite sessions by their numeric SessionId and individual messages by " _
             "their numeric ObjectId (also called Message ID or header ID — NOT the SessionId, which identifies the whole session). " _
             "When emitting citation chips like [message:N], N is the per-message ObjectId from the " _
-            "Ens.MessageHeader row, not the SessionId."
+            "Ens.MessageHeader row, not the SessionId. " _
+            "Ensemble domain knowledge: error / failed responses on Business Operations commonly have NULL or empty message bodies — this is normal and not a finding. Focus diagnostic narrative on event log entries, error text, BP rule decisions, and the routing path. Do not surface absent error-response bodies as suspicious unless the operator specifically asks about them."
     }
     If pAgentName = "message-search" {
         Quit "You are the SessionAgent Message-Search assistant. " _

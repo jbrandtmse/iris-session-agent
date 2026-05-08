@@ -203,6 +203,26 @@ ClassMethod RunTurn(pAgentName As %String, pSessionKey As %String, pPortalUser A
         If tConfig.SystemPromptOverride = $Char(0) Set tConfig.SystemPromptOverride = ""
         If tConfig.Provider = $Char(0) Set tConfig.Provider = ""
 
+        ; Story 12.4 (BUG-06) — read the per-agent iteration cap from
+        ; Config.Agent. Defensive normalization for the three states
+        ; that should fall back to the class-parameter safety floor:
+        ;   * $Char(0) — IRIS legacy SQL-UPDATE null sentinel (defensive
+        ;     against future schema migrations even though %Integer
+        ;     columns don't typically carry the sentinel today),
+        ;   * "" — column populated by a pre-12.4 schema (the OREF
+        ;     getter returns empty string on a row whose column was
+        ;     added by the post-install schema upgrade and has not yet
+        ;     been written),
+        ;   * 0 or anything < 1 — guard against a zero / negative value
+        ;     that would either short-circuit the loop on iteration 1
+        ;     OR (for negative) sit in an undefined comparison region.
+        ; Falling back to ..#MaxIterationsPerTurn (=10) preserves the
+        ; pre-12.4 behavior for any unmigrated row.
+        Set tMaxIter = tConfig.MaxIterationsPerTurn
+        If (tMaxIter = $Char(0)) || (tMaxIter = "") || (+tMaxIter < 1) {
+            Set tMaxIter = ..#MaxIterationsPerTurn
+        }
+
         ; ─────────────────────────────────────────────────────────────
         ; Step 4 — Append user message to TurnsJson.
         ; ─────────────────────────────────────────────────────────────
@@ -342,7 +362,7 @@ ClassMethod RunTurn(pAgentName As %String, pSessionKey As %String, pPortalUser A
         ; beyond 2-3 entries per turn so the cost is negligible.
         Set tCrossSessionList = ""
 
-        While (tIter < ..#MaxIterationsPerTurn) && (tStop = 0) {
+        While (tIter < tMaxIter) && (tStop = 0) {
             Set tIter = tIter + 1
 
             ; Step 7a — instantiate provider (mockable hook, option B).
@@ -534,13 +554,25 @@ ClassMethod RunTurn(pAgentName As %String, pSessionKey As %String, pPortalUser A
 
             ; Loop guard — if we hit max iterations after this round-trip
             ; and the model has not stopped, append the synthetic turn.
-            If (tStop = 0) && (tIter >= ..#MaxIterationsPerTurn) {
+            If (tStop = 0) && (tIter >= tMaxIter) {
                 Set tHitMaxIter = 1
             }
         }
 
         If tHitMaxIter {
-            Set tFinalAssistantText = "Max iterations reached. Please summarize."
+            ; Story 12.4 (BUG-06) AC-5 — replace the legacy hardcoded
+            ; "Max iterations reached. Please summarize." with a 3-section
+            ; structured message that gives the operator context about
+            ; what was investigated. BuildMaxIterFallback walks the
+            ; tResult.ToolCallsRendered array (which the iteration loop
+            ; pushed into for every dispatched tool) to render:
+            ;   1. acknowledgment line w/ the tool-call count,
+            ;   2. a bullet list of (tool_name → one-line result summary),
+            ;   3. a follow-up suggestion line.
+            ; Cap at the dispatched count, not tMaxIter, because each
+            ; iteration may have dispatched multiple tools (a single
+            ; tool_use turn can carry several tool_use blocks).
+            Set tFinalAssistantText = ..BuildMaxIterFallback(tResult.ToolCallsRendered)
             Do ..AppendAssistantText(tTurns, tFinalAssistantText)
         }
 
@@ -722,6 +754,108 @@ ClassMethod AppendAssistantText(pTurns As %DynamicArray, pText As %String) [ Int
     Do tTurn.%Set("content", tContent)
     Do pTurns.%Push(tTurn)
     Quit
+}
+
+/// <p><b>Story 12.4 (BUG-06) AC-5.</b> Build the 3-section synthetic
+/// assistant turn that replaces the legacy hardcoded "Max iterations
+/// reached. Please summarize." message. Walks the per-turn
+/// <CLASS>SessionAgent.Agent.TurnResult</CLASS>.ToolCallsRendered
+/// array (one entry per dispatched tool — each carrying
+/// <code>name</code>, <code>args</code>, <code>result</code>,
+/// <code>status</code>) to render:</p>
+/// <ol>
+/// <li>One-line acknowledgment naming the dispatched-tool count.</li>
+/// <li>Markdown bullet list of <code>(tool_name → one-line
+/// summary)</code> rows, where the summary is the first 80 chars of
+/// the tool_result's first text block (truncated with <code>…</code>
+/// if longer). Errors render as <code>(error)</code>.</li>
+/// <li>One-line follow-up suggestion encouraging a more focused
+/// follow-up question.</li>
+/// </ol>
+/// <p>Sections are separated by <code>$Char(10)$Char(10)</code> (two
+/// newlines = Markdown paragraph break). When no tools were
+/// dispatched (rare — the loop hit the cap with all-text round-trips),
+/// the bullet section collapses to <code>"(no tools called)"</code>
+/// and the acknowledgment count reads 0.</p>
+ClassMethod BuildMaxIterFallback(pToolCalls As %DynamicArray) As %String [ Internal ]
+{
+    Set tCount = 0
+    If $IsObject(pToolCalls) {
+        Set tCount = pToolCalls.%Size()
+    }
+
+    ; Section 1 — acknowledgment.
+    Set tSec1 = "I've used my full investigation budget for this turn — " _ tCount _ " tool call" _ $Select(tCount = 1 : "", 1 : "s") _ " performed."
+
+    ; Section 2 — bullet list of (tool_name → one-line summary).
+    Set tSec2 = ""
+    If tCount = 0 {
+        Set tSec2 = "(no tools called)"
+    } Else {
+        Set tIter = pToolCalls.%GetIterator()
+        While tIter.%GetNext(.tIdx, .tCard) {
+            If '$IsObject(tCard) Continue
+            Set tName = ""
+            If tCard.%IsDefined("name") {
+                Set tName = tCard.%Get("name")
+            }
+            Set tStatus = "ok"
+            If tCard.%IsDefined("status") {
+                Set tStatus = tCard.%Get("status")
+            }
+            Set tSummary = ..ExtractToolResultSummary(tCard, tStatus)
+            Set tLine = "- **" _ tName _ "** → " _ tSummary
+            Set tSec2 = tSec2 _ $Select(tSec2 = "" : "", 1 : $Char(10)) _ tLine
+        }
+    }
+
+    ; Section 3 — follow-up suggestion.
+    Set tSec3 = "Please ask a more focused follow-up question — e.g. about a specific message ID or business process — to continue."
+
+    Quit tSec1 _ $Char(10) _ $Char(10) _ tSec2 _ $Char(10) _ $Char(10) _ tSec3
+}
+
+/// <p><b>Story 12.4 (BUG-06) AC-5 helper.</b> Extract the one-line
+/// summary string from a tool-call card built in
+/// <method>RunTurn</method> Step 7d. The card's <code>result</code>
+/// field is the canonical tool_result envelope (the
+/// <CLASS>%DynamicObject</CLASS> the registry returns); the canonical
+/// shape carries a <code>content</code> array whose first
+/// <code>text</code> block holds the operator-readable narrative.
+/// Truncates to 80 chars with a trailing <code>…</code> when longer.
+/// Errors and missing/malformed payloads return descriptive fallback
+/// strings rather than empty so the bullet line stays readable.</p>
+ClassMethod ExtractToolResultSummary(pCard As %DynamicObject, pStatus As %String) As %String [ Internal ]
+{
+    If pStatus = "error" {
+        Quit "(error)"
+    }
+    If '$IsObject(pCard) Quit "(no result)"
+    If 'pCard.%IsDefined("result") Quit "(no result)"
+    Set tResult = pCard.%Get("result")
+    If '$IsObject(tResult) Quit "(no result)"
+    If 'tResult.%IsDefined("content") Quit "(no content)"
+    Set tContent = tResult.%Get("content")
+    If '$IsObject(tContent) Quit "(no content)"
+    If tContent.%Size() = 0 Quit "(empty)"
+    Set tFirstBlock = tContent.%Get(0)
+    If '$IsObject(tFirstBlock) Quit "(no text)"
+    If 'tFirstBlock.%IsDefined("text") Quit "(no text)"
+    Set tText = tFirstBlock.%Get("text")
+    If tText = "" Quit "(empty)"
+    ; Collapse internal whitespace to single spaces so a multi-line
+    ; tool result renders as one bullet line. The replacement order
+    ; matters: tabs first (rare in tool results but possible), then
+    ; CR (carriage return — Windows line endings sometimes leak
+    ; through), then LF (the dominant case).
+    Set tText = $Replace(tText, $Char(9), " ")
+    Set tText = $Replace(tText, $Char(13), " ")
+    Set tText = $Replace(tText, $Char(10), " ")
+    ; Truncate to 80 chars + ellipsis.
+    If $Length(tText) > 80 {
+        Set tText = $Extract(tText, 1, 80) _ "…"
+    }
+    Quit tText
 }
 
 /// <p>Internal — extract the joined plain-text from an assistant

@@ -11,8 +11,15 @@ Class SessionAgent.Test.AgentLoopGuardsTest Extends SessionAgent.Test.AgentLoopT
 /// <code>tool_use</code> for <code>session_summary</code> on every
 /// turn forever. Assert the loop terminates at
 /// <parameter>MaxIterationsPerTurn</parameter>=10 and the persisted
-/// history contains the synthetic "Max iterations reached" assistant
-/// turn.</p>
+/// history contains the synthetic max-iter fallback assistant turn.</p>
+///
+/// <p><b>Story 12.4 (BUG-06)</b> updated the synthetic fallback
+/// message from the legacy "Max iterations reached. Please summarize."
+/// to a 3-section structured message (acknowledgment + bullet list
+/// + follow-up suggestion). The substring assertion below was
+/// updated to match the new acknowledgment line; sibling test
+/// <method>TestRunTurnMaxIterFallbackHas3Sections</method>
+/// asserts the structural shape.</p>
 Method TestRunTurnMaxIterationsCap()
 {
     Set tSessionKey = ..SessionKey("maxiter")
@@ -27,7 +34,7 @@ Method TestRunTurnMaxIterationsCap()
 
     Set tResult = ##class(SessionAgent.Agent.AgentLoop).RunTurn("session-inspection", tSessionKey, "tester", "loop forever")
     Do $$$AssertTrue($IsObject(tResult), "RunTurn returns TurnResult OREF")
-    Do $$$AssertTrue(tResult.AssistantMarkdown [ "Max iterations reached", "AssistantMarkdown contains 'Max iterations reached' (got: " _ tResult.AssistantMarkdown _ ")")
+    Do $$$AssertTrue(tResult.AssistantMarkdown [ "investigation budget", "AssistantMarkdown contains AC-5 acknowledgment line 'investigation budget' (got: " _ $Extract(tResult.AssistantMarkdown, 1, 200) _ ")")
 
     Set tHist = ##class(SessionAgent.Chat.History).ConvKeyIdxOpen("session-inspection", tSessionKey, "tester")
     Do $$$AssertTrue($IsObject(tHist), "Chat.History row was persisted")
@@ -328,6 +335,98 @@ Method TestRunTurnSkipsNoticeWhenNoCrossSession()
     ; cross-session was dispatched.
     Do $$$AssertTrue(tResult.AssistantMarkdown '[ "Note: this turn dispatched tools against session(s)", "AssistantMarkdown does NOT contain the cross-session notice (no cross-session was dispatched) — got: " _ $Extract(tResult.AssistantMarkdown, 1, 400))
     Do $$$AssertTrue(tResult.AssistantMarkdown [ "Here is the bound session summary.", "AssistantMarkdown carries the original LLM text intact")
+    Quit
+}
+
+/// <p><b>Story 12.4 (BUG-06) AC-2 Test.</b> Per-agent
+/// <code>MaxIterationsPerTurn</code> override. Sets the
+/// session-inspection row's <code>MaxIterationsPerTurn</code> = 5
+/// via the Config.Agent OREF, mocks 7 consecutive
+/// <code>tool_use</code> responses, asserts only 5 LlmCall rows
+/// were emitted (proving the loop honored the per-agent cap, not
+/// the class-parameter default of 10). Restores the original
+/// value (10) in the cleanup branch.</p>
+Method TestRunTurnCustomMaxIterationsPerAgent()
+{
+    Set tSessionKey = ..SessionKey("custom-cap")
+
+    ; Capture + override Config.Agent.MaxIterationsPerTurn.
+    Set tCfg = ##class(SessionAgent.Config.Agent).AgentNameIdxOpen("session-inspection")
+    Do $$$AssertTrue($IsObject(tCfg), "Config.Agent row resolves")
+    Set tOrigCap = tCfg.MaxIterationsPerTurn
+    Set tCfg.MaxIterationsPerTurn = 5
+    Do tCfg.%Save()
+    Do tCfg.%Close()
+
+    Try {
+        Set tResponses = ##class(%DynamicArray).%New()
+        For tI = 1:1:7 {
+            Do tResponses.%Push(..BuildOpenAiResponse("", "session_summary", "{""session_id"":""nonexistent""}"))
+        }
+        Do ..InstallMockProvider(tResponses)
+
+        Set tResult = ##class(SessionAgent.Agent.AgentLoop).RunTurn("session-inspection", tSessionKey, "tester", "loop forever per-agent")
+        Do $$$AssertTrue($IsObject(tResult), "RunTurn returns TurnResult OREF")
+        ; Story 12.4 AC-5 — the new fallback message must appear (acknowledgment line).
+        Do $$$AssertTrue(tResult.AssistantMarkdown [ "investigation budget", "AssistantMarkdown carries the AC-5 acknowledgment line (got: " _ $Extract(tResult.AssistantMarkdown, 1, 200) _ ")")
+
+        Set tHist = ##class(SessionAgent.Chat.History).ConvKeyIdxOpen("session-inspection", tSessionKey, "tester")
+        Do $$$AssertTrue($IsObject(tHist), "Chat.History row was persisted")
+        Set tHistId = tHist.%Id()
+        Do tHist.%Close()
+
+        Set tStmt = ##class(%SQL.Statement).%New()
+        Do tStmt.%Prepare("SELECT COUNT(*) AS cnt FROM SessionAgent_Audit.LlmCall WHERE %EXACT(ChatHistoryId) = ?")
+        Set tRs = tStmt.%Execute(tHistId)
+        Set tCount = -1
+        If tRs.%Next() Set tCount = +tRs.%Get("cnt")
+        Do $$$AssertEquals(tCount, 5, "LlmCall row count = per-agent MaxIterationsPerTurn=5 (NOT class-param 10) (got: " _ tCount _ ")")
+    }
+    Catch ex {
+        ; Re-raise after restoration is invoked in the finally-shape below.
+        Do $$$AssertEquals(0, 1, "Exception in test body: " _ ex.DisplayString())
+    }
+
+    ; Restore the original cap (best effort).
+    Set tCfgRestore = ##class(SessionAgent.Config.Agent).AgentNameIdxOpen("session-inspection")
+    If $IsObject(tCfgRestore) {
+        Set tCfgRestore.MaxIterationsPerTurn = $Select(+tOrigCap > 0 : +tOrigCap, 1 : 10)
+        Do tCfgRestore.%Save()
+        Do tCfgRestore.%Close()
+    }
+    Quit
+}
+
+/// <p><b>Story 12.4 (BUG-06) AC-5 Test.</b> The synthetic fallback
+/// turn emitted when the iteration cap is hit must be the new
+/// 3-section structured message — acknowledgment line, bullet list
+/// of dispatched tools with a one-line summary per tool, and a
+/// follow-up suggestion line. Mocks repeated <code>tool_use</code>
+/// responses (no terminal text turn within the cap), drives
+/// <method>RunTurn</method>, asserts each section's load-bearing
+/// substring is present.</p>
+Method TestRunTurnMaxIterFallbackHas3Sections()
+{
+    Set tSessionKey = ..SessionKey("fallback-3sec")
+    Set tResponses = ##class(%DynamicArray).%New()
+    For tI = 1:1:12 {
+        Do tResponses.%Push(..BuildOpenAiResponse("", "session_summary", "{""session_id"":""nonexistent""}"))
+    }
+    Do ..InstallMockProvider(tResponses)
+
+    Set tResult = ##class(SessionAgent.Agent.AgentLoop).RunTurn("session-inspection", tSessionKey, "tester", "loop multi-section")
+    Do $$$AssertTrue($IsObject(tResult), "RunTurn returns TurnResult OREF")
+
+    Set tText = tResult.AssistantMarkdown
+    ; Section 1 — acknowledgment with tool-call count.
+    Do $$$AssertTrue(tText [ "investigation budget", "Section 1 — acknowledgment line carries 'investigation budget' (got: " _ $Extract(tText, 1, 300) _ ")")
+    Do $$$AssertTrue(tText [ "tool call", "Section 1 — acknowledgment carries the 'tool call' phrase")
+    ; Section 2 — bullet list with the dispatched tool name.
+    Do $$$AssertTrue(tText [ "**session_summary**", "Section 2 — bullet list contains the dispatched tool name 'session_summary'")
+    ; Section 3 — follow-up suggestion.
+    Do $$$AssertTrue(tText [ "more focused follow-up", "Section 3 — follow-up suggestion line present")
+    ; Verify the legacy hardcoded message is GONE (regression guard).
+    Do $$$AssertTrue('(tText [ "Please summarize."), "Legacy hardcoded 'Please summarize.' message is no longer present")
     Quit
 }
 

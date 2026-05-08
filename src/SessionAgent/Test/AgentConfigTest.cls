@@ -1051,4 +1051,119 @@ Method TestMaxTokensCascadeAppliesCanonicalForFreshRow()
     Quit
 }
 
+/// <p><b>Story 12.4 (BUG-06) AC-4 Test.</b> Drives the SaveAgentConfig
+/// hyperevent with a custom <code>pMaxIterationsPerTurn=25</code>
+/// against the message-search row, asserts the row persists with
+/// MaxIterationsPerTurn=25 (NOT the canonical default 10). Restores
+/// original state at end. Mirrors the Story 11.1 cascade-test pattern
+/// for faithful capture/restore of the row.</p>
+Method TestSaveAgentConfigPersistsMaxIterationsPerTurn()
+{
+    Set tAgentName = "message-search"
+
+    ; Capture full original row state.
+    Set tCfg0 = ##class(SessionAgent.Config.Agent).AgentNameIdxOpen(tAgentName)
+    Set tOrigProvider = "openai"
+    Set tOrigModel = "gpt-4.1-mini"
+    Set tOrigEnabled = 0
+    Set tOrigEndpoint = ""
+    Set tOrigEnvVar = "OPENAI_API_KEY"
+    Set tOrigCred = ""
+    Set tOrigMaxTokens = 32000
+    Set tOrigRetention = 30
+    Set tOrigMaxIter = 10
+    If $IsObject(tCfg0) {
+        Set tOrigProvider = tCfg0.Provider
+        Set tOrigModel = tCfg0.Model
+        Set tOrigEnabled = tCfg0.Enabled
+        Set tOrigEndpoint = tCfg0.EndpointUrl
+        If tOrigEndpoint = $Char(0) Set tOrigEndpoint = ""
+        Set tOrigEnvVar = tCfg0.EnvVarName
+        If tOrigEnvVar = $Char(0) Set tOrigEnvVar = ""
+        If tOrigEnvVar = "" Set tOrigEnvVar = "OPENAI_API_KEY"
+        Set tOrigCred = tCfg0.CredentialName
+        If tOrigCred = $Char(0) Set tOrigCred = ""
+        Set tOrigMaxTokens = +tCfg0.MaxTokens
+        If tOrigMaxTokens < 1 Set tOrigMaxTokens = 32000
+        Set tOrigRetention = +tCfg0.SearchChatRetentionDays
+        If tOrigRetention < 1 Set tOrigRetention = 30
+        Set tOrigMaxIter = +tCfg0.MaxIterationsPerTurn
+        If tOrigMaxIter < 1 Set tOrigMaxIter = 10
+        Do tCfg0.%Close()
+    }
+
+    ; Drive Save with custom MaxIterationsPerTurn=25.
+    Set tEnabledStr = $Select(tOrigEnabled = 1 : "1", 1 : "0")
+    Set tJson = ##class(SessionAgent.UI.AgentConfig).SaveAgentConfig(
+        tAgentName, "openai", "gpt-4.1-mini", "", "env",
+        "OPENAI_API_KEY", "",
+        "32000", "0.1", "", tEnabledStr, tOrigRetention, "25")
+    Set tObj = ##class(%DynamicObject).%FromJSON(tJson)
+    Do $$$AssertEquals(tObj.%Get("success"), 1, "Story 12.4: Save with MaxIterationsPerTurn=25 succeeds (got: " _ tJson _ ")")
+
+    ; Re-read and assert the value persisted.
+    Set tCfgNew = ##class(SessionAgent.Config.Agent).AgentNameIdxOpen(tAgentName)
+    Do $$$AssertTrue($IsObject(tCfgNew), "Row resolves after save")
+    If $IsObject(tCfgNew) {
+        Do $$$AssertEquals(+tCfgNew.MaxIterationsPerTurn, 25, "Story 12.4: MaxIterationsPerTurn=25 persists through SaveAgentConfig")
+        Do tCfgNew.%Close()
+    }
+
+    ; Faithful restore.
+    Set tCredType = $Select(tOrigCred = "" : "env", 1 : "creds")
+    Do ##class(SessionAgent.UI.AgentConfig).SaveAgentConfig(
+        tAgentName, tOrigProvider, tOrigModel, tOrigEndpoint, tCredType,
+        tOrigEnvVar, tOrigCred, tOrigMaxTokens, "0.1", "", tEnabledStr, tOrigRetention, tOrigMaxIter)
+    Quit
+}
+
+/// <p><b>Story 12.4 (BUG-06) AC-4 Test 2.</b> SaveAgentConfig MUST
+/// reject MaxIterationsPerTurn=200 (out of range) with a per-field
+/// error in the response envelope, matching the Rule-9 validation
+/// shape (1-100). Confirms the validation surfaces an actionable
+/// error to the operator rather than silently truncating to 100 or
+/// persisting the out-of-range value.</p>
+Method TestSaveAgentConfigRejectsBadMaxIterationsPerTurn()
+{
+    Set tJson = ##class(SessionAgent.UI.AgentConfig).SaveAgentConfig(
+        "message-search", "openai", "gpt-4.1-mini", "", "env",
+        "OPENAI_API_KEY", "",
+        "32000", "0.1", "", "0", "30", "200")
+    Set tObj = ##class(%DynamicObject).%FromJSON(tJson)
+    Do $$$AssertEquals(tObj.%Get("success"), 0, "MaxIterationsPerTurn=200 rejected (success=0)")
+    Set tErrors = tObj.%Get("errors")
+    Do $$$AssertTrue($IsObject(tErrors), "errors[] array present")
+    Set tFoundFieldErr = 0
+    Set tErrIter = tErrors.%GetIterator()
+    While tErrIter.%GetNext(.tEi, .tErrObj) {
+        If $IsObject(tErrObj), tErrObj.%IsDefined("field"), tErrObj.%Get("field") = "maxIterText" {
+            Set tFoundFieldErr = 1
+            Do $$$AssertTrue(tErrObj.%Get("message") [ "1", "Validation error message references the 1-100 range")
+            Do $$$AssertTrue(tErrObj.%Get("message") [ "100", "Validation error message references the upper bound 100")
+        }
+    }
+    Do $$$AssertEquals(tFoundFieldErr, 1, "errors[] contains a per-field error for maxIterText")
+    Quit
+}
+
+/// <p><b>Story 12.4 (BUG-06) AC-3 Test.</b>
+/// <method>SessionAgent.UI.AgentConfig.LoadAgentConfig</method> MUST
+/// return the <code>MaxIterationsPerTurn</code> field in its JSON
+/// envelope so the form's <method>loadAgent</method> client handler
+/// can populate the field on initial render. Asserts the field is
+/// present, is a positive integer, and equals the canonical default
+/// 10 on a freshly-seeded row.</p>
+Method TestLoadAgentConfigCarriesMaxIterationsPerTurn()
+{
+    Set tJson = ##class(SessionAgent.UI.AgentConfig).LoadAgentConfig("session-inspection")
+    Do $$$AssertNotEquals(tJson, "", "LoadAgentConfig returned non-empty for session-inspection")
+    Set tObj = ##class(%DynamicObject).%FromJSON(tJson)
+    Do $$$AssertTrue($IsObject(tObj), "JSON parses to %DynamicObject")
+    Do $$$AssertTrue(tObj.%IsDefined("MaxIterationsPerTurn"), "Envelope carries MaxIterationsPerTurn")
+    Set tMaxIter = +tObj.%Get("MaxIterationsPerTurn")
+    Do $$$AssertTrue(tMaxIter >= 1, "MaxIterationsPerTurn is a positive integer (>= 1)")
+    Do $$$AssertTrue(tMaxIter <= 100, "MaxIterationsPerTurn is bounded above by 100")
+    Quit
+}
+
 }

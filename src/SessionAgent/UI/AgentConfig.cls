@@ -131,6 +131,8 @@ XData contentPane [ XMLNamespace = "http://www.intersystems.com/zen" ]
 
 <text id="temperatureText" size="8" />
 
+<text id="maxIterText" size="8" />
+
 <text id="searchChatRetentionDays" size="8" hidden="true" />
 
 <textarea id="systemPromptText" rows="6" cols="80" onchange="zenPage.spoChanged();" onkeyup="zenPage.spoChanged();" />
@@ -266,6 +268,17 @@ Method %OnAfterCreatePage() As %Status
     Set tCmp = ..%GetComponentById("temperatureText")
     If $IsObject(tCmp) {
         Set tCmp.label = "Temperature"
+    }
+
+    ; Story 12.4 (BUG-06) AC-3 — operator-tuneable iteration cap.
+    ; Label set at runtime per the same MPP5646 workaround the other
+    ; components use. Hint text guides operators to the 1-100 range
+    ; (matching SaveAgentConfig Rule 9 + Config.Agent property
+    ; MAXVAL=100 / MINVAL=1).
+    Set tCmp = ..%GetComponentById("maxIterText")
+    If $IsObject(tCmp) {
+        Set tCmp.label = "Max iterations per turn"
+        Set tCmp.hint = "1-100 (default 10)"
     }
 
     ; Story 10.8 AC-2 — Search-Agent retentionDays field. Label set at
@@ -453,6 +466,10 @@ ClassMethod LoadAgentConfig(pAgentName As %String) As %String [ ZenMethod ]
         ; InitialExpression = 30. Returned for both inspection and search
         ; rows; the client-side handler decides visibility.
         Do tObj.%Set("SearchChatRetentionDays", 30)
+        ; Story 12.4 (BUG-06) AC-3 — MaxIterationsPerTurn default 10
+        ; (matches Config.Agent.MaxIterationsPerTurn InitialExpression).
+        ; Returned for both agents so the form populates consistently.
+        Do tObj.%Set("MaxIterationsPerTurn", 10)
         Do tObj.%Set("found", 0)
 
         If pAgentName '= "" {
@@ -504,6 +521,18 @@ ClassMethod LoadAgentConfig(pAgentName As %String) As %String [ ZenMethod ]
                 Set tRetentionDays = +tCfg.SearchChatRetentionDays
                 If tRetentionDays '> 0 Set tRetentionDays = 30
                 Do tObj.%Set("SearchChatRetentionDays", tRetentionDays)
+                ; Story 12.4 (BUG-06) AC-3 — read MaxIterationsPerTurn
+                ; with the same defensive fallback the AgentLoop uses
+                ; on the runtime read site. The OREF getter returns ""
+                ; for legacy rows whose column was added by post-12.4
+                ; schema upgrade and never written; the SQL UPDATE
+                ; write path can also clear via $Char(0) sentinel
+                ; (defensive). Below 1 → fall back to canonical 10.
+                Set tMaxIter = tCfg.MaxIterationsPerTurn
+                If (tMaxIter = $Char(0)) || (tMaxIter = "") || (+tMaxIter < 1) {
+                    Set tMaxIter = 10
+                }
+                Do tObj.%Set("MaxIterationsPerTurn", +tMaxIter)
                 Do tObj.%Set("found", 1)
                 Do tCfg.%Close()
             }
@@ -567,6 +596,18 @@ ClientMethod loadAgent() [ Language = javascript ]
     zen('temperatureText').setValue(data.Temperature || 0.1);
     zen('systemPromptText').setValue(data.SystemPromptOverride || '');
     zen('enabledCheck').setValue(data.Enabled ? 1 : 0);
+
+    // Story 12.4 (BUG-06) AC-3/AC-4 — populate MaxIterationsPerTurn
+    // from the server. Default fallback to 10 (matches the
+    // Config.Agent.MaxIterationsPerTurn InitialExpression) on a
+    // missing / 0 / empty value. Capture the loaded value on the
+    // page object so the onChangeProvider cascade can apply the
+    // preserve-when-customized heuristic on subsequent rotations.
+    var maxIterField = zen('maxIterText');
+    if (maxIterField) {
+        var loadedMaxIter = +data.MaxIterationsPerTurn || 10;
+        maxIterField.setValue(loadedMaxIter);
+    }
 
     // Story 10.8 AC-2 — SearchChatRetentionDays is Search-Agent specific.
     // Populate the value (default 30 to match Config.Agent
@@ -718,6 +759,19 @@ ClientMethod onChangeProvider(value) [ Language = javascript ]
         preCascadeMaxTokens = String(maxTokensField.getValue() || '');
     }
 
+    // Story 12.4 (BUG-06) AC-4 — capture pre-cascade MaxIterationsPerTurn.
+    // Mirrors the MaxTokens preserve-when-customized capture above. The
+    // OLD canonical value is 10 for every provider (the same canonical
+    // default ships across openai/anthropic/gemini/openai-compatible),
+    // so the heuristic only needs to detect "operator typed something
+    // OTHER than 10" to trigger preservation across rotations.
+    var oldCanonicalMaxIter = '10';
+    var maxIterFieldOnRotate = zen('maxIterText');
+    var preCascadeMaxIter = '';
+    if (maxIterFieldOnRotate) {
+        preCascadeMaxIter = String(maxIterFieldOnRotate.getValue() || '');
+    }
+
     var json = zenPage.LoadProviderDefaults(value);
     var data;
     try {
@@ -773,6 +827,28 @@ ClientMethod onChangeProvider(value) [ Language = javascript ]
         // else: pre-cascade value == OLD canonical → fresh state,
         // leave the NEW canonical default that providerChanged()
         // applied.
+    }
+
+    // Story 12.4 (BUG-06) AC-4 — MaxIterationsPerTurn cascade with
+    // preserve-when-customized. The canonical default is 10 for
+    // every provider, so on a fresh-state rotation we cascade to 10;
+    // on a customized rotation (operator had typed e.g. 25) we
+    // preserve. The heuristic mirrors MaxTokens above:
+    //   - empty pre-cascade → fresh state, apply canonical 10.
+    //   - pre-cascade == OLD canonical (10) → fresh state, apply 10.
+    //   - pre-cascade != OLD canonical → operator-customized, preserve.
+    if (maxIterFieldOnRotate) {
+        if (preCascadeMaxIter === '' || preCascadeMaxIter === oldCanonicalMaxIter) {
+            // Fresh state — apply NEW canonical (currently 10 for all
+            // providers; if a future story makes it provider-specific,
+            // the cascaded value flows from data.maxIterationsPerTurn
+            // returned by LoadProviderDefaults).
+            var cascadedMaxIter = (data && !data.error && data.maxIterationsPerTurn) ? data.maxIterationsPerTurn : 10;
+            maxIterFieldOnRotate.setValue(cascadedMaxIter);
+        }
+        // else: pre-cascade value is operator-customized — leave it
+        // untouched (no value to set; the field already carries the
+        // operator's typed value).
     }
 
     // Story 10.13 F-3 (defense-in-depth) — when rotating to openai-
@@ -1036,7 +1112,7 @@ ClientMethod spoChanged() [ Language = javascript ]
 /// <code>{"success":true,"message":"Saved"}</code></p>
 /// <p><b>Returned shape on failure:</b>
 /// <code>{"success":false,"errors":[{"field":"&lt;id&gt;","message":"&lt;text&gt;"}, ...]}</code></p>
-ClassMethod SaveAgentConfig(pAgentName As %String, pProvider As %String, pModel As %String, pEndpointUrl As %String, pCredTypeRadio As %String, pEnvVarName As %String, pCredentialName As %String, pMaxTokens As %String, pTemperature As %String, pSystemPrompt As %String, pEnabled As %String, pSearchChatRetentionDays As %String = "") As %String [ ZenMethod ]
+ClassMethod SaveAgentConfig(pAgentName As %String, pProvider As %String, pModel As %String, pEndpointUrl As %String, pCredTypeRadio As %String, pEnvVarName As %String, pCredentialName As %String, pMaxTokens As %String, pTemperature As %String, pSystemPrompt As %String, pEnabled As %String, pSearchChatRetentionDays As %String = "", pMaxIterationsPerTurn As %String = "") As %String [ ZenMethod ]
 {
     Set tEnvelope = ""
     Try {
@@ -1172,6 +1248,27 @@ ClassMethod SaveAgentConfig(pAgentName As %String, pProvider As %String, pModel 
             }
         }
 
+        ; ─────────────────────────────────────────────────────────────
+        ; Story 12.4 (BUG-06) AC-4 — Rule 9: MaxIterationsPerTurn must
+        ; be a positive integer in [1, 100], matching the Config.Agent
+        ; property MAXVAL/MINVAL. Empty string is accepted as "use the
+        ; default 10" — the persistence branch substitutes 10 when
+        ; pMaxIterationsPerTurn is empty so an operator who blanked
+        ; the field gets a usable cap rather than the persistence-
+        ; layer's 0-default. Out-of-range / non-numeric input is
+        ; rejected with a per-field error so the operator sees
+        ; actionable feedback.
+        ; ─────────────────────────────────────────────────────────────
+        Set tMaxIterNum = +pMaxIterationsPerTurn
+        If pMaxIterationsPerTurn '= "" {
+            If (tMaxIterNum < 1) || (tMaxIterNum > 100) || ('$Match(pMaxIterationsPerTurn, "^[0-9]+$")) {
+                Set tErr = ##class(%DynamicObject).%New()
+                Do tErr.%Set("field", "maxIterText")
+                Do tErr.%Set("message", "Max iterations per turn must be 1–100")
+                Do tErrors.%Push(tErr)
+            }
+        }
+
         ; If any errors, build the failure envelope and return.
         If tErrors.%Size() > 0 {
             Set tFail = ##class(%DynamicObject).%New()
@@ -1209,6 +1306,12 @@ ClassMethod SaveAgentConfig(pAgentName As %String, pProvider As %String, pModel 
         If pAgentName = "message-search" {
             Set tConfig.SearchChatRetentionDays = $Select(tRetentionDaysNum > 0 : tRetentionDaysNum, 1 : 30)
         }
+
+        ; Story 12.4 (BUG-06) AC-4 — persist MaxIterationsPerTurn for
+        ; both agents. Empty / 0 / out-of-range input (already rejected
+        ; by Rule 9 above except empty) falls back to canonical 10 so
+        ; the persisted value is always a usable iteration cap.
+        Set tConfig.MaxIterationsPerTurn = $Select(tMaxIterNum > 0 : tMaxIterNum, 1 : 10)
 
         ; Radio-aware credential clearing — NFR-S2 schema discipline:
         ; EnvVarName XOR CredentialName, never both populated. The
@@ -1311,11 +1414,19 @@ ClientMethod saveConfig() [ Language = javascript ]
     var retentionRaw = zen('searchChatRetentionDays');
     var retention = retentionRaw ? String(retentionRaw.getValue() || '') : '';
 
+    // Story 12.4 (BUG-06) AC-4 — MaxIterationsPerTurn. Read the field
+    // value as a string so the server-side regex validation can
+    // distinguish missing (empty string) from typed but invalid (non-
+    // numeric). Empty string is treated as "use default 10" per the
+    // SaveAgentConfig persistence branch.
+    var maxIterRaw = zen('maxIterText');
+    var maxIter = maxIterRaw ? String(maxIterRaw.getValue() || '') : '';
+
     // Hyperevent — ZenMethod returns %String JSON envelope.
     var json = zenPage.SaveAgentConfig(
         agentName, provider, model, endpointUrl, credTypeRadio,
         envVarName, credName, maxTokens, temperature, systemPrompt, enabled,
-        retention
+        retention, maxIter
     );
 
     // Story 10.8 fix-now (Rule 8 predicted-bug — ReferenceError shape):
@@ -1428,7 +1539,7 @@ ClientMethod clearErrorLabels() [ Language = javascript ]
     var errorFieldIds = [
         'agentSelect', 'providerSelect', 'maxTokensText', 'temperatureText',
         'credTypeRadio', 'envVarText', 'credCombo', 'endpointUrlText',
-        'systemPromptText', 'searchChatRetentionDays'
+        'systemPromptText', 'searchChatRetentionDays', 'maxIterText'
     ];
     for (var i = 0; i < errorFieldIds.length; i++) {
         var lbl = self.document.getElementById(errorFieldIds[i] + 'ErrorMessage');

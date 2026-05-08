@@ -154,6 +154,12 @@ ClassMethod GetCanonicalDefaults(pProvider As %String) As %DynamicObject
         Do tObj.%Set("envVarName", "OPENAI_API_KEY")
         Do tObj.%Set("endpointUrl", "")
     }
+    ; Story 12.4 (BUG-06) — canonical iteration cap default. All four
+    ; providers ship with the same 10-iteration cap (the historical
+    ; class-parameter floor on AgentLoop.RunTurn). Operators rotating
+    ; providers via the Story 6.1 Zen form get this canonical default
+    ; cascaded into the new "Max iterations per turn" field.
+    Do tObj.%Set("maxIterationsPerTurn", 10, "number")
     Quit tObj
 }
 

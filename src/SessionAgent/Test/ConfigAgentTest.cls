@@ -138,6 +138,8 @@ Method TestSchemaPropertiesPresent()
     Set tExpected("ReadOnly") = "%Boolean"
     Set tExpected("Enabled") = "%Boolean"
     Set tExpected("SearchChatRetentionDays") = "%Integer"
+    ; Story 12.4 (BUG-06) AC-1 — new column for the configurable iteration cap.
+    Set tExpected("MaxIterationsPerTurn") = "%Integer"
 
     Set tName = ""
     For {
@@ -329,6 +331,58 @@ Method TestSavedRowRoundTrip()
     Do $$$AssertTrue($IsObject(tReopened), "Re-open returns the row")
     If $IsObject(tReopened) {
         Do $$$AssertEquals(tReopened.MaxTokens, 8192, "Mutated MaxTokens persists across open")
+    }
+    Quit
+}
+
+/// <p><b>Story 12.4 (BUG-06) AC-1 Test.</b> Asserts the
+/// <code>MaxIterationsPerTurn</code> property on
+/// <CLASS>SessionAgent.Config.Agent</CLASS> declares the canonical
+/// InitialExpression = 10 AND the operator-tunable range MINVAL=1
+/// + MAXVAL=100. The InitialExpression matches the historical
+/// <CLASS>SessionAgent.Agent.AgentLoop</CLASS> class-parameter floor
+/// so existing rows behave identically before/after the schema
+/// upgrade. The MIN/MAX guard rails prevent accidental zero (which
+/// would short-circuit the loop on iteration 1) and runaway 1000+
+/// settings from a typo.</p>
+Method TestMaxIterationsPerTurnSchemaShape()
+{
+    Set tCompoundId = "SessionAgent.Config.Agent||MaxIterationsPerTurn"
+    Set tProp = ##class(%Dictionary.PropertyDefinition).%OpenId(tCompoundId)
+    Do $$$AssertTrue($IsObject(tProp), "MaxIterationsPerTurn property exists")
+    If $IsObject(tProp) {
+        Do $$$AssertEquals(tProp.Type, "%Integer", "MaxIterationsPerTurn type = %Integer")
+        Do $$$AssertEquals(tProp.InitialExpression, 10, "MaxIterationsPerTurn InitialExpression = 10")
+        ; Parameters MAXVAL / MINVAL are stored on PropertyDefinition.Parameters
+        ; (a multi-dimensional collection keyed by parameter name).
+        Do $$$AssertEquals(tProp.Parameters.GetAt("MINVAL"), 1, "MaxIterationsPerTurn MINVAL = 1")
+        Do $$$AssertEquals(tProp.Parameters.GetAt("MAXVAL"), 100, "MaxIterationsPerTurn MAXVAL = 100")
+    }
+    Quit
+}
+
+/// <p><b>Story 12.4 (BUG-06) AC-1 Test 2.</b> Round-trip persistence
+/// for MaxIterationsPerTurn — seed the rows, mutate the column to
+/// 50, save, re-open and assert the mutated value persists. Confirms
+/// the auto-generated Storage section actually backs the new
+/// column to disk.</p>
+Method TestMaxIterationsPerTurnRoundTrip()
+{
+    Set tSC = ##class(SessionAgent.Installer).SeedDefaultAgentConfigs()
+    Do $$$AssertStatusOK(tSC, "Seed succeeded; row available for round-trip")
+
+    Set tFirst = ##class(SessionAgent.Config.Agent).AgentNameIdxOpen("session-inspection")
+    Do $$$AssertTrue($IsObject(tFirst), "Open returns the seeded row")
+    If $IsObject(tFirst) {
+        Set tFirst.MaxIterationsPerTurn = 50
+        Set tSaveSC = tFirst.%Save()
+        Do $$$AssertStatusOK(tSaveSC, "Save with MaxIterationsPerTurn=50 succeeded")
+    }
+
+    Set tReopened = ##class(SessionAgent.Config.Agent).AgentNameIdxOpen("session-inspection")
+    Do $$$AssertTrue($IsObject(tReopened), "Re-open returns the row")
+    If $IsObject(tReopened) {
+        Do $$$AssertEquals(tReopened.MaxIterationsPerTurn, 50, "MaxIterationsPerTurn round-trips through %Save")
     }
     Quit
 }

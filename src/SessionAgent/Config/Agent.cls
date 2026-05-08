@@ -125,6 +125,30 @@ Property Enabled As %Boolean [ InitialExpression = 0 ];
 /// session lifecycle (Story 7) and ignores this column.</p>
 Property SearchChatRetentionDays As %Integer [ InitialExpression = 30 ];
 
+/// <p><b>Story 12.4 (BUG-06).</b> Per-agent iteration cap for
+/// <method>SessionAgent.Agent.AgentLoop.RunTurn</method>. Bounds the
+/// number of provider round-trips per user turn before the loop emits
+/// the synthetic "max iterations reached" assistant turn. Defaults to
+/// <code>10</code> (the historical class-parameter value) so existing
+/// rows behave identically before/after the schema upgrade.</p>
+///
+/// <p><b>Operator-tuneable range</b>: 1–100. The lower bound prevents an
+/// accidental 0 that would short-circuit the loop on the very first
+/// iteration; the upper bound prevents a runaway 1000-iteration setting
+/// from a typo (operators with genuinely cap-busting workflows almost
+/// always want to refactor the prompt or split the question, not raise
+/// the cap to triple digits — capping at 100 is a soft guardrail).</p>
+///
+/// <p><b>Read-side normalization.</b>
+/// <method>SessionAgent.Agent.AgentLoop.RunTurn</method> reads this column
+/// every turn (NFR-O2 hot config). The read normalizes the legacy IRIS
+/// <code>$Char(0)</code> sentinel (which can appear if a SQL UPDATE
+/// clears the cell) and 0 / "" to the class-parameter safety floor
+/// <code>SessionAgent.Agent.AgentLoop.#MaxIterationsPerTurn</code>
+/// (=10) so a fresh install whose schema upgrade has not yet run still
+/// behaves correctly.</p>
+Property MaxIterationsPerTurn As %Integer(MAXVAL = 100, MINVAL = 1) [ InitialExpression = 10 ];
+
 /// <p>O(1) lookup by <code>AgentName</code>. The unique constraint
 /// enforces single-row-per-agent, so the Installer's idempotency check
 /// (<code>AgentNameIdxExists(name)</code>) is sufficient to prevent
@@ -172,6 +196,9 @@ Storage Default
 </Value>
 <Value name="13">
 <Value>SearchChatRetentionDays</Value>
+</Value>
+<Value name="14">
+<Value>MaxIterationsPerTurn</Value>
 </Value>
 </Data>
 <DataLocation>^SessionAgent.Config.AgentD</DataLocation>

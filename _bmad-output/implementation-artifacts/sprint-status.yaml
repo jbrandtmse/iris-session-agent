@@ -1,5 +1,5 @@
 # generated: 2026-05-02
-# last_updated: 2026-05-02 (Story 1.4 ready for review)
+# last_updated: 2026-05-07 (Story 10.10 code review complete — done)
 # project: iris-session-agent
 # project_key: NOKEY
 # tracking_system: file-system
@@ -147,4 +147,5 @@ development_status:
   10-7-vendored-markdown-bundle-chat-panel-js-growth-tier-render-upgrade: done
   10-8-full-token-resolution-growth-tier-ux-components: done
   10-9-prd-v1-completion-validation-walkthrough: done
+  10-10-search-agent-tab-render-hotfix: done
   epic-10-retrospective: optional

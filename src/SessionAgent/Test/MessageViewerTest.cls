@@ -215,6 +215,66 @@ Method TestSendChatMessageMalformedHints()
     Quit
 }
 
+/// <p>Test (Story 10.10 hotfix) — assert the
+/// <code>onTabChange</code> ClientMethod override is declared on the
+/// subclass with the load-bearing fragments needed to dispatch
+/// <code>chatPanelHost.refreshContents()</code> when the operator clicks
+/// the askAgentTab. The grandparent's
+/// <CLASS>EnsPortal.Template.filteredViewer</CLASS>.<METHOD>onTabChange</METHOD>
+/// has a hard <code>switch (currTab) { case 1..4: ...; default: break }</code>
+/// that ignores tab-index 5; without this override, our 5th tab never
+/// fires its server-side <code>OnDrawContent</code> callback (F-1
+/// surfaced empirically via Story 10.9 walkthrough — chat panel never
+/// rendered on tab-click).</p>
+Method TestOnTabChangeOverridePresent()
+{
+    Set tDef = ##class(%Dictionary.CompiledMethod).%OpenId("SessionAgent.EnsPortal.MessageViewer||onTabChange")
+    Do $$$AssertTrue($IsObject(tDef), "Story 10.10 hotfix: onTabChange ClientMethod is declared on the subclass")
+    If '$IsObject(tDef) Quit
+
+    Do tDef.Implementation.Rewind()
+    Set tBody = ""
+    While 'tDef.Implementation.AtEnd {
+        Set tBody = tBody _ tDef.Implementation.Read(32000)
+    }
+
+    ; Load-bearing fragments for the F-1 fix.
+    Do $$$AssertTrue(tBody [ "invokeSuper", "onTabChange invokes parent's onTabChange first (preserves tabs 1-4 refresh)")
+    Do $$$AssertTrue(tBody [ "currTab", "onTabChange reads currTab from the tabGroup")
+    Do $$$AssertTrue(tBody [ "chatPanelHost", "onTabChange targets the chatPanelHost html element")
+    Do $$$AssertTrue(tBody [ "refreshContents", "onTabChange calls refreshContents to fire the OnDrawContent hyperevent")
+    ; Idempotence-guard sentinel.
+    Do $$$AssertTrue(tBody [ "_tabDisplay", "onTabChange tracks _tabDisplay sentinel to avoid duplicate refresh on repeated tab clicks")
+    Quit
+}
+
+/// <p>Test (Story 10.10 hotfix) — assert
+/// <method>DrawChatPanel</method> reads <code>%session.Data("...")</code>
+/// via <code>$Get(...)</code> to avoid the <code>&lt;UNDEFINED&gt;</code>
+/// trap on first-time render. A bare
+/// <code>%session.Data("missing-key")</code> raises <code>&lt;UNDEFINED&gt;</code>
+/// rather than returning empty string; the original Story 10.1 form
+/// had this exact bug and propagated the exception to the outer Catch,
+/// causing the helper-write path to be silently skipped (chat panel
+/// rendered as empty <code>enc.innerHTML = '';</code>).</p>
+Method TestDrawChatPanelGuardsSessionDataAccess()
+{
+    Set tDef = ##class(%Dictionary.CompiledMethod).%OpenId("SessionAgent.EnsPortal.MessageViewer||DrawChatPanel")
+    Do $$$AssertTrue($IsObject(tDef), "DrawChatPanel method exists")
+    If '$IsObject(tDef) Quit
+
+    Do tDef.Implementation.Rewind()
+    Set tBody = ""
+    While 'tDef.Implementation.AtEnd {
+        Set tBody = tBody _ tDef.Implementation.Read(32000)
+    }
+
+    ; Story 10.10 hotfix: the read MUST be wrapped in $Get(...) to avoid
+    ; <UNDEFINED> on first-time render when the subscript has never been set.
+    Do $$$AssertTrue(tBody [ "$Get(%session.Data(""SessionAgentMessageSearchKey""))", "Story 10.10 hotfix: %session.Data subscript read uses $Get(...) to avoid <UNDEFINED> on first-time render")
+    Quit
+}
+
 /// <p>Helper — build an OpenAI-shape end_turn response (mock-provider
 /// payload). Same shape as the VisualTraceTest helper.</p>
 ClassMethod BuildEndTurnResponse(pText As %String) As %String

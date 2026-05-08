@@ -194,10 +194,15 @@ Method DrawChatPanel(pSeed As %String) As %Status
 
         ; Generate-or-reuse the search-session GUID. Per AC-3, persist in
         ; %session.Data so it stays stable across tab opens in the same
-        ; browser session.
+        ; browser session. NOTE: read via $Get(%session.Data(...)) — a
+        ; bare `%session.Data("missing-key")` raises <UNDEFINED> rather
+        ; than returning empty string. Story 10.10 surfaced this on the
+        ; first-time render path; the prior form bypassed the
+        ; "If tSessionKey = """ guard and propagated the exception to the
+        ; outer Catch.
         Set tSessionKey = ""
         If $IsObject($Get(%session)) {
-            Set tSessionKey = %session.Data("SessionAgentMessageSearchKey")
+            Set tSessionKey = $Get(%session.Data("SessionAgentMessageSearchKey"))
             If tSessionKey = "" {
                 Set tSessionKey = $System.Util.CreateGUID()
                 Set %session.Data("SessionAgentMessageSearchKey") = tSessionKey
@@ -615,6 +620,57 @@ ClassMethod RecordClickThrough(pSearchSessionKey As %String, pSessionId As %Stri
         Set tPortalUser = $Username
     }
     Quit ##class(SessionAgent.Search.VocabCapture).RecordClickThrough(pSearchSessionKey, pSessionId, pContributingToolCallsJson, tPortalUser)
+}
+
+/// <p>Story 10.10 hotfix — override the grandparent's
+/// <code>onTabChange()</code> to dispatch refresh for our 5th tab
+/// (<code>askAgentTab</code>). The grandparent's
+/// <CLASS>EnsPortal.Template.filteredViewer</CLASS>.<METHOD>onTabChange</METHOD>
+/// has a hard <code>switch (currTab) { case 1..4: ...; default: break }</code>
+/// that ignores tab indices &gt; 4 — our 5th tab never has its server-side
+/// <code>OnDrawContent</code> callback fired on tab-click. Empirical Task 0
+/// probe (Story 10.10) confirmed: clicking "Ask the agent" produced ZERO
+/// new broker calls and zero <code>^ClineDebug</code> entries — Zen's
+/// hyperevent path was never invoked. The fix is a thin override that
+/// calls <code>this.invokeSuper('onTabChange', arguments)</code> first
+/// (preserves parent semantics for tabs 1-4) then refreshes
+/// <code>chatPanelHost</code> when <code>currTab === 5</code>.</p>
+///
+/// <p><b>Idempotence guard.</b> The parent's switch keys content refresh
+/// off <code>this._tabDisplay[name] != this.selectedId</code> — repeated
+/// clicks on the same tab don't re-issue the hyperevent. We mirror that
+/// pattern: track <code>this._tabDisplay['Agent']</code> and only refresh
+/// when the operator-context (selectedId OR first-time-empty) changed.
+/// Note: the search-agent chat panel is selectedId-INDEPENDENT (the
+/// search-session GUID stored in <code>%session.Data</code> is the
+/// operator-scope key, not the row id), so the guard collapses to "did
+/// the panel ever render in this page lifetime?" — first click renders,
+/// subsequent clicks no-op (matches the ChatHistoryView semantics of the
+/// existing chat-panel).</p>
+ClientMethod onTabChange() [ Language = javascript ]
+{
+    // Always invoke the parent's onTabChange first so tabs 1-4 (Header /
+    // Body / Contents / Trace) keep their existing refresh semantics.
+    this.invokeSuper('onTabChange', arguments);
+
+    // Tab 5 (askAgentTab) is the gap the parent's switch leaves uncovered.
+    // Refresh the chat-panel host html element if we're on it.
+    if (this.detailsHidden) { return; }
+    var tabGroup = zen('detailsTabGroup');
+    if (!tabGroup) { return; }
+    var currTab = tabGroup.getCurrTabNo();
+    if (currTab !== 5) { return; }
+
+    if (!this._tabDisplay) { this._tabDisplay = new Object(); }
+    // The chat panel is operator-scoped (search-session GUID lives in
+    // %session.Data) — not row-scoped. Use a sentinel so the panel
+    // renders once per page lifetime; subsequent same-tab clicks no-op.
+    if (this._tabDisplay['Agent'] === '__rendered__') { return; }
+    var chatHost = zen('chatPanelHost');
+    if (chatHost && typeof chatHost.refreshContents === 'function') {
+        chatHost.refreshContents();
+        this._tabDisplay['Agent'] = '__rendered__';
+    }
 }
 
 }

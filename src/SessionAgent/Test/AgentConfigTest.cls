@@ -646,4 +646,80 @@ Method TestSaveAgentConfigCreatesRowIfMissing()
     }
 }
 
+/// <p><b>Story 10.8 AC-2 Test 1.</b>
+/// <method>TestSearchVariantPrePopulatesRetentionDays</method> — call
+/// <method>SessionAgent.UI.AgentConfig.LoadAgentConfig</method>("message-search"),
+/// parse the JSON envelope, assert the
+/// <code>SearchChatRetentionDays</code> field is present and equals
+/// the seeded default value (30 per Config.Agent InitialExpression).
+/// The field is Search-Agent specific (Inspection ignores it); the
+/// test exercises the LoadAgentConfig contract that the message-search
+/// row carries the column.</p>
+Method TestSearchVariantPrePopulatesRetentionDays()
+{
+    Set tJson = ##class(SessionAgent.UI.AgentConfig).LoadAgentConfig("message-search")
+    Do $$$AssertNotEquals(tJson, "", "LoadAgentConfig returned non-empty for message-search")
+
+    Set tObj = ##class(%DynamicObject).%FromJSON(tJson)
+    Do $$$AssertTrue($IsObject(tObj), "Returned JSON parses to a %DynamicObject")
+    Do $$$AssertEquals(tObj.%Get("found"), 1, "message-search seed row resolves (found=1)")
+
+    Set tRetention = +tObj.%Get("SearchChatRetentionDays")
+    Do $$$AssertTrue(tRetention >= 1, "SearchChatRetentionDays is a positive integer (>= 1)")
+    ; Default is 30 per Config.Agent.SearchChatRetentionDays InitialExpression
+    ; (architecture row OD4). The seed path keeps it at the default; this
+    ; test asserts the canonical contract.
+    Do $$$AssertEquals(tRetention, 30, "SearchChatRetentionDays defaults to 30 per architecture OD4")
+    Quit
+}
+
+/// <p><b>Story 10.8 AC-2 Test 2.</b>
+/// <method>TestSaveHandlerPersistsRetentionDays</method> — call
+/// <method>SessionAgent.UI.AgentConfig.SaveAgentConfig</method> with a
+/// non-default <code>SearchChatRetentionDays</code> value (45), confirm
+/// the success envelope, then re-read the row and assert the value
+/// persisted. Restores the original value at the end.</p>
+Method TestSaveHandlerPersistsRetentionDays()
+{
+    Set tAgentName = "message-search"
+
+    ; Capture original retention for restoration.
+    Set tCfg0 = ##class(SessionAgent.Config.Agent).AgentNameIdxOpen(tAgentName)
+    Set tOrigRetention = 30
+    If $IsObject(tCfg0) {
+        Set tOrigRetention = +tCfg0.SearchChatRetentionDays
+        If tOrigRetention < 1 Set tOrigRetention = 30
+        Set tOrigProvider = tCfg0.Provider
+        Set tOrigModel = tCfg0.Model
+        Set tOrigEnabled = tCfg0.Enabled
+        Do tCfg0.%Close()
+    } Else {
+        Set tOrigProvider = "openai"
+        Set tOrigModel = "gpt-4.1-mini"
+        Set tOrigEnabled = 0
+    }
+
+    ; Save with retention=45.
+    Set tEnabledStr = $Select(tOrigEnabled = 1 : "1", 1 : "0")
+    Set tJson = ##class(SessionAgent.UI.AgentConfig).SaveAgentConfig(
+        tAgentName, tOrigProvider, tOrigModel, "", "env",
+        "OPENAI_API_KEY", "", "4000", "0.1", "", tEnabledStr, "45")
+    Set tObj = ##class(%DynamicObject).%FromJSON(tJson)
+    Do $$$AssertEquals(tObj.%Get("success"), 1, "Save with retention=45 succeeds (got " _ tJson _ ")")
+
+    ; Re-read the row and assert the value persisted.
+    Set tCfgNew = ##class(SessionAgent.Config.Agent).AgentNameIdxOpen(tAgentName)
+    Do $$$AssertTrue($IsObject(tCfgNew), "Row resolves after save")
+    If $IsObject(tCfgNew) {
+        Do $$$AssertEquals(+tCfgNew.SearchChatRetentionDays, 45, "SearchChatRetentionDays persists as 45 (Story 10.8 AC-2)")
+        Do tCfgNew.%Close()
+    }
+
+    ; Restore original retention.
+    Do ##class(SessionAgent.UI.AgentConfig).SaveAgentConfig(
+        tAgentName, tOrigProvider, tOrigModel, "", "env",
+        "OPENAI_API_KEY", "", "4000", "0.1", "", tEnabledStr, tOrigRetention)
+    Quit
+}
+
 }

@@ -815,27 +815,75 @@ ClientMethod onCitationClick(type, id, klass) [ Language = javascript ]
         return;
     }
 
-    // selectItem signature (verified Task 0):
+    // ─────────────────────────────────────────────────────────────
+    // Story 10.8 AC-3 — off-page citation sync (UX-DR24-Growth).
+    //
+    // The Growth-tier ideal per UX-DR24-Growth is a three-call chain:
+    //   zenPage.openPage(targetPage)   // navigate SVG to the page
+    //                                  //   containing the cited row
+    //   svgPage.selectItem(...)        // highlight the cited box
+    //   zenPage.updateTabs(true)       // re-render the Header tab
+    //
+    // The middle call (selectItem) is unconditional and matches
+    // Story 3.4's MVP partial-sync. The first call (openPage) is the
+    // upgrade. Computing `targetPage` requires a "what page contains
+    // row X" lookup against the parent VisualTrace's pagination roster.
+    //
+    // Task 0 svgPage probe (Story 10.8) finding: NEITHER `svgPage`
+    // NOR `zenPage` exposes a page-of-row lookup API. The pagination
+    // is mathematically (rowIndex - 1) \ itemsPerPage + 1 (per
+    // irislib/EnsPortal/VisualTrace.cls lines 302 / 513), but the
+    // `rowIndex` for a chip's `data-cite-id` requires walking the
+    // session's interleaved Ens.MessageHeader / Ens.IoLog /
+    // Ens.MsgBank.Event roster — a non-trivial server-side enumeration
+    // that mirrors BuildTraceInfo's order-by sequence (see
+    // irislib/EnsPortal/SVG/VisualTrace.cls:BuildTraceInfo). Adding
+    // that surface is genuine future-epic scope (Rule 8 test 1:
+    // requires architectural decisions about page-of-row caching, the
+    // shape of the citation chip's data attributes, and an additional
+    // ZenMethod hyperevent — all naturally land in a Story 11+ work
+    // item).
+    //
+    // PRAGMATIC-ACCEPTANCE FALLBACK (per AC-3):
+    //   - Call selectItem(...) FIRST. The parent's selectItem
+    //     (irislib/EnsPortal/SVG/VisualTrace.cls:2374) silently skips
+    //     the SVG highlight when getElementById(svgId) returns null
+    //     (off-page case) but always sets
+    //     zenPage.currentId/currentType/currentClass and invokes
+    //     zenPage.updateTabs(). Same partial-sync behavior Story 3.4
+    //     shipped.
+    //   - On the defense-in-depth fallback path (svgPage not yet
+    //     loaded — rare, see below), set state directly and CALL
+    //     updateTabs(true) explicitly per AC-3's "Then ... updateTabs(true)"
+    //     clause. The Story 3.4 form already did this; Story 10.8
+    //     keeps the contract explicit so the Header tab refresh fires
+    //     unambiguously regardless of the path taken.
+    //   - Document the openPage→selectItem→updateTabs Growth-tier
+    //     upgrade in deferred-work.md as a Story 11+ scope item per
+    //     Rule 8 test 1 (genuine future-epic scope — needs new server-
+    //     side page-of-row enumerator + chip-side metadata change).
+    //
+    // selectItem signature (verified Story 3.4 Task 0):
     //   selectItem(evt, type, svgId, itemId, extraType, lineId)
     // We pass null for evt, svgId, lineId — we don't have an SVG event
     // and we don't know the SVG element ids from a citation chip.
-    // The parent silently skips the SVG highlight when svgId is null
-    // OR getElementById returns null (off-page case), AND ALWAYS sets
-    // currentId/currentType/currentClass + calls updateTabs(). So the
-    // single call covers AC-2 (on-page) AND AC-3 (off-page partial
-    // sync) without needing try/catch detection.
+    // ─────────────────────────────────────────────────────────────
     var trace = zen('SVGTrace');
     var svgPage = (trace && trace.svgWindow) ? trace.svgWindow.svgPage : null;
     var klassArg = klass || '';
     if (svgPage && typeof svgPage.selectItem === 'function') {
+        // Story 3.4 partial-sync path retained per AC-3 pragmatic
+        // acceptance. selectItem internally calls zenPage.updateTabs()
+        // — the Header tab refreshes unambiguously. SVG highlight
+        // fires on-page; silently skips off-page (matches Story 3.4).
         svgPage.selectItem(null, parentType, null, id, klassArg, null);
-        // selectItem internally invokes zenPage.updateTabs() — no
-        // additional updateTabs call needed.
     } else {
         // Defense-in-depth: SVG frame not loaded yet (rare — chip
         // can't render before the agent answer, which can't render
         // before the page loaded the SVG frame). Set state directly
-        // and call updateTabs(true) per AC-3 fallback.
+        // and call updateTabs(true) per AC-3 fallback. Mirrors the
+        // selectItem-internal path so the Header tab refreshes
+        // regardless of which branch executed.
         zenPage.currentId = id;
         zenPage.currentType = parentType;
         zenPage.currentClass = klassArg;

@@ -480,6 +480,78 @@ Method TestOnCitationClickPresent()
     Quit
 }
 
+/// <p><b>Story 10.8 AC-3 Test 1.</b>
+/// <method>TestOnCitationClickFallbackPathInvokesUpdateTabs</method> —
+/// asserts <code>onCitationClick</code>'s defense-in-depth fallback
+/// branch (svgPage not loaded) calls <code>zenPage.updateTabs(true)</code>
+/// explicitly per the Story 10.8 AC-3 contract. The fallback branch
+/// fires when <code>trace.svgWindow.svgPage</code> is null OR
+/// <code>svgPage.selectItem</code> is not a function — rare but
+/// possible when the SVG iframe has not yet finished loading. Story
+/// 10.8 keeps the contract explicit so the Header-tab refresh
+/// invariant holds regardless of which branch executed.</p>
+Method TestOnCitationClickFallbackPathInvokesUpdateTabs()
+{
+    Set tMethod = ##class(%Dictionary.CompiledMethod).%OpenId("SessionAgent.EnsPortal.VisualTrace||onCitationClick")
+    Do $$$AssertTrue($IsObject(tMethod), "onCitationClick ClientMethod resolves (Story 3.4 AC-1)")
+    If '$IsObject(tMethod) Quit
+
+    Do tMethod.Implementation.Rewind()
+    Set tBody = ""
+    While 'tMethod.Implementation.AtEnd {
+        Set tBody = tBody _ tMethod.Implementation.Read(32000)
+    }
+
+    ; AC-3: defense-in-depth fallback path sets state directly + calls
+    ; updateTabs(true). The argument is true so the Header tab is
+    ; force-refreshed even if its previous render was current.
+    Do $$$AssertTrue(tBody [ "updateTabs(true)", "onCitationClick fallback path calls zenPage.updateTabs(true) (Story 10.8 AC-3)")
+    Do $$$AssertTrue(tBody [ "zenPage.currentId", "onCitationClick fallback sets zenPage.currentId (Story 10.8 AC-3)")
+    Do $$$AssertTrue(tBody [ "zenPage.currentType", "onCitationClick fallback sets zenPage.currentType (Story 10.8 AC-3)")
+    Quit
+}
+
+/// <p><b>Story 10.8 AC-3 Test 2.</b>
+/// <method>TestOnCitationClickRetainsPragmaticAcceptanceContract</method>
+/// — asserts the doc-comment of <code>onCitationClick</code> documents
+/// the Story 10.8 pragmatic-acceptance fallback per AC-3's "Pragmatic
+/// acceptance" clause. The comment must explain WHY full openPage→
+/// selectItem→updateTabs(true) is deferred (svgPage exposes no
+/// page-of-row lookup) so future authors don't re-discover the gap.
+/// Also asserts the deferred-work entry exists so the deferral is
+/// auditable per Rule 9.</p>
+Method TestOnCitationClickRetainsPragmaticAcceptanceContract()
+{
+    Set tMethodDef = ##class(%Dictionary.MethodDefinition).%OpenId("SessionAgent.EnsPortal.VisualTrace||onCitationClick")
+    Do $$$AssertTrue($IsObject(tMethodDef), "onCitationClick MethodDefinition resolves")
+    If '$IsObject(tMethodDef) Quit
+
+    ; The doc-comment lives in the Description property; the in-method
+    ; commentary lives in Implementation. Both should reference the
+    ; pragmatic-acceptance contract — the Implementation is the
+    ; load-bearing source comment so we read it.
+    Do tMethodDef.Implementation.Rewind()
+    Set tBody = ""
+    While 'tMethodDef.Implementation.AtEnd {
+        Set tBody = tBody _ tMethodDef.Implementation.Read(32000)
+    }
+
+    ; AC-3 documentation invariant: pragmatic-acceptance is named by name
+    ; AND the Story 11+ deferral is cited (per Rule 9).
+    Do $$$AssertTrue(tBody [ "PRAGMATIC", "onCitationClick body documents PRAGMATIC-ACCEPTANCE per Story 10.8 AC-3")
+    Do $$$AssertTrue(tBody [ "page-of-row", "onCitationClick body explains the missing page-of-row lookup per Task 0 finding")
+    ; Cross-check the deferred-work entry exists.
+    Set tDeferredFile = ##class(%Stream.FileCharacter).%New()
+    Set tSC = tDeferredFile.LinkToFile($Get(^||TestProjectRoot, "C:\git\iris-session-agent") _ "\_bmad-output\implementation-artifacts\deferred-work.md")
+    If $$$ISERR(tSC) Quit
+    Set tDeferredText = ""
+    While 'tDeferredFile.AtEnd {
+        Set tDeferredText = tDeferredText _ tDeferredFile.Read(32000)
+    }
+    Do $$$AssertTrue(tDeferredText [ "Story 10.8 AC-3", "deferred-work.md contains Story 10.8 AC-3 deferral entry (Rule 9)")
+    Quit
+}
+
 /// <p>Helper — count rows in an audit table. <code>pTable</code> is the
 /// SQL-qualified table name (e.g., <code>SessionAgent_Audit.LlmCall</code>);
 /// <code>pFilter</code> is an optional WHERE-clause fragment without the

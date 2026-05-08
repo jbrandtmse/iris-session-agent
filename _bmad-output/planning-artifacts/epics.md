@@ -1106,7 +1106,7 @@ So that the maintainer can verify the full backend works before staking pilot op
 1. **Story 3.1**: Chat Panel HTML Draw Helper + Minimum CSS Tokens (`EnsPortal.Util.ChatPanelDrawHelper` + `UI.ChatPanel` CSS contributors + minimum `--sa-*` token set)
 2. **Story 3.2**: Client-Side `chat-panel.js` MVP — input submission, agent response rendering, tool-call cards, citation-chip anchors, fallback Markdown-as-text render path (UX-DR14)
 3. **Story 3.3**: `SessionAgent.EnsPortal.VisualTrace` subclass — "Ask the agent" tab placement + `SendChatMessage` ZenMethod hyperevent + returning-conversation surfacing on tab open
-4. **Story 3.4**: Citation chips with parent `selectItem`/`updateTabs` integration — six variants, partial off-page sync (MVP scope)
+4. **Story 3.4**: Citation chips with parent `selectItem`/`updateTabs` integration — six variants, partial off-page sync (MVP scope; Growth-tier full sync resolved by Story 10.8 per AC-6)
 5. **Story 3.5**: Empty states + config-empty prompt (admin variant) + provider-error envelopes
 6. **Story 3.6**: Cross-Browser Smoke Test + Accessibility Inheritance Verification
 7. **Story 3.7**: PRD MVP Exit Criteria Validation — Pilot Operator Walkthrough on a Real Failed Session
@@ -1230,7 +1230,7 @@ So that I can verify any claim in the agent's answer with one click (FR11) and t
 **When** they implement `ClientMethod onCitationClick(type, id, klass)` on `SessionAgent.EnsPortal.VisualTrace`
 **Then** the method dispatches by `type`: `rule|event|message|ack|iolog` → parent-panel navigation; `tool` → in-chat scroll-and-expand
 **And** for parent-panel navigation, the method first attempts on-page navigation: invokes `zenPage.svgPage.selectItem(null, type, svgId, id, klass, line)` (parameters per parent's `EnsPortal.VisualTrace` API — verified by reading `irislib/EnsPortal/VisualTrace.cls` source per project rule "IRIS Library Source") which auto-updates `zenPage.currentId/currentType/currentClass` + triggers `updateTabs(true)` + highlights the SVG box
-**And** for off-page items (cited row not on the current SVG page), the method sets `zenPage.currentId/currentType/currentClass` directly and calls `zenPage.updateTabs(true)` — Header tab re-renders with the cited row's details; SVG highlight does NOT update (operator can navigate pages manually) — accepted MVP partial sync per UX-DR24-MVP
+**And** for off-page items (cited row not on the current SVG page), the method sets `zenPage.currentId/currentType/currentClass` directly and calls `zenPage.updateTabs(true)` — Header tab re-renders with the cited row's details; SVG highlight does NOT update (operator can navigate pages manually) — accepted MVP partial sync per UX-DR24-MVP (MVP partial-sync limitation — Header tab updates, SVG stays; **Growth-tier full sync per UX-DR24-Growth resolved by Story 10.8 with pragmatic-acceptance fallback** — see `deferred-work.md` §"Story 10.8 AC-3 pragmatic-acceptance fallback" for the future-epic page-of-row lookup work item)
 
 **Given** a `sa-cite-tool` chip is clicked
 **When** the handler dispatches the `tool` type

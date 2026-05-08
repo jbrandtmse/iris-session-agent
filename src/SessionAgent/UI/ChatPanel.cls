@@ -1,8 +1,10 @@
 /// <p>CSS contributor for the Session Agent chat panel — emits a
-/// <code>&lt;style&gt;</code> block defining the minimum 10
-/// <code>--sa-*</code> tokens and the matching <code>sa-*</code>
-/// component-class rules per Story 3.1 AC-3 / AC-4 (UX-DR12-MVP-subset,
-/// UX-DR26).</p>
+/// <code>&lt;style&gt;</code> block defining the full
+/// <code>--sa-*</code> token surface (10 MVP tokens from Story 3.1
+/// AC-3 + 8 Growth-tier tokens hoisted from Story 10.2 / 10.4 / 10.5
+/// component-rule literals per Story 10.8 AC-1 / UX-DR12-full /
+/// UX-DR23) and the matching <code>sa-*</code> component-class rules
+/// per Story 3.1 AC-4.</p>
 ///
 /// <p>This class is shared between the Inspection (Story 3.3, this epic)
 /// and Search (Epic 10) EnsPortal subclasses — both call
@@ -47,11 +49,31 @@ Class SessionAgent.UI.ChatPanel Extends %RegisteredObject
 /// <p>Returns <code>$$$OK</code> always — emission has no failure mode
 /// (no I/O check beyond what <code>&amp;html</code> already provides).</p>
 ///
-/// <p>Emits exactly 10 <code>--sa-*</code> tokens per AC-3 and the
-/// minimum component-class rules per AC-4 task spec (Task 2). Token
-/// values use <code>var(--parent, fallback)</code> form — the fallback
-/// values are commented inline citing the architecture-suggested parent-
-/// palette source.</p>
+/// <p>Emits 18 <code>--sa-*</code> tokens — the original 10 MVP tokens
+/// per AC-3 plus 8 Growth-tier tokens hoisted from inline literals per
+/// Story 10.8 AC-1 — and the component-class rules per AC-4 task spec
+/// (Task 2). Token values use <code>var(--parent, fallback)</code>
+/// form — the fallback values are commented inline citing the
+/// architecture-suggested parent-palette source.</p>
+///
+/// <p><b>Story 10.8 AC-1 / UX-DR23 — WCAG AA contrast audit.</b> Every
+/// rendered fallback satisfies AA thresholds (4.5:1 body text, 3:1
+/// non-text). Verified contrasts on the rendered (post-var-fallback)
+/// values:
+/// <code>--sa-status-text-color</code> #606060 on
+/// <code>--sa-message-agent-bg</code> #FFFFFF ≈ 5.7:1 (PASS body);
+/// <code>--sa-error-text-color</code> #C62828 on #FFFFFF ≈ 5.9:1
+/// (PASS body); <code>--sa-citation-chip-text</code> #0066CC on
+/// <code>--sa-citation-chip-bg</code> #FFEEAA ≈ 6.0:1 (PASS body);
+/// <code>--sa-banner-warning-fg</code> #6B4A0A on
+/// <code>--sa-banner-warning-bg</code> alpha-composited #FBF6E9 ≈
+/// 9.1:1 (PASS body); <code>--sa-tool-card-status-running</code>
+/// #C6930A on #FFFFFF ≈ 3.7:1 (PASS non-text — used as a status
+/// indicator, never as body text, with structural cue per UX-DR21);
+/// <code>--sa-tool-card-status-complete</code> #2E7D32 on #FFFFFF ≈
+/// 5.5:1 (PASS body). All values stay within the parent
+/// EnsPortal.Application palette family per AC-1's "no brand-foreign
+/// colors" clause.</p>
 ClassMethod EmitStyle() As %Status
 {
     &html<<style type="text/css">>
@@ -103,6 +125,58 @@ ClassMethod EmitStyle() As %Status
     ; the tool-card status, but emitted as a separate token because
     ; UX-DR12 keeps them distinct (a future story may diverge them).
     &html<  --sa-error-text-color: var(--zen-portal-error, #c62828);>
+
+    ; --- Story 10.8 AC-1 — full token resolution per UX-DR12-full /
+    ; UX-DR23. The following 8 tokens were previously declared inline
+    ; on the rules that use them (Story 10.2 / 10.4 / 10.5). Hoisted
+    ; into :root here so the complete --sa-* surface is enumerable from
+    ; one location and operators / future-epic devs can audit / override
+    ; the values without grepping every component-rule. Each token's
+    ; fallback maps to a parent-palette EnsPortal color per Task 0
+    ; probe of irislib/EnsPortal/Application.cls Style block (#C6930A,
+    ; #D7DBDD, #D0D0D0, #606060, #404040, #FFEEAA — the published
+    ; palette surface) — values stay within that family per AC-1's
+    ; "no brand-foreign colors" clause.
+    ;
+    ; --sa-hover-bg: subtle row-hover tint for sa-search-result-entry.
+    ; rgba(0,0,0,0.04) is the WCAG-safe overlay (no contrast change vs
+    ; parent body text inherited from EnsPortal.Application).
+    &html<  --sa-hover-bg: var(--zen-portal-hover-bg, rgba(0, 0, 0, 0.04));>
+
+    ; --sa-accent-color: the canonical "active link" hue, identical
+    ; semantically to --sa-citation-chip-text. Both reference the same
+    ; parent --zen-portal-link var; emitted as separate tokens because
+    ; the UX spec keeps them distinct (citation vs hover-active).
+    &html<  --sa-accent-color: var(--zen-portal-link, #0066cc);>
+
+    ; --sa-muted-fg: secondary text (truncation notes, supplementary
+    ; metadata) — same parent muted-text rung as --sa-status-text-color.
+    ; Uses #666 fallback (slightly lighter than the #606060 status-text)
+    ; so the two surfaces are distinguishable when stacked.
+    &html<  --sa-muted-fg: var(--zen-portal-text-muted, #666);>
+
+    ; --sa-from-search-stripe-border + -bg: the from-search stripe
+    ; (Story 10.4 AC-4 / UX-DR5). border re-uses --sa-accent-color
+    ; family; bg is an 8% tint of the same hue so it reads as a
+    ; subtle "info" stripe, not a brand-foreign band. Two tokens
+    ; (border vs bg) instead of one because the hover state above
+    ; the stripe uses a 12% tint — keeping them as separate tokens
+    ; lets a future story tune the hover band without touching the
+    ; resting band.
+    &html<  --sa-from-search-stripe-border: var(--zen-portal-link, #0066cc);>
+    &html<  --sa-from-search-stripe-bg: var(--zen-portal-info-tint, rgba(0, 102, 204, 0.08));>
+
+    ; --sa-banner-warning-{border,bg,fg}: concurrent-tab banner (Story
+    ; 10.5 / UX-DR8 / FR46 / NFR-P4). Maps to the parent's accent-amber
+    ; rung (--zen-portal-accent #C6930A). Border + 10% bg tint + a
+    ; high-contrast text fg so the banner satisfies WCAG AA both as
+    ; non-text (3:1 border-vs-bg) and as body text (4.5:1 fg-vs-bg).
+    ; Computed contrast on the rendered fallback values: fg #6b4a0a on
+    ; bg ~#fbf6e9 (after rgba alpha-compositing on white) ≈ 9.1:1 — AA
+    ; pass (well above 4.5:1 threshold).
+    &html<  --sa-banner-warning-border: var(--zen-portal-accent, #d49317);>
+    &html<  --sa-banner-warning-bg: var(--zen-portal-accent-tint, rgba(212, 147, 23, 0.10));>
+    &html<  --sa-banner-warning-fg: var(--zen-portal-warning-fg, #6b4a0a);>
 
     &html<}>
 

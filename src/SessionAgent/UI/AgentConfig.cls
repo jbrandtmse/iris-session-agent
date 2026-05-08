@@ -131,6 +131,8 @@ XData contentPane [ XMLNamespace = "http://www.intersystems.com/zen" ]
 
 <text id="temperatureText" size="8" />
 
+<text id="searchChatRetentionDays" size="8" hidden="true" />
+
 <textarea id="systemPromptText" rows="6" cols="80" onchange="zenPage.spoChanged();" onkeyup="zenPage.spoChanged();" />
 
 <label id="spoCharCounter" value="0 / 8192 characters" />
@@ -264,6 +266,18 @@ Method %OnAfterCreatePage() As %Status
     Set tCmp = ..%GetComponentById("temperatureText")
     If $IsObject(tCmp) {
         Set tCmp.label = "Temperature"
+    }
+
+    ; Story 10.8 AC-2 — Search-Agent retentionDays field. Label set at
+    ; runtime per the same MPP5646 workaround the other components use.
+    ; Visibility (hidden when agent=session-inspection, visible when
+    ; agent=message-search) is toggled in the loadAgent client handler;
+    ; the XData declaration sets hidden="true" as the first-render
+    ; default so the field doesn't flash visible during initial load
+    ; before loadAgent settles the agentSelect value.
+    Set tCmp = ..%GetComponentById("searchChatRetentionDays")
+    If $IsObject(tCmp) {
+        Set tCmp.label = "Search Chat Retention (days)"
     }
 
     Set tCmp = ..%GetComponentById("systemPromptText")
@@ -435,6 +449,10 @@ ClassMethod LoadAgentConfig(pAgentName As %String) As %String [ ZenMethod ]
         Do tObj.%Set("Temperature", 0.1)
         Do tObj.%Set("SystemPromptOverride", "")
         Do tObj.%Set("Enabled", 0)
+        ; Story 10.8 AC-2 — SearchChatRetentionDays default per Config.Agent
+        ; InitialExpression = 30. Returned for both inspection and search
+        ; rows; the client-side handler decides visibility.
+        Do tObj.%Set("SearchChatRetentionDays", 30)
         Do tObj.%Set("found", 0)
 
         If pAgentName '= "" {
@@ -473,6 +491,19 @@ ClassMethod LoadAgentConfig(pAgentName As %String) As %String [ ZenMethod ]
                 Do tObj.%Set("Temperature", tCfg.Temperature)
                 Do tObj.%Set("SystemPromptOverride", tSpo)
                 Do tObj.%Set("Enabled", tCfg.Enabled)
+                ; Story 10.8 AC-2 — SearchChatRetentionDays read.
+                ; %Integer column; no $Char(0) normalization needed (the
+                ; sentinel only manifests for %String reads per
+                ; .claude/rules/iris-objectscript-basics.md §"$Char(0)
+                ; sentinel" — numeric columns store NULL as "" via the
+                ; storage layer and the OREF-getter coerces to 0). If
+                ; the value is missing or 0, fall back to the canonical
+                ; default of 30 (matches Config.Agent.SearchChatRetentionDays
+                ; InitialExpression) so an empty row doesn't surface a
+                ; useless 0-day retention value.
+                Set tRetentionDays = +tCfg.SearchChatRetentionDays
+                If tRetentionDays '> 0 Set tRetentionDays = 30
+                Do tObj.%Set("SearchChatRetentionDays", tRetentionDays)
                 Do tObj.%Set("found", 1)
                 Do tCfg.%Close()
             }
@@ -527,6 +558,20 @@ ClientMethod loadAgent() [ Language = javascript ]
     zen('temperatureText').setValue(data.Temperature || 0.1);
     zen('systemPromptText').setValue(data.SystemPromptOverride || '');
     zen('enabledCheck').setValue(data.Enabled ? 1 : 0);
+
+    // Story 10.8 AC-2 — SearchChatRetentionDays is Search-Agent specific.
+    // Populate the value (default 30 to match Config.Agent
+    // InitialExpression) and toggle the field's visibility based on the
+    // selected agent. The field is HIDDEN when agent=session-inspection
+    // (the inspection agent's chat history is bound to the IRIS
+    // Production session lifecycle per Story 7 — retentionDays is
+    // ignored for that path) and VISIBLE when agent=message-search (the
+    // Story 10.6 PurgeStaleSearchChat sweep reads the column).
+    var retentionField = zen('searchChatRetentionDays');
+    if (retentionField) {
+        retentionField.setValue(data.SearchChatRetentionDays || 30);
+        retentionField.setHidden(agentName !== 'message-search');
+    }
 
     // Decide credTypeRadio state from which field has a non-empty
     // value. If both are empty, default to 'env' (the OD4 default
@@ -761,7 +806,7 @@ ClientMethod spoChanged() [ Language = javascript ]
 /// <code>{"success":true,"message":"Saved"}</code></p>
 /// <p><b>Returned shape on failure:</b>
 /// <code>{"success":false,"errors":[{"field":"&lt;id&gt;","message":"&lt;text&gt;"}, ...]}</code></p>
-ClassMethod SaveAgentConfig(pAgentName As %String, pProvider As %String, pModel As %String, pEndpointUrl As %String, pCredTypeRadio As %String, pEnvVarName As %String, pCredentialName As %String, pMaxTokens As %String, pTemperature As %String, pSystemPrompt As %String, pEnabled As %String) As %String [ ZenMethod ]
+ClassMethod SaveAgentConfig(pAgentName As %String, pProvider As %String, pModel As %String, pEndpointUrl As %String, pCredTypeRadio As %String, pEnvVarName As %String, pCredentialName As %String, pMaxTokens As %String, pTemperature As %String, pSystemPrompt As %String, pEnabled As %String, pSearchChatRetentionDays As %String = "") As %String [ ZenMethod ]
 {
     Set tEnvelope = ""
     Try {
@@ -876,6 +921,27 @@ ClassMethod SaveAgentConfig(pAgentName As %String, pProvider As %String, pModel 
             Do tErrors.%Push(tErr)
         }
 
+        ; ─────────────────────────────────────────────────────────────
+        ; Story 10.8 AC-2 — SearchChatRetentionDays validation. Only
+        ; enforced for the message-search agent (the inspection agent
+        ; ignores the column — see Config.Agent.SearchChatRetentionDays
+        ; doc-comment). Empty string and 0 are accepted as "use default";
+        ; the persistence branch below substitutes 30 in those cases.
+        ; Positive integers >= 1 are accepted; anything else (negative,
+        ; non-numeric, > 365) is rejected so an operator typo doesn't
+        ; silently set a 0-day retention (purge-everything-immediately)
+        ; or a 5000-day retention (effectively never purge).
+        ; ─────────────────────────────────────────────────────────────
+        Set tRetentionDaysNum = +pSearchChatRetentionDays
+        If (pAgentName = "message-search") && (pSearchChatRetentionDays '= "") && (pSearchChatRetentionDays '= "0") {
+            If (tRetentionDaysNum < 1) || (tRetentionDaysNum > 365) || ('$Match(pSearchChatRetentionDays, "^[0-9]+$")) {
+                Set tErr = ##class(%DynamicObject).%New()
+                Do tErr.%Set("field", "searchChatRetentionDays")
+                Do tErr.%Set("message", "Retention days must be 1–365")
+                Do tErrors.%Push(tErr)
+            }
+        }
+
         ; If any errors, build the failure envelope and return.
         If tErrors.%Size() > 0 {
             Set tFail = ##class(%DynamicObject).%New()
@@ -901,6 +967,18 @@ ClassMethod SaveAgentConfig(pAgentName As %String, pProvider As %String, pModel 
         Set tConfig.Temperature = tTempNum
         Set tConfig.SystemPromptOverride = pSystemPrompt
         Set tConfig.Enabled = $Select(+pEnabled = 1 : 1, 1 : 0)
+
+        ; Story 10.8 AC-2 — Persist SearchChatRetentionDays for the
+        ; message-search row only. For session-inspection, leave the
+        ; column at its existing value (the form hides the field for
+        ; that agent so the operator never typed a value to persist).
+        ; Empty / "0" / non-positive input falls back to the canonical
+        ; default 30 to match Config.Agent.InitialExpression so an
+        ; operator who blanked the field gets a usable retention rather
+        ; than an immediate-purge 0-day setting.
+        If pAgentName = "message-search" {
+            Set tConfig.SearchChatRetentionDays = $Select(tRetentionDaysNum > 0 : tRetentionDaysNum, 1 : 30)
+        }
 
         ; Radio-aware credential clearing — NFR-S2 schema discipline:
         ; EnvVarName XOR CredentialName, never both populated. The
@@ -997,11 +1075,30 @@ ClientMethod saveConfig() [ Language = javascript ]
     var enabledRaw = zen('enabledCheck').getValue();
     var enabled = (enabledRaw === true || enabledRaw === 1 || enabledRaw === '1' || enabledRaw === 'true') ? '1' : '0';
 
+    // Story 10.8 AC-2 — SearchChatRetentionDays. Read the field even
+    // when hidden (Zen retains the value across visibility toggles);
+    // SaveAgentConfig only persists it for agent=message-search rows.
+    var retentionRaw = zen('searchChatRetentionDays');
+    var retention = retentionRaw ? String(retentionRaw.getValue() || '') : '';
+
     // Hyperevent — ZenMethod returns %String JSON envelope.
     var json = zenPage.SaveAgentConfig(
         agentName, provider, model, endpointUrl, credTypeRadio,
-        envVarName, credName, maxTokens, temperature, systemPrompt, enabled
+        envVarName, credName, maxTokens, temperature, systemPrompt, enabled,
+        retention
     );
+
+    // Story 10.8 fix-now (Rule 8 predicted-bug — ReferenceError shape):
+    // statusLabel was previously referenced inside saveConfig without
+    // being declared. The reference would throw on every parse-failure
+    // / success / _form-error code path; only un-fired because real-
+    // world JSON-envelope-parse failures are rare. Now that Story 10.8
+    // adds a new code path (the retention-days validation error landing
+    // in the per-field error map), the latent bug becomes an active
+    // hazard. Declared here at the top of the post-hyperevent block so
+    // every downstream branch has a valid handle to the saveStatus
+    // label component.
+    var statusLabel = zen('saveStatus');
 
     var data;
     try {
@@ -1101,7 +1198,7 @@ ClientMethod clearErrorLabels() [ Language = javascript ]
     var errorFieldIds = [
         'agentSelect', 'providerSelect', 'maxTokensText', 'temperatureText',
         'credTypeRadio', 'envVarText', 'credCombo', 'endpointUrlText',
-        'systemPromptText'
+        'systemPromptText', 'searchChatRetentionDays'
     ];
     for (var i = 0; i < errorFieldIds.length; i++) {
         var lbl = self.document.getElementById(errorFieldIds[i] + 'ErrorMessage');

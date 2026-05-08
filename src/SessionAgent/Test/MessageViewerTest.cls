@@ -47,19 +47,57 @@ Method %OnNew(initvalue As %String = "") As %Status
     Quit $$$OK
 }
 
+/// <p>Property — captures the message-search agent's pre-test
+/// <code>Enabled</code> flag so <method>OnAfterOneTest</method> can
+/// restore it. Story 12.2 fix-now: <method>TestSendChatMessageHappyPath</method>
+/// requires <code>message-search</code> to be Enabled=1 at runtime, but
+/// operator state defaults to disabled in fresh installs / many test
+/// hosts; without this scaffold the test fails with "Agent
+/// message-search is disabled" on any host where the agent has not been
+/// manually enabled. Pre-existing failure recorded by Story 12.2 as a
+/// fix-now per Rule 8 (defer threshold raised — small, scoped, specific
+/// predicted-bug shape: anyone running this test on a fresh namespace
+/// hits the same false-failure).</p>
+Property PreservedMessageSearchEnabled As %Boolean [ InitialExpression = -1 ];
+
 /// <p>Setup before each test — clear any leftover provider override
-/// from a previous test (defensive — every test that uses the mock
-/// installs its own override).</p>
+/// from a previous test, and ensure the message-search agent is
+/// enabled so <method>TestSendChatMessageHappyPath</method> doesn't
+/// hit the "Agent disabled" fast-path (per Story 12.2 fix-now).</p>
 Method OnBeforeOneTest() As %Status
 {
     Do ##class(SessionAgent.Agent.ProviderOverride).ClearOverride()
+
+    ; Story 12.2 fix-now — enable message-search if currently disabled,
+    ; capturing prior state for restoration in OnAfterOneTest.
+    Set tCfg = ##class(SessionAgent.Config.Agent).AgentNameIdxOpen("message-search")
+    If $IsObject(tCfg) {
+        Set ..PreservedMessageSearchEnabled = +tCfg.Enabled
+        If '+tCfg.Enabled {
+            Set tCfg.Enabled = 1
+            Do tCfg.%Save()
+        }
+    } Else {
+        Set ..PreservedMessageSearchEnabled = -1
+    }
     Quit $$$OK
 }
 
-/// <p>Teardown after each test — clear provider override.</p>
+/// <p>Teardown after each test — clear provider override and restore
+/// the message-search agent's prior <code>Enabled</code> flag if this
+/// test mutated it.</p>
 Method OnAfterOneTest() As %Status
 {
     Do ##class(SessionAgent.Agent.ProviderOverride).ClearOverride()
+
+    ; Story 12.2 fix-now — restore prior Enabled state.
+    If ..PreservedMessageSearchEnabled '= -1 {
+        Set tCfg = ##class(SessionAgent.Config.Agent).AgentNameIdxOpen("message-search")
+        If $IsObject(tCfg), tCfg.Enabled '= ..PreservedMessageSearchEnabled {
+            Set tCfg.Enabled = ..PreservedMessageSearchEnabled
+            Do tCfg.%Save()
+        }
+    }
     Quit $$$OK
 }
 

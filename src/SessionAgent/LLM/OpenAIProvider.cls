@@ -74,6 +74,8 @@
 /// (lines 426, 558, 605, 631, 633, 665); Post() method (line 986);
 /// HttpResponse property (line 780).</li>
 /// </ul>
+Include Ensemble
+
 Class SessionAgent.LLM.OpenAIProvider Extends SessionAgent.LLM.Provider
 {
 
@@ -255,6 +257,7 @@ Method CallMessages(pCanonicalHistory As %DynamicArray, pToolDefs As %DynamicArr
         Set tHeaders = $$$NULLOREF
         Set tMidFlight = 0
         Set tExhausted = 0
+        Set tPostExText = ""
 
         While tAttempt < tMaxAttempts {
             ; Reset the per-attempt response.
@@ -266,6 +269,7 @@ Method CallMessages(pCanonicalHistory As %DynamicArray, pToolDefs As %DynamicArr
             ; failure is treated as mid-flight (no retry) per
             ; architecture.md:649.
             Set tHttpFailed = 0
+            Set tPostExText = ""
             Try {
                 Set tHttpResp = ..IssueHttpsPost(tPayloadJson, tAuthHeader, tEndpointUrl, tTimeoutSec)
                 Set tStatusCode = +tHttpResp.%Get("statusCode")
@@ -275,6 +279,12 @@ Method CallMessages(pCanonicalHistory As %DynamicArray, pToolDefs As %DynamicArr
                 }
             } Catch postEx {
                 Set tHttpFailed = 1
+                ; Story 12.2 BUG-02 — capture the underlying exception text
+                ; so the error envelope + Ensemble event log carry an
+                ; actionable diagnostic instead of just the generic
+                ; "mid-flight failure" framing.
+                Set tPostExText = postEx.DisplayString()
+                $$$LOGERROR("SessionAgent.LLM.OpenAIProvider mid-flight HTTP failure: " _ tPostExText)
             }
 
             If tHttpFailed {
@@ -314,7 +324,15 @@ Method CallMessages(pCanonicalHistory As %DynamicArray, pToolDefs As %DynamicArr
 
         ; Step 4 — classify the final state.
         If tMidFlight {
-            Do ..PopulateErrorEnvelope(.pProviderResponse, "OpenAI mid-flight failure (request may have been processed)")
+            ; Story 12.2 BUG-02 — append the captured exception text to the
+            ; generic framing so the operator sees the actual failure cause
+            ; (SSL handshake / DNS / timeout / etc.) instead of just
+            ; "mid-flight failure".
+            Set tMidFlightMsg = "OpenAI mid-flight failure (request may have been processed)"
+            If tPostExText '= "" {
+                Set tMidFlightMsg = tMidFlightMsg _ ": " _ tPostExText
+            }
+            Do ..PopulateErrorEnvelope(.pProviderResponse, tMidFlightMsg)
             Quit
         }
 

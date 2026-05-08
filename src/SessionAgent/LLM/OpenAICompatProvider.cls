@@ -111,6 +111,8 @@
 /// — Https/SSLConfiguration/Timeout/Server/Port/Location/EntityBody
 /// properties; Post() method; HttpResponse property.</li>
 /// </ul>
+Include Ensemble
+
 Class SessionAgent.LLM.OpenAICompatProvider Extends SessionAgent.LLM.Provider
 {
 
@@ -324,6 +326,7 @@ Method CallMessages(pCanonicalHistory As %DynamicArray, pToolDefs As %DynamicArr
         Set tHeaders = $$$NULLOREF
         Set tMidFlight = 0
         Set tExhausted = 0
+        Set tPostExText = ""
 
         While tAttempt < tMaxAttempts {
             Set tStatusCode = 0
@@ -340,6 +343,10 @@ Method CallMessages(pCanonicalHistory As %DynamicArray, pToolDefs As %DynamicArr
                 }
             } Catch postEx {
                 Set tHttpFailed = 1
+                ; Story 12.2 BUG-02 — capture exception text for diagnostic
+                ; envelope and Ensemble event log.
+                Set tPostExText = postEx.DisplayString()
+                $$$LOGERROR("SessionAgent.LLM.OpenAICompatProvider mid-flight HTTP failure: " _ tPostExText)
             }
 
             If tHttpFailed {
@@ -372,7 +379,12 @@ Method CallMessages(pCanonicalHistory As %DynamicArray, pToolDefs As %DynamicArr
 
         ; Step 5 — classify the final state.
         If tMidFlight {
-            Do ..PopulateErrorEnvelope(.pProviderResponse, "OpenAI-compatible mid-flight failure (request may have been processed)")
+            ; Story 12.2 BUG-02 — append captured exception text.
+            Set tMidFlightMsg = "OpenAI-compatible mid-flight failure (request may have been processed)"
+            If tPostExText '= "" {
+                Set tMidFlightMsg = tMidFlightMsg _ ": " _ tPostExText
+            }
+            Do ..PopulateErrorEnvelope(.pProviderResponse, tMidFlightMsg)
             Quit
         }
 

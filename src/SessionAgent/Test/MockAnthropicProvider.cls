@@ -62,6 +62,11 @@ Property LastPayloadJson As %String(MAXLEN = 65535);
 /// assert it carries the two Anthropic headers in the right order.</p>
 Property LastAuthHeaderList As %String(MAXLEN = 4096);
 
+/// <p>Story 12.2 BUG-02 — when non-empty, the override throws an
+/// <CLASS>%Exception.General</CLASS> with this <code>DisplayString()</code>
+/// payload to drive the mid-flight catch path.</p>
+Property MockThrowText As %String;
+
 /// <p>Override — return the canned response set by the test, increment
 /// <property>CallCount</property>, capture the payload + auth headers
 /// for assertion.</p>
@@ -70,6 +75,11 @@ Method IssueHttpsPost(pPayloadJson As %String, pAuthHeaderList As %String, pEndp
     Set ..CallCount = ..CallCount + 1
     Set ..LastPayloadJson = pPayloadJson
     Set ..LastAuthHeaderList = pAuthHeaderList
+
+    ; Story 12.2 BUG-02 — drive the mid-flight catch path.
+    If ..MockThrowText '= "" {
+        Throw ##class(%Exception.General).%New("MockThrow",,,..MockThrowText)
+    }
 
     Set tStatusCode = ..MockStatusCode
     Set tBodyJson = ..MockBodyJson

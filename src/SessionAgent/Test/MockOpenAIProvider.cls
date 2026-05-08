@@ -38,6 +38,12 @@ Property CallCount As %Integer [ InitialExpression = 0 ];
 /// real-budget loop.</p>
 Property UseFastRetryParams As %Boolean [ InitialExpression = 0 ];
 
+/// <p>Story 12.2 BUG-02 — when non-empty, the override throws an
+/// <CLASS>%Exception.General</CLASS> whose <code>DisplayString()</code>
+/// surfaces this text. Drives the mid-flight catch path so tests can
+/// assert the error envelope carries the captured exception substring.</p>
+Property MockThrowText As %String;
+
 /// <p>Override — return the canned response set by the test, increment
 /// <property>CallCount</property>. Same return shape as the production
 /// method:
@@ -45,6 +51,11 @@ Property UseFastRetryParams As %Boolean [ InitialExpression = 0 ];
 Method IssueHttpsPost(pPayloadJson As %String, pAuthHeader As %String, pEndpointUrl As %String, pTimeoutSec As %Integer) As %DynamicObject
 {
     Set ..CallCount = ..CallCount + 1
+
+    ; Story 12.2 BUG-02 — drive the mid-flight catch path.
+    If ..MockThrowText '= "" {
+        Throw ##class(%Exception.General).%New("MockThrow",,,..MockThrowText)
+    }
 
     Set tResp = ##class(%DynamicObject).%New()
     Do tResp.%Set("statusCode", ..MockStatusCode)

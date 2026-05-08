@@ -143,7 +143,7 @@ ClassMethod GetInputSchema() As %DynamicObject
             "mode": {"type": "string", "description": "One of 'list' (show user's vocabulary), 'save' (record explicit alias), 'search' (substring-match aliases).", "enum": ["list", "save", "search"]},
             "alias": {"type": "string", "description": "Required for save/search; ignored for list. The operator-confirmed natural-language alias text."},
             "description": {"type": "string", "description": "Optional free-text description of what this alias means; persisted to the (SessionAgent, VocabWrite, explicit) audit-event details by save mode (NOT readable back via list/search; UserVocabulary has no description column)."},
-            "message_body_class": {"type": "string", "description": "Optional per-class refinement key (e.g., 'EnsLib.HL7.Message'). Empty means cross-class."},
+            "message_body_class": {"type": "string", "description": "Optional per-class refinement key (e.g., 'EnsLib.HL7.Message'). Empty means cross-class. Pass the class name only — do not include method names (e.g. pass 'EnsLib.HL7.Message', not 'EnsLib.HL7.Message.GetField')."},
             "limit": {"type": "integer", "description": "List/search mode page size — default 50 for list, 20 for search; cap 200."}
         },
         "required": ["mode"],

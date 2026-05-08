@@ -342,6 +342,35 @@ Method TestRegistryListProvidersIncludesGemini()
     Quit
 }
 
+/// <p>Story 12.2 BUG-02 (AC-1) — when <method>IssueHttpsPost</method>
+/// throws (mid-flight HTTP failure), the resulting envelope's message
+/// MUST carry both the generic "mid-flight failure" framing AND the
+/// captured exception text separated by ": ".</p>
+Method TestMidFlightFailureCarriesExceptionText()
+{
+    Set tCfg = ..BuildTransientConfigAgent()
+    Set tMock = ##class(SessionAgent.Test.MockGeminiProvider).%New()
+    Set tMock.ConfigAgent = tCfg
+    Set tMock.MockThrowText = "Connection timed out: read timeout"
+
+    Set tResp = ##class(SessionAgent.Agent.ProviderResponse).%New()
+    Set tHistory = ..BuildSimpleUserHistory("hello")
+    Set tToolDefs = ##class(%DynamicArray).%New()
+    Set tCacheConfig = ##class(%DynamicObject).%New()
+
+    Set tSC = tMock.CallMessages(tHistory, tToolDefs, "", tCacheConfig, .tResp)
+
+    Do $$$AssertStatusOK(tSC, "CallMessages returns OK on mid-flight (envelope-based error)")
+    Do $$$AssertEquals(tResp.StopReason, "error", "StopReason = error on mid-flight failure")
+    Set tBlock = tResp.Content.%Get(0)
+    Set tText = tBlock.%Get("text")
+    Do $$$AssertTrue(tText [ "mid-flight failure", "Envelope text contains 'mid-flight failure' framing (got: " _ tText _ ")")
+    Do $$$AssertTrue(tText [ ": ", "Envelope text contains ': ' separator (got: " _ tText _ ")")
+    Do $$$AssertTrue(tText [ "Connection timed out", "Envelope text carries exception substring (got: " _ tText _ ")")
+    Do $$$AssertEquals(tMock.CallCount, 1, "Mock invoked once — mid-flight does NOT retry")
+    Quit
+}
+
 /// <p>Helper — build a single-message canonical history with one user
 /// text block.</p>
 ClassMethod BuildSimpleUserHistory(pText As %String) As %DynamicArray [ Internal ]

@@ -59,7 +59,7 @@ ClassMethod GetInputSchema() As %DynamicObject
         "type": "object",
         "properties": {
             "session_id": {"type": "string", "description": "Ens session id"},
-            "rule_class": {"type": "string", "description": "Optional full rule class name (e.g. 'Demo.MyRule') filter."},
+            "rule_class": {"type": "string", "description": "Optional full rule class name (e.g. 'Demo.MyRule') filter. Pass the class name only — do not include method names (e.g. pass 'Demo.MyRule', not 'Demo.MyRule.OnMatch')."},
             "limit": {"type": "integer", "description": "Max rows returned. Default 100.", "minimum": 1, "maximum": 1000}
         },
         "required": ["session_id"],

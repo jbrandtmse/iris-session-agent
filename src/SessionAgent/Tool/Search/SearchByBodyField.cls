@@ -142,7 +142,7 @@ ClassMethod GetInputSchema() As %DynamicObject
     Quit {
         "type": "object",
         "properties": {
-            "search_table_class": {"type": "string", "description": "Fully-qualified Ens.SearchTableBase subclass name (e.g., 'EnsLib.HL7.SearchTable')."},
+            "search_table_class": {"type": "string", "description": "Fully-qualified Ens.SearchTableBase subclass name (e.g., 'EnsLib.HL7.SearchTable'). Pass the class name only — do not include method names (e.g. pass 'EnsLib.HL7.SearchTable', not 'EnsLib.HL7.SearchTable.OnIndex')."},
             "prop_name": {"type": "string", "description": "Indexed property name registered for this SearchTable (e.g., 'PID:3' for HL7 MRN, 'MRN', 'AccountNumber')."},
             "prop_value": {"type": "string", "description": "Exact value to match against PropValue. Wildcards are not interpreted in v1."},
             "time_window_hours": {"type": "integer", "description": "TimeCreated window in hours. Default 168 (7d), max 720 (30d).", "minimum": 1, "maximum": 720},

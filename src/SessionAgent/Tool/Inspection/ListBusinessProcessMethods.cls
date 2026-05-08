@@ -92,7 +92,7 @@ ClassMethod GetInputSchema() As %DynamicObject
     Quit {
         "type": "object",
         "properties": {
-            "bp_class_name": {"type": "string", "description": "Full class name (e.g., SessionAgent.Sample.BP.OrderRouter)."}
+            "bp_class_name": {"type": "string", "description": "Full class name (e.g., SessionAgent.Sample.BP.OrderRouter). Pass the class name only — do not include method names (e.g. pass 'SessionAgent.Sample.BP.OrderRouter', not 'SessionAgent.Sample.BP.OrderRouter.OnRequest')."}
         },
         "required": ["bp_class_name"],
         "additionalProperties": false

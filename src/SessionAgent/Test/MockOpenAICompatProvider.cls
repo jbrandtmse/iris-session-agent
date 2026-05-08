@@ -54,6 +54,11 @@ Property LastPort As %Integer [ InitialExpression = -1 ];
 /// <p>Captured Server (parsed from EndpointUrl).</p>
 Property LastServer As %String(MAXLEN = 512);
 
+/// <p>Story 12.2 BUG-02 — when non-empty, the override throws an
+/// <CLASS>%Exception.General</CLASS> with this <code>DisplayString()</code>
+/// payload to drive the mid-flight catch path.</p>
+Property MockThrowText As %String;
+
 /// <p>Override — return the canned response set by the test, increment
 /// <property>CallCount</property>, capture the payload + auth header +
 /// endpoint URL + parsed Server/Port/Https for assertion.</p>
@@ -63,6 +68,11 @@ Method IssueHttpsPost(pPayloadJson As %String, pAuthHeader As %String, pEndpoint
     Set ..LastPayloadJson = pPayloadJson
     Set ..LastAuthHeader = pAuthHeader
     Set ..LastEndpointUrl = pEndpointUrl
+
+    ; Story 12.2 BUG-02 — drive the mid-flight catch path.
+    If ..MockThrowText '= "" {
+        Throw ##class(%Exception.General).%New("MockThrow",,,..MockThrowText)
+    }
 
     ; Parse the URL the same way the production code does and capture the
     ; result so tests can assert on Https / Port / Server independently.

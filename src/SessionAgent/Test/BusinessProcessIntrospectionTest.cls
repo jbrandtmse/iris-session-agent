@@ -172,6 +172,49 @@ Method TestSourceMissingClassNameReturnsError()
     Quit
 }
 
+/// <p>Story 12.2 BUG-03 (AC-3) — when the LLM appends a method name to
+/// the class name (the empirical wrong-shape pattern), the tool should
+/// strip the last dot-segment, retry the lookup, and (on success) render
+/// "ok" with a <code>class_name_auto_corrected_from</code> top-level
+/// marker showing the original input.</p>
+Method TestSourceWithMethodSuffixAutoCorrects()
+{
+    Set tCtx = ..BuildCtx()
+    Set tBadName = ..#FIXTUREBPCLASS _ ".OnRequest"
+    Set tArgs = {"bp_class_name": (tBadName)}
+    Set tResult = ""
+    Set tSC = ##class(SessionAgent.Tool.Inspection.GetBusinessProcessSource).Invoke(tCtx, tArgs, .tResult)
+    Do $$$AssertStatusOK(tSC, "Invoke returns OK")
+    Set tSc = tResult.structuredContent
+    Do $$$AssertEquals(tSc.%Get("render_strategy"), "ok", "render_strategy = ok after strip-last-segment retry")
+    Do $$$AssertEquals(tSc.%Get("class_name"), ..#FIXTUREBPCLASS, "class_name = stripped (correct) name")
+    Do $$$AssertTrue(tSc.%IsDefined("class_name_auto_corrected_from"), "class_name_auto_corrected_from marker present")
+    Do $$$AssertEquals(tSc.%Get("class_name_auto_corrected_from"), tBadName, "class_name_auto_corrected_from = original input")
+    Do $$$AssertTrue(+tSc.%Get("method_count") > 0, "method_count > 0 (rendered the real BP)")
+    Quit
+}
+
+/// <p>Story 12.2 BUG-03 (AC-3 negative) — when the strip-last-segment
+/// retry still misses, the tool returns the existing class_not_found
+/// envelope AUGMENTED with a <code>candidate_class_name</code> field
+/// showing the stripped name so the LLM can self-correct on the next
+/// turn.</p>
+Method TestSourceUnknownMultiSegmentReturnsCandidate()
+{
+    Set tCtx = ..BuildCtx()
+    Set tBadName = "Totally.NonExistent.Class.Name"
+    Set tArgs = {"bp_class_name": (tBadName)}
+    Set tResult = ""
+    Set tSC = ##class(SessionAgent.Tool.Inspection.GetBusinessProcessSource).Invoke(tCtx, tArgs, .tResult)
+    Do $$$AssertStatusOK(tSC, "Invoke returns OK on still-missing class")
+    Set tSc = tResult.structuredContent
+    Do $$$AssertEquals(tSc.%Get("render_strategy"), "class_not_found", "render_strategy = class_not_found after retry miss")
+    Do $$$AssertEquals(tSc.%Get("class_name"), tBadName, "class_name = original input (preserved)")
+    Do $$$AssertTrue(tSc.%IsDefined("candidate_class_name"), "candidate_class_name field present on retry-miss")
+    Do $$$AssertEquals(tSc.%Get("candidate_class_name"), "Totally.NonExistent.Class", "candidate_class_name = stripped last segment")
+    Quit
+}
+
 /// <p>AC-6 happy path — synthetic BP fixture row.</p>
 Method TestInstanceLiveSessionReturnsBp()
 {

@@ -67,7 +67,7 @@ ClassMethod GetInputSchema() As %DynamicObject
     Quit {
         "type": "object",
         "properties": {
-            "bp_class_name": {"type": "string", "description": "Full class name of the Business Process class (e.g., SessionAgent.Sample.BP.OrderRouter or Ens.BusinessProcess)."}
+            "bp_class_name": {"type": "string", "description": "Full class name of the Business Process class (e.g., SessionAgent.Sample.BP.OrderRouter or Ens.BusinessProcess). Pass the class name only — do not include method names (e.g. pass 'SessionAgent.Sample.BP.OrderRouter', not 'SessionAgent.Sample.BP.OrderRouter.OnRequest')."}
         },
         "required": ["bp_class_name"],
         "additionalProperties": false
@@ -101,8 +101,42 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
         Catch openEx {
             Set tCls = $$$NULLOREF
         }
+
+        ; Story 12.2 BUG-03 — class-name fallback. If the initial lookup
+        ; missed AND the class name contains a "." (multi-segment), strip
+        ; the last dot-segment and retry once. Common LLM slip: "appended
+        ; a method name to the class name". Retry succeeds → render normal
+        ; "ok" envelope using the stripped name + a top-level
+        ; "class_name_auto_corrected_from" field showing the original
+        ; input. Retry still misses → fall through to the existing
+        ; class_not_found envelope, augmented with a
+        ; "candidate_class_name" field so the LLM can self-correct on the
+        ; next turn.
+        Set tOriginalClassName = tClassName
+        Set tAutoCorrected = 0
+        Set tStrippedName = ""
+        If '$IsObject(tCls), tClassName [ "." {
+            Set tSegmentCount = $Length(tClassName, ".")
+            If tSegmentCount > 1 {
+                Set tStrippedName = $Piece(tClassName, ".", 1, tSegmentCount - 1)
+                Try {
+                    Set tCls = ##class(%Dictionary.ClassDefinition).%OpenId(tStrippedName)
+                }
+                Catch retryEx {
+                    Set tCls = $$$NULLOREF
+                }
+                If $IsObject(tCls) {
+                    ; Retry succeeded — proceed with the stripped name as
+                    ; the canonical class name; remember to surface the
+                    ; auto-correction marker.
+                    Set tClassName = tStrippedName
+                    Set tAutoCorrected = 1
+                }
+            }
+        }
+
         If '$IsObject(tCls) {
-            Do pResult.structuredContent.%Set("class_name", tClassName)
+            Do pResult.structuredContent.%Set("class_name", tOriginalClassName)
             Do pResult.structuredContent.%Set("render_strategy", "class_not_found")
             Do pResult.structuredContent.%Set("super_class", "")
             Do pResult.structuredContent.%Set("abstract", 0, "boolean")
@@ -112,7 +146,12 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
             Do pResult.structuredContent.%Set("method_count", 0, "number")
             Do pResult.structuredContent.%Set("property_count", 0, "number")
             Do pResult.structuredContent.%Set("parameter_count", 0, "number")
-            Set pResult.content.%Get(0).text = "class not found: " _ tClassName
+            ; Story 12.2 BUG-03 — surface the candidate stripped name so
+            ; the LLM can self-correct on the next turn.
+            If tStrippedName '= "" {
+                Do pResult.structuredContent.%Set("candidate_class_name", tStrippedName)
+            }
+            Set pResult.content.%Get(0).text = "class not found: " _ tOriginalClassName
             Quit
         }
 
@@ -191,6 +230,11 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
         Do pResult.structuredContent.%Set("property_count", tPropCount, "number")
         Do pResult.structuredContent.%Set("parameter_count", tParamCount, "number")
         Do pResult.structuredContent.%Set("render_strategy", "ok")
+        ; Story 12.2 BUG-03 — surface auto-correction marker when the
+        ; initial lookup missed and the strip-last-segment retry succeeded.
+        If tAutoCorrected {
+            Do pResult.structuredContent.%Set("class_name_auto_corrected_from", tOriginalClassName)
+        }
 
         Set tSuperLabel = $Select(tSuper="":"<no superclass>", 1:"extends " _ tSuper)
         Set pResult.content.%Get(0).text = tClassName _ " (" _ tSuperLabel _ ") — " _ tMethodCount _ " methods, " _ tPropCount _ " properties, " _ tParamCount _ " parameters"

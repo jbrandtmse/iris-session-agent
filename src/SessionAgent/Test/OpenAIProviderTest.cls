@@ -253,6 +253,36 @@ Method TestNoLanguagePythonInClass()
     Quit
 }
 
+/// <p>Story 12.2 BUG-02 (AC-1) — when <method>IssueHttpsPost</method>
+/// throws (mid-flight HTTP failure), the resulting envelope's message
+/// MUST carry both the generic "mid-flight failure" framing AND the
+/// captured exception text separated by ": ". Drives the catch path
+/// via <property>MockThrowText</property>.</p>
+Method TestMidFlightFailureCarriesExceptionText()
+{
+    Set tCfg = ..BuildTransientConfigAgent()
+    Set tMock = ##class(SessionAgent.Test.MockOpenAIProvider).%New()
+    Set tMock.ConfigAgent = tCfg
+    Set tMock.MockThrowText = "SSL handshake failed: certificate has expired"
+
+    Set tResp = ##class(SessionAgent.Agent.ProviderResponse).%New()
+    Set tHistory = ..BuildSimpleUserHistory("hello")
+    Set tToolDefs = ##class(%DynamicArray).%New()
+    Set tCacheConfig = ##class(%DynamicObject).%New()
+
+    Set tSC = tMock.CallMessages(tHistory, tToolDefs, "", tCacheConfig, .tResp)
+
+    Do $$$AssertStatusOK(tSC, "CallMessages returns OK on mid-flight (envelope-based error)")
+    Do $$$AssertEquals(tResp.StopReason, "error", "StopReason = error on mid-flight failure")
+    Set tBlock = tResp.Content.%Get(0)
+    Set tText = tBlock.%Get("text")
+    Do $$$AssertTrue(tText [ "mid-flight failure", "Envelope text contains 'mid-flight failure' framing (got: " _ tText _ ")")
+    Do $$$AssertTrue(tText [ ": ", "Envelope text contains ': ' separator (got: " _ tText _ ")")
+    Do $$$AssertTrue(tText [ "SSL handshake failed", "Envelope text carries exception substring (got: " _ tText _ ")")
+    Do $$$AssertEquals(tMock.CallCount, 1, "Mock invoked once — mid-flight does NOT retry")
+    Quit
+}
+
 /// <p>Helper — drives one finish_reason translation through the mock and
 /// asserts the canonical stopReason maps as expected.</p>
 Method AssertFinishReasonMaps(pFinish As %String, pExpected As %String, pMsg As %String) [ Internal ]

@@ -42,7 +42,7 @@ ClassMethod GetInputSchema() As %DynamicObject
     Quit {
         "type": "object",
         "properties": {
-            "message_body_class_name": {"type": "string", "description": "Exact full Ens body class name (e.g. 'EnsLib.HL7.Message')."},
+            "message_body_class_name": {"type": "string", "description": "Exact full Ens body class name (e.g. 'EnsLib.HL7.Message'). Pass the class name only — do not include method names (e.g. pass 'EnsLib.HL7.Message', not 'EnsLib.HL7.Message.GetField')."},
             "time_window_hours": {"type": "integer", "description": "TimeCreated window in hours. Default 24, max 720.", "minimum": 1, "maximum": 720},
             "limit": {"type": "integer", "description": "Max sessions returned. Default 50, max 500.", "minimum": 1, "maximum": 500}
         },

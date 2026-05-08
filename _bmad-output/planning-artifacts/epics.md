@@ -425,6 +425,20 @@ Note: At end of Epic 8, the Search Agent is callable programmatically and via `v
 **ARs covered:** AR4-PurgeStaleSearchChat (task implementation), AR4-UserVocabularyDecay (task implementation, weekly Sunday sweep)
 **NFRs covered:** NFR-R3 (search-history TTL — 30d default, configurable), NFR-SC4-Search (audit-log volume bounded — Search portion), NFR-C5-Growth (vendored bundle ships)
 
+### Post-v1.0.0 maintenance epics
+
+The epics below were opened after v1.0.0 shipped to address findings from operator usage. They do not change MVP scope — they refine and harden the surfaces already shipped.
+
+### Epic 11: v1.0.1 Patch Release — Targeted Bug Fixes
+
+**Operator outcome:** Four targeted fixes addressing items deferred from Epic 10's retrospective: MaxTokens-on-rotation cascade preservation, EnsureIsErrorOnPrepare defensive sweep across 9 inspection tools, multi-namespace install programmatic bundle copy, OpenAI-compat URL construction investigation. Tagged as v1.0.1.
+
+### Epic 12: Walkthrough Hardening — Bug Fixes & UX Polish
+
+**Operator outcome:** Address the 8 bugs and 3 documentation enhancements surfaced by the 2026-05-08 project-lead walkthrough on the v1.0.1 install. Improves operator experience on both agent surfaces (Search Agent on Message Viewer + Inspection Agent on Visual Trace) without introducing new architectural decisions or changing MVP exit criteria. Source-of-truth artifact: `_bmad-output/implementation-artifacts/walkthrough-bugs-2026-05-08.md`.
+
+**Severity distribution:** 3 HIGH, 4 MEDIUM, 1 LOW, 3 doc-enhancement.
+
 ### Vision Tier — Out of Scope (post-v1)
 
 Per [PRD §"Vision (Future, post-v1)"](prd.md#vision-future-post-v1) — explicitly deferred to post-v1 work. Not in any v1 epic; included here for completeness:
@@ -2807,3 +2821,37 @@ So that we explicitly satisfy [PRD §"Product Scope" v1 completion](prd.md): bot
 **And** the README + `docs/operator-quickstart.md` are updated with any feedback worth incorporating
 **And** the Open Exchange listing is created/updated per architecture OD10
 **And** the **Epic 10 acceptance gate is met + v1 SCOPE COMPLETE**: both agents working end-to-end, hand-off validated, vocabulary learning operational, sweep tasks scheduled, vendored Markdown bundle deployed, full UX coherence achieved, FR59 cross-matrix gate passed against the full 23-tool catalog
+
+---
+
+## Epic 12: Walkthrough Hardening — Bug Fixes & UX Polish
+
+**Status:** backlog (opened 2026-05-08).
+
+**Source:** `_bmad-output/implementation-artifacts/walkthrough-bugs-2026-05-08.md` captures all 11 findings (8 bugs + 3 doc enhancements) with reproduction steps, verified root causes (file paths + line numbers), and recommended fix shapes. Each Story 12.x spec cites this artifact as the source-of-truth for ACs.
+
+**Stories (in order):**
+- 12.0 — Epic 11 deferred cleanup + Epic 12 setup (Rule 7 sprint-planning gate)
+- 12.1 — UX polish: chat panel CSS overflow + Inspection prompt Ensemble domain knowledge (BUG-01 + BUG-08)
+- 12.2 — Agent reliability: provider HTTP error diagnostics + tool class-name fallback (BUG-02 + BUG-03)
+- 12.3 — MessageViewer session-link override to custom VisualTrace (BUG-04)
+- 12.4 — AgentLoop MaxIterationsPerTurn configurability + richer fallback message (BUG-06)
+- 12.5 — Search Agent results drive MessageViewer table (BUG-05)
+- 12.6 — Chat history tile replay — preserve tool_use / tool_result blocks across page reload (BUG-07)
+- 12.7 — README rewrite: Quick Start + screenshots + clean-namespace recipe + launch URLs (ENH-09 + ENH-10 + ENH-11)
+
+**Out of scope for Epic 12:**
+- Cross-browser sweep (Firefox / Safari / Edge) — already deferred to a post-MVP cross-browser hardening epic.
+- New tool additions or new agents — Epic 12 is hardening only.
+- Vocabulary tier or learning-loop changes — Epic 9 territory.
+- Architectural changes — none of the 11 findings require architectural decisions.
+
+**Acceptance gate:**
+All 8 stories ship `done`. Empirical battery (Rule 6) at retro time exercises each fix end-to-end against real walkthrough scenarios from 2026-05-08. The 11 findings in `walkthrough-bugs-2026-05-08.md` are each addressed (with citation in the Story 12.x Completion Notes that fixed them). README at retro-time has Quick Start, screenshots, clean-namespace recipe, and launch URLs (ENH-09/10/11 all surface in the rendered README). No regression on v1.0.1 functionality.
+
+**Recommended ordering** (from the Sprint Change Proposal):
+12.0 → 12.1 → 12.3 → 12.2 → 12.4 → 12.6 → 12.5 → 12.7 — bottom-up by risk, README last so screenshots show all fixes in place.
+
+Per Rule 1 (≤ 250 lines / spec) and the project's `/bmad-create-story` workflow, individual story specs are drafted at `/epic-cycle 12` time (Step 4a of the pipeline), not in this epic-list document.
+
+**See also:** `_bmad-output/planning-artifacts/sprint-change-proposal-2026-05-08.md` for the full impact analysis, story bundling rationale, and approval trail that opened this epic.

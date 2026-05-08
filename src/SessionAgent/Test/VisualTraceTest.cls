@@ -480,16 +480,30 @@ Method TestOnCitationClickPresent()
     Quit
 }
 
-/// <p><b>Story 10.8 AC-3 Test 1.</b>
+/// <p><b>Story 10.8 AC-3 / Story 10.12 Test.</b>
 /// <method>TestOnCitationClickFallbackPathInvokesUpdateTabs</method> —
 /// asserts <code>onCitationClick</code>'s defense-in-depth fallback
-/// branch (svgPage not loaded) calls <code>zenPage.updateTabs(true)</code>
-/// explicitly per the Story 10.8 AC-3 contract. The fallback branch
-/// fires when <code>trace.svgWindow.svgPage</code> is null OR
-/// <code>svgPage.selectItem</code> is not a function — rare but
-/// possible when the SVG iframe has not yet finished loading. Story
-/// 10.8 keeps the contract explicit so the Header-tab refresh
-/// invariant holds regardless of which branch executed.</p>
+/// branch (svgPage not loaded) sets state directly AND invokes
+/// <code>zenPage.updateTabs()</code> per the Story 10.8 AC-3 contract.
+/// The fallback branch fires when <code>trace.svgWindow.svgPage</code>
+/// is null OR <code>svgPage.selectItem</code> is not a function — rare
+/// but possible when the SVG iframe has not yet finished loading.</p>
+///
+/// <p><b>Story 10.12 contract refinement.</b> Story 10.12 fixed the
+/// regression where chip clicks from the askAgentTab (tab 4) failed to
+/// switch to the Header tab. The fix forces <code>_intendedTab = 1</code>
+/// on the parent-panel branch BEFORE invoking selectItem / updateTabs.
+/// The fallback path was changed from <code>updateTabs(true)</code> to
+/// <code>updateTabs()</code> (no arg) deliberately: passing
+/// <code>selected=true</code> causes the parent's
+/// <code>updateTabs(selected)</code> to set
+/// <code>_intendedTab = currTab = 4</code>, overwriting the
+/// <code>_intendedTab = 1</code> we just set and re-introducing the
+/// regression on the fallback path. The Header-tab refresh invariant
+/// still holds because the parent's <code>updateTabs()</code> derives
+/// <code>selectTab = _tabMap[type][_intendedTab - 1] = 1</code>
+/// when <code>_intendedTab = 1</code>, and the
+/// <code>tabGroup.showTab(1)</code> call inside the parent fires.</p>
 Method TestOnCitationClickFallbackPathInvokesUpdateTabs()
 {
     Set tMethod = ##class(%Dictionary.CompiledMethod).%OpenId("SessionAgent.EnsPortal.VisualTrace||onCitationClick")
@@ -502,10 +516,14 @@ Method TestOnCitationClickFallbackPathInvokesUpdateTabs()
         Set tBody = tBody _ tMethod.Implementation.Read(32000)
     }
 
-    ; AC-3: defense-in-depth fallback path sets state directly + calls
-    ; updateTabs(true). The argument is true so the Header tab is
-    ; force-refreshed even if its previous render was current.
-    Do $$$AssertTrue(tBody [ "updateTabs(true)", "onCitationClick fallback path calls zenPage.updateTabs(true) (Story 10.8 AC-3)")
+    ; AC-3 (refined by Story 10.12): defense-in-depth fallback path sets
+    ; state directly + calls updateTabs() with NO truthy arg. The arg
+    ; was changed from `true` to absent in Story 10.12 to preserve the
+    ; `_intendedTab = 1` assignment the fix-now installs on the
+    ; parent-panel branch. The Header-tab refresh invariant still holds
+    ; because the parent's updateTabs() derives selectTab=1 from
+    ; _tabMap[type][0] when _intendedTab=1.
+    Do $$$AssertTrue(tBody [ "updateTabs()", "onCitationClick fallback path calls zenPage.updateTabs() with no truthy arg (Story 10.8 AC-3 refined by Story 10.12)")
     Do $$$AssertTrue(tBody [ "zenPage.currentId", "onCitationClick fallback sets zenPage.currentId (Story 10.8 AC-3)")
     Do $$$AssertTrue(tBody [ "zenPage.currentType", "onCitationClick fallback sets zenPage.currentType (Story 10.8 AC-3)")
     Quit
@@ -549,6 +567,59 @@ Method TestOnCitationClickRetainsPragmaticAcceptanceContract()
         Set tDeferredText = tDeferredText _ tDeferredFile.Read(32000)
     }
     Do $$$AssertTrue(tDeferredText [ "Story 10.8 AC-3", "deferred-work.md contains Story 10.8 AC-3 deferral entry (Rule 9)")
+    Quit
+}
+
+/// <p><b>Story 10.12 AC-5</b> —
+/// <method>TestOnCitationClickForcesIntendedTabHeader</method> asserts
+/// the Story 10.12 fix-now is wired in <code>onCitationClick</code>: the
+/// method body must set <code>zenPage._intendedTab = 1</code> BEFORE
+/// calling <code>selectItem</code> / <code>updateTabs</code> on the
+/// parent-panel-citation branch (parentTypeMap types: message / event /
+/// ack / ioLog / rule). Without this assignment, an operator clicking a
+/// chip from the askAgentTab (tab 4) leaves <code>_intendedTab = 4</code>
+/// from the previous tab-switch click, and the parent's
+/// <code>updateTabs()</code> derives <code>selectTab</code> from
+/// <code>_tabMap[currentType][_intendedTab - 1] = _tabMap[type][3]</code>
+/// which is <code>undefined</code> on every parent-panel type
+/// (<code>_tabMap['message'] = [1, 2, 3]</code> only has 3 entries — the
+/// parent's three native tabs). The undefined value fails the guard
+/// <code>if (selectTab && (selectTab != currTab))</code> and the tab
+/// DOES NOT switch — the operator stays on the askAgentTab and never
+/// sees the Header-tab refresh the AC-4 contract promises. Forcing
+/// <code>_intendedTab = 1</code> resolves <code>selectTab</code> to the
+/// Header tab (<code>_tabMap[type][0] = 1</code> for every parentType
+/// in our map) and the parent switches to it.</p>
+///
+/// <p>Test asserts: (1) the source contains
+/// <code>_intendedTab = 1</code> on the parent-panel branch, (2) the
+/// fallback path uses <code>updateTabs()</code> with NO truthy arg
+/// (so the parent's <code>updateTabs(selected)</code> doesn't overwrite
+/// the assignment via <code>zenPage._intendedTab = currTab</code>).</p>
+Method TestOnCitationClickForcesIntendedTabHeader()
+{
+    Set tMethod = ##class(%Dictionary.CompiledMethod).%OpenId("SessionAgent.EnsPortal.VisualTrace||onCitationClick")
+    Do $$$AssertTrue($IsObject(tMethod), "onCitationClick ClientMethod resolves (Story 3.4 AC-1)")
+    If '$IsObject(tMethod) Quit
+
+    Do tMethod.Implementation.Rewind()
+    Set tBody = ""
+    While 'tMethod.Implementation.AtEnd {
+        Set tBody = tBody _ tMethod.Implementation.Read(32000)
+    }
+
+    ; Story 10.12 fix invariant 1 — parent-panel branch sets
+    ; _intendedTab = 1 (Header tab) BEFORE selectItem / updateTabs so
+    ; the parent's updateTabs derives selectTab=1 instead of undefined.
+    Do $$$AssertTrue(tBody [ "_intendedTab = 1", "onCitationClick forces zenPage._intendedTab = 1 (Story 10.12 fix — Header-tab navigation from askAgentTab)")
+
+    ; Story 10.12 fix invariant 2 — the defense-in-depth fallback path
+    ; (svgPage not loaded) calls updateTabs() with NO arg so the
+    ; parent's updateTabs(selected) doesn't overwrite _intendedTab.
+    ; A regression that flips this back to updateTabs(true) on the
+    ; fallback path re-introduces the regression on that branch.
+    Do $$$AssertTrue('(tBody [ "updateTabs(true)"), "onCitationClick fallback uses updateTabs() with no truthy arg so _intendedTab=1 is preserved (Story 10.12 fix)")
+    Do $$$AssertTrue(tBody [ "updateTabs()", "onCitationClick fallback path calls zenPage.updateTabs() (Story 10.12 fix — preserves _intendedTab=1)")
     Quit
 }
 

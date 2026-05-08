@@ -673,6 +673,61 @@ Method TestSearchVariantPrePopulatesRetentionDays()
     Quit
 }
 
+/// <p><b>Story 10.11 AC-5 Test.</b>
+/// <method>TestProviderRotationCascadesModelCredential</method> — invokes the
+/// new <method>SessionAgent.UI.AgentConfig.LoadProviderDefaults</method>
+/// ZenMethod for each of the four supported providers and asserts the
+/// returned canonical triple matches
+/// <method>SessionAgent.Config.AgentDefaults.GetCanonicalDefaults</method>.
+/// This guards the per-provider canonical mapping against accidental
+/// drift in either class — if the form-side cascade and the
+/// AgentDefaults canonical helper disagree, the form would silently
+/// persist incoherent (Provider, Model, CredentialName) triples on
+/// rotation (the Story 10.10-walkthrough-surfaced bug shape).</p>
+///
+/// <p>The test exercises the JSON-envelope contract directly (not the
+/// form's client-side cascade) — the JS-side cascade is verified by the
+/// chrome-devtools-mcp walkthrough captured in the story's empirical
+/// battery. The assertion shape mirrors the per-provider table in
+/// <method>GetCanonicalDefaults</method> doc-comment.</p>
+Method TestProviderRotationCascadesModelCredential()
+{
+    ; openai.
+    Set tJson = ##class(SessionAgent.UI.AgentConfig).LoadProviderDefaults("openai")
+    Do $$$AssertNotEquals(tJson, "", "LoadProviderDefaults('openai') returned non-empty")
+    Set tObj = ##class(%DynamicObject).%FromJSON(tJson)
+    Do $$$AssertEquals(tObj.%Get("model"), "gpt-4.1-mini", "openai canonical model = gpt-4.1-mini")
+    Do $$$AssertEquals(tObj.%Get("credentialName"), "SessionAgentOpenAI", "openai canonical credentialName = SessionAgentOpenAI")
+    Do $$$AssertEquals(tObj.%Get("envVarName"), "OPENAI_API_KEY", "openai canonical envVarName = OPENAI_API_KEY")
+
+    ; anthropic.
+    Set tJson = ##class(SessionAgent.UI.AgentConfig).LoadProviderDefaults("anthropic")
+    Set tObj = ##class(%DynamicObject).%FromJSON(tJson)
+    Do $$$AssertEquals(tObj.%Get("model"), "claude-haiku-4-5-20251001", "anthropic canonical model = claude-haiku-4-5-20251001")
+    Do $$$AssertEquals(tObj.%Get("credentialName"), "SessionAgentAnthropic", "anthropic canonical credentialName = SessionAgentAnthropic")
+    Do $$$AssertEquals(tObj.%Get("envVarName"), "ANTHROPIC_API_KEY", "anthropic canonical envVarName = ANTHROPIC_API_KEY")
+
+    ; gemini.
+    Set tJson = ##class(SessionAgent.UI.AgentConfig).LoadProviderDefaults("gemini")
+    Set tObj = ##class(%DynamicObject).%FromJSON(tJson)
+    Do $$$AssertEquals(tObj.%Get("model"), "gemini-2.5-flash", "gemini canonical model = gemini-2.5-flash")
+    Do $$$AssertEquals(tObj.%Get("credentialName"), "SessionAgentGemini", "gemini canonical credentialName = SessionAgentGemini")
+    Do $$$AssertEquals(tObj.%Get("envVarName"), "GEMINI_API_KEY", "gemini canonical envVarName = GEMINI_API_KEY")
+
+    ; openai-compatible — empty cred + empty env (operator-supplied).
+    Set tJson = ##class(SessionAgent.UI.AgentConfig).LoadProviderDefaults("openai-compatible")
+    Set tObj = ##class(%DynamicObject).%FromJSON(tJson)
+    Do $$$AssertEquals(tObj.%Get("model"), "qwen2.5:32b", "openai-compatible canonical model = qwen2.5:32b")
+    Do $$$AssertEquals(tObj.%Get("credentialName"), "", "openai-compatible canonical credentialName empty")
+    Do $$$AssertEquals(tObj.%Get("envVarName"), "", "openai-compatible canonical envVarName empty")
+
+    ; Unknown provider falls through to openai canonical (defense-in-depth).
+    Set tJson = ##class(SessionAgent.UI.AgentConfig).LoadProviderDefaults("nonexistent-provider-xyz")
+    Set tObj = ##class(%DynamicObject).%FromJSON(tJson)
+    Do $$$AssertEquals(tObj.%Get("model"), "gpt-4.1-mini", "unknown provider falls through to openai canonical")
+    Quit
+}
+
 /// <p><b>Story 10.8 AC-2 Test 2.</b>
 /// <method>TestSaveHandlerPersistsRetentionDays</method> — call
 /// <method>SessionAgent.UI.AgentConfig.SaveAgentConfig</method> with a

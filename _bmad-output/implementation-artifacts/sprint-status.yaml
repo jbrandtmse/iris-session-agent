@@ -1,5 +1,5 @@
 # generated: 2026-05-02
-# last_updated: 2026-05-07 (Story 10.10 code review complete — done)
+# last_updated: 2026-05-08 (Story 10.11 code review complete — done; 0 HIGH/MEDIUM, 3 LOW deferred)
 # project: iris-session-agent
 # project_key: NOKEY
 # tracking_system: file-system
@@ -148,4 +148,6 @@ development_status:
   10-8-full-token-resolution-growth-tier-ux-components: done
   10-9-prd-v1-completion-validation-walkthrough: done
   10-10-search-agent-tab-render-hotfix: done
+  10-11-agentconfig-form-save-propagate-model-credential: done
+  10-12-citation-chip-click-regression-investigate-and-fix: done
   epic-10-retrospective: optional

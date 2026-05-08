@@ -63,6 +63,80 @@ ClassMethod GetSystemPrompt(pAgentName As %String) As %String
     Quit ""
 }
 
+/// <p><b>Story 10.11.</b> Returns the per-provider canonical default
+/// triple (Model, CredentialName, EnvVarName, EndpointUrl) as a
+/// <CLASS>%DynamicObject</CLASS>. Used by
+/// <CLASS>SessionAgent.UI.AgentConfig</CLASS>'s
+/// <method>onChangeProvider</method> client-side cascade to populate the
+/// dependent form fields when the operator rotates Provider — without
+/// this cascade the form persists an incoherent (Provider, Model,
+/// CredentialName) triple on Save (the originating Story 10.11 quirk).</p>
+///
+/// <p>Returned shape (every key always present, empty-string fallback
+/// for the openai-compatible row whose "canonical" defaults are
+/// operator-supplied):</p>
+/// <pre>
+/// {
+///   "model": "<provider-canonical model name>",
+///   "credentialName": "<canonical Ens.Config.Credentials entry>",
+///   "envVarName": "<canonical OS env-var name>",
+///   "endpointUrl": "<canonical endpoint URL or empty>"
+/// }
+/// </pre>
+///
+/// <p><b>Per-provider canonical values</b> (verified current as of
+/// 2026-05-08 — sources cited in <code>README.md</code> §"Provider
+/// support" and <code>_bmad-output/implementation-artifacts/epic-5-operator-state.md</code>):</p>
+///
+/// <ul>
+/// <li><b>openai</b> — model <code>gpt-4.1-mini</code> + cred
+/// <code>SessionAgentOpenAI</code> + env <code>OPENAI_API_KEY</code></li>
+/// <li><b>anthropic</b> — model <code>claude-haiku-4-5-20251001</code>
+/// (per Story 5.1 Rule 10 research; cost-effective tool-use default) +
+/// cred <code>SessionAgentAnthropic</code> + env <code>ANTHROPIC_API_KEY</code></li>
+/// <li><b>gemini</b> — model <code>gemini-2.5-flash</code> (per README
+/// pricing table) + cred <code>SessionAgentGemini</code> + env
+/// <code>GEMINI_API_KEY</code></li>
+/// <li><b>openai-compatible</b> — model <code>qwen2.5:32b</code> (Ollama
+/// default; operator typically retypes for their stack) + empty cred
+/// + empty env (open-ended; operator-supplied) + empty endpoint
+/// (operator MUST type the local endpoint, e.g.,
+/// <code>http://localhost:11434/v1/chat/completions</code>)</li>
+/// </ul>
+///
+/// <p><b>Unknown provider name</b> returns the openai-canonical triple as
+/// the safe defaulting shape — the same fallthrough <method>LoadAgentConfig</method>
+/// uses for the "no row exists" case. The Story 10.11 form-side caller
+/// validates pProvider against the four known values before invoking, so
+/// the unknown branch is defense-in-depth only.</p>
+ClassMethod GetCanonicalDefaults(pProvider As %String) As %DynamicObject
+{
+    Set tObj = ##class(%DynamicObject).%New()
+    If pProvider = "anthropic" {
+        Do tObj.%Set("model", "claude-haiku-4-5-20251001")
+        Do tObj.%Set("credentialName", "SessionAgentAnthropic")
+        Do tObj.%Set("envVarName", "ANTHROPIC_API_KEY")
+        Do tObj.%Set("endpointUrl", "")
+    } ElseIf pProvider = "gemini" {
+        Do tObj.%Set("model", "gemini-2.5-flash")
+        Do tObj.%Set("credentialName", "SessionAgentGemini")
+        Do tObj.%Set("envVarName", "GEMINI_API_KEY")
+        Do tObj.%Set("endpointUrl", "")
+    } ElseIf pProvider = "openai-compatible" {
+        Do tObj.%Set("model", "qwen2.5:32b")
+        Do tObj.%Set("credentialName", "")
+        Do tObj.%Set("envVarName", "")
+        Do tObj.%Set("endpointUrl", "")
+    } Else {
+        ; openai canonical (also the unknown-fallthrough safe default).
+        Do tObj.%Set("model", "gpt-4.1-mini")
+        Do tObj.%Set("credentialName", "SessionAgentOpenAI")
+        Do tObj.%Set("envVarName", "OPENAI_API_KEY")
+        Do tObj.%Set("endpointUrl", "")
+    }
+    Quit tObj
+}
+
 /// <p>Returns a populated <i>un-saved</i>
 /// <CLASS>SessionAgent.Config.Agent</CLASS> instance with the OD4 default
 /// shape. The caller (Installer) calls <method>%Save</method> and checks

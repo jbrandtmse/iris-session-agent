@@ -115,7 +115,7 @@ XData contentPane [ XMLNamespace = "http://www.intersystems.com/zen" ]
 
 <select id="agentSelect" valueList="session-inspection,message-search" value="session-inspection" onchange="zenPage.loadAgent();" />
 
-<select id="providerSelect" valueList="openai,anthropic,gemini,openai-compatible" onchange="zenPage.providerChanged();" />
+<select id="providerSelect" valueList="openai,anthropic,gemini,openai-compatible" onchange="zenPage.onChangeProvider(zenThis.value);" />
 
 <combobox id="modelCombo" editable="true" />
 
@@ -592,6 +592,118 @@ ClientMethod loadAgent() [ Language = javascript ]
 
     // Clear any stale save-status message from a prior interaction.
     zen('saveStatus').setValue('');
+}
+
+/// <p><b>Story 10.11.</b> Server-side helper — returns the per-provider
+/// canonical default triple (Model, CredentialName, EnvVarName, EndpointUrl)
+/// as a JSON envelope. Delegates to
+/// <method>SessionAgent.Config.AgentDefaults.GetCanonicalDefaults</method>
+/// so the canonical mapping lives in one place (the same class
+/// <method>GetSeedConfig</method> reads from at install time).</p>
+///
+/// <p>Returned shape:</p>
+/// <pre>
+/// {"model":"...","credentialName":"...","envVarName":"...","endpointUrl":"..."}
+/// </pre>
+///
+/// <p><b>Never-throw contract.</b> Any exception converts to
+/// <code>{"error":"..."}</code> so the client can degrade gracefully —
+/// the form just leaves the existing field values in place if the
+/// helper fails.</p>
+ClassMethod LoadProviderDefaults(pProvider As %String) As %String [ ZenMethod ]
+{
+    Set tEnvelope = ""
+    Try {
+        Set tObj = ##class(SessionAgent.Config.AgentDefaults).GetCanonicalDefaults(pProvider)
+        Set tEnvelope = tObj.%ToJSON()
+    }
+    Catch ex {
+        Set tErr = ##class(%DynamicObject).%New()
+        Do tErr.%Set("error", "LoadProviderDefaults: " _ ex.DisplayString())
+        Set tEnvelope = tErr.%ToJSON()
+    }
+    Quit tEnvelope
+}
+
+/// <p><b>Story 10.11.</b> Provider-rotation cascade — fired when the
+/// operator changes the Provider selector. Without this cascade the form
+/// persists an incoherent (Provider, Model, CredentialName, EnvVarName)
+/// triple on Save: the operator picks Provider=anthropic but Model +
+/// CredentialName + EnvVarName remain at the prior provider's values
+/// (e.g., gpt-4.1-mini + SessionAgentOpenAI + OPENAI_API_KEY) because
+/// the form's <method>providerChanged</method> handler only updates the
+/// model dropdown's <i>suggestion list</i>, not the actual field values.</p>
+///
+/// <p>This handler:</p>
+/// <ol>
+/// <li>Invokes <method>LoadProviderDefaults</method> for the new
+/// provider — returns the canonical triple as JSON.</li>
+/// <li>Sets <code>modelCombo</code> + <code>credCombo</code> +
+/// <code>envVarText</code> + <code>endpointUrlText</code> field values
+/// from the canonical triple.</li>
+/// <li>Flips <code>credTypeRadio</code> to <code>creds</code> when the
+/// canonical credential is non-empty (the standard hyperscaler shape —
+/// operators typically use <CLASS>Ens.Config.Credentials</CLASS> entries
+/// for OpenAI / Anthropic / Gemini), or to <code>env</code> when the
+/// canonical credential is empty (openai-compatible / Ollama path,
+/// where there's no canonical credential and the operator typically
+/// uses an env-var or no credential at all).</li>
+/// <li>Calls the existing <method>providerChanged</method> handler so
+/// the model-suggestion dropdown contents + endpoint-URL visibility +
+/// other downstream UI state still update consistently. Note that
+/// <method>providerChanged</method>'s own EnvVarName / MaxTokens
+/// auto-suggest paths still run and may further adjust those fields'
+/// values — but only if the cascaded value sits inside their stale-
+/// canonical guard set, which the canonical defaults above do.</li>
+/// <li>Calls <method>credTypeChanged</method> to apply visibility
+/// changes from the radio-flip in step 3.</li>
+/// </ol>
+///
+/// <p>Operator's typed custom values (e.g., a per-tenant model name like
+/// "gpt-4.1-fine-tune-acme") ARE overwritten on provider rotation —
+/// rotating Provider semantically means "switch to that provider's
+/// canonical setup" and the operator can re-type the custom value after
+/// the cascade if they want. This matches operator muscle memory from
+/// other Mgmt Portal config forms (e.g., <CLASS>EnsPortal.Credentials</CLASS>
+/// re-populates fields when the dropdown selection changes).</p>
+ClientMethod onChangeProvider(value) [ Language = javascript ]
+{
+    var json = zenPage.LoadProviderDefaults(value);
+    var data;
+    try {
+        data = JSON.parse(json);
+    } catch (e) {
+        data = { error: 'parse failure' };
+    }
+    if (data && !data.error) {
+        // Cascade canonical defaults into dependent fields.
+        var modelCombo = zen('modelCombo');
+        if (modelCombo) modelCombo.setValue(data.model || '');
+        var credCombo = zen('credCombo');
+        if (credCombo) credCombo.setValue(data.credentialName || '');
+        var envVar = zen('envVarText');
+        if (envVar) envVar.setValue(data.envVarName || '');
+        var endpoint = zen('endpointUrlText');
+        if (endpoint) endpoint.setValue(data.endpointUrl || '');
+
+        // Flip the credential-source radio to match the canonical shape.
+        // Hyperscalers (openai/anthropic/gemini) ship with a canonical
+        // Ens.Config.Credentials entry → 'creds'. openai-compatible has
+        // no canonical credential → 'env' (operator typically uses
+        // OLLAMA_API_KEY or leaves it empty for unauth Ollama).
+        var credRadio = zen('credTypeRadio');
+        if (credRadio) {
+            credRadio.setValue((data.credentialName && data.credentialName !== '') ? 'creds' : 'env');
+        }
+    }
+
+    // Always run the existing providerChanged path so the model
+    // suggestion list + endpoint-URL visibility + downstream UI updates
+    // still happen even on a LoadProviderDefaults parse failure.
+    zenPage.providerChanged();
+    // And re-apply credential-source visibility now that the radio may
+    // have flipped above.
+    zenPage.credTypeChanged();
 }
 
 /// <p>Client-side handler — fired on provider-selector change. Updates

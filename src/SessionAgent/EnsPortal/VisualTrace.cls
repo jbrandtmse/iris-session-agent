@@ -822,7 +822,7 @@ ClientMethod onCitationClick(type, id, klass) [ Language = javascript ]
     //   zenPage.openPage(targetPage)   // navigate SVG to the page
     //                                  //   containing the cited row
     //   svgPage.selectItem(...)        // highlight the cited box
-    //   zenPage.updateTabs(true)       // re-render the Header tab
+    //   zenPage.updateTabs()           // re-render the Header tab
     //
     // The middle call (selectItem) is unconditional and matches
     // Story 3.4's MVP partial-sync. The first call (openPage) is the
@@ -854,10 +854,14 @@ ClientMethod onCitationClick(type, id, klass) [ Language = javascript ]
     //     shipped.
     //   - On the defense-in-depth fallback path (svgPage not yet
     //     loaded — rare, see below), set state directly and CALL
-    //     updateTabs(true) explicitly per AC-3's "Then ... updateTabs(true)"
+    //     updateTabs() explicitly per AC-3's "Then ... updateTabs"
     //     clause. The Story 3.4 form already did this; Story 10.8
     //     keeps the contract explicit so the Header tab refresh fires
-    //     unambiguously regardless of the path taken.
+    //     unambiguously regardless of the path taken. Story 10.12
+    //     refined the call to updateTabs() (no truthy arg) so the
+    //     parent's updateTabs(selected) does NOT overwrite our
+    //     _intendedTab=1 with currTab; see the Story 10.12 fix block
+    //     below for the full mechanism.
     //   - Document the openPage→selectItem→updateTabs Growth-tier
     //     upgrade in deferred-work.md as a Story 11+ scope item per
     //     Rule 8 test 1 (genuine future-epic scope — needs new server-
@@ -868,6 +872,44 @@ ClientMethod onCitationClick(type, id, klass) [ Language = javascript ]
     // We pass null for evt, svgId, lineId — we don't have an SVG event
     // and we don't know the SVG element ids from a citation chip.
     // ─────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────
+    // Story 10.12 fix — Header-tab navigation when the chip is
+    // clicked from the askAgentTab (tab 4).
+    //
+    // The parent EnsPortal.VisualTrace.updateTabs() derives the
+    // tab-to-show from `_tabMap[currentType][_intendedTab - 1]`. The
+    // parent's `_tabMap` only has 3 entries per type (Header / Body /
+    // Contents — the parent's three native tabs):
+    //   { message: [1, 2, 3], event: [1, 1, 1], ioLog: [1, 1, 3],
+    //     ack: [1, 1, 3], rule: [1, 1, 1] }
+    // When the operator clicks a chip from our 4th tab (askAgentTab),
+    // `_intendedTab = 4` (set by the parent's tabGroup `onshowTab`
+    // when the operator clicked askAgentTab). The lookup
+    // `_tabMap[type][3]` is `undefined`, the guard
+    // `if (selectTab && (selectTab != currTab))` is false, and the
+    // tab DOES NOT switch — the operator stays on the askAgentTab
+    // and never sees the Header-tab refresh the AC-4 contract
+    // promises. Story 3.4 MVP expectation (verbatim): "Header tab
+    // updates with message N's properties; SVG highlights message N
+    // if on-page."
+    //
+    // Fix: force `_intendedTab = 1` (Header tab) before calling
+    // selectItem / updateTabs. For every parentType in our map
+    // (message / event / ack / ioLog / rule), `_tabMap[type][0] = 1`
+    // — Header is universally the right destination per the AC. This
+    // makes the parent's selectTab resolve to 1, the guard passes,
+    // and `tabGroup.showTab(1)` fires.
+    //
+    // Minimum-blast-radius: 3 lines, scoped to onCitationClick. No
+    // change to chat-panel.js or any other surface. The askAgentTab
+    // remains accessible via direct tab-click; only the chip-driven
+    // navigation path forces the Header destination, which is what
+    // the operator wants when they click "[message:42]".
+    // ─────────────────────────────────────────────────────────────
+    if (zenPage && typeof zenPage._intendedTab !== 'undefined') {
+        zenPage._intendedTab = 1;
+    }
+
     var trace = zen('SVGTrace');
     var svgPage = (trace && trace.svgWindow) ? trace.svgWindow.svgPage : null;
     var klassArg = klass || '';
@@ -876,19 +918,30 @@ ClientMethod onCitationClick(type, id, klass) [ Language = javascript ]
         // acceptance. selectItem internally calls zenPage.updateTabs()
         // — the Header tab refreshes unambiguously. SVG highlight
         // fires on-page; silently skips off-page (matches Story 3.4).
+        // With _intendedTab = 1 (set above), updateTabs's selectTab
+        // resolves to the Header tab and the parent's tabGroup
+        // switches to it — fixing the Story 10.12 regression.
         svgPage.selectItem(null, parentType, null, id, klassArg, null);
     } else {
         // Defense-in-depth: SVG frame not loaded yet (rare — chip
         // can't render before the agent answer, which can't render
         // before the page loaded the SVG frame). Set state directly
-        // and call updateTabs(true) per AC-3 fallback. Mirrors the
-        // selectItem-internal path so the Header tab refreshes
-        // regardless of which branch executed.
+        // and call updateTabs() per AC-3 fallback. Mirrors the
+        // selectItem-internal path (which calls updateTabs() — no arg
+        // — see irislib/EnsPortal/SVG/VisualTrace.cls:2452) so the
+        // Header tab refreshes regardless of which branch executed.
+        //
+        // Story 10.12: deliberately call updateTabs() WITHOUT the
+        // truthy `selected` arg so the parent's updateTabs() does NOT
+        // overwrite the `_intendedTab = 1` we set above. Passing
+        // `selected=true` would set `_intendedTab = currTab = 4`
+        // (the askAgentTab) and re-introduce the regression on the
+        // fallback path.
         zenPage.currentId = id;
         zenPage.currentType = parentType;
         zenPage.currentClass = klassArg;
         if (typeof zenPage.updateTabs === 'function') {
-            zenPage.updateTabs(true);
+            zenPage.updateTabs();
         }
     }
 }

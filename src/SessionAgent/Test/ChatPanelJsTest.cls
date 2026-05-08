@@ -476,4 +476,33 @@ Method TestWelcomeMessageAgentAware()
     Do $$$AssertTrue(..FileContents [ "Ask anything about this session", "Inspection-flavored welcome still present in else branch (Story 10.13 F-5 regression guard)")
 }
 
+/// <p>Story 12.6 (BUG-07) — renderPriorTranscript must replay
+/// preserved tool_use ↔ tool_result pairs by invoking the same
+/// renderSearchResultList helper the live path uses. Asserts the
+/// JS source contains:</p>
+/// <ul>
+/// <li><code>turn.toolCalls</code> — the replay path reads the new
+/// optional field on each entry.</li>
+/// <li><code>renderSearchResultList</code> — the live-path renderer
+/// is reused (no duplicate code; same DOM as fresh tiles).</li>
+/// <li><code>structuredContent</code> + <code>sessions</code> —
+/// the structural-signal contract from Story 10.2 AC-1 (tool name
+/// is NOT inspected; the sessions[] array shape drives the render).</li>
+/// </ul>
+/// <p>Together these prove the BUG-07 fix is wired: tile-shape tool
+/// results are re-rendered after page reload, preserving the search
+/// → click-through → Back UX.</p>
+Method TestPriorTranscriptReplaysToolCalls()
+{
+    Do $$$AssertStatusOK(..LoadFile(), "LoadFile resolved chat-panel.js at " _ ..FilePath)
+    Do $$$AssertTrue(..FileContents [ "turn.toolCalls", "Story 12.6: renderPriorTranscript reads turn.toolCalls (BUG-07 fix)")
+    Do $$$AssertTrue(..FileContents [ "renderSearchResultList(t,", "Story 12.6: replay path invokes renderSearchResultList with toolCall index t (BUG-07 fix)")
+    ; Structural-signal contract — same shape detector as the live path.
+    Do $$$AssertTrue(..FileContents [ "structuredContent", "Story 12.6: replay path reads structuredContent (live-path structural-signal contract)")
+    Do $$$AssertTrue(..FileContents [ "sc.sessions", "Story 12.6: replay path reads sessions[] array (live-path structural-signal contract)")
+    ; Comment trace — anchor the BUG-07 reference so future grep
+    ; finds the rule citation alongside the code.
+    Do $$$AssertTrue(..FileContents [ "BUG-07", "Story 12.6: renderPriorTranscript carries a BUG-07 comment anchor")
+}
+
 }

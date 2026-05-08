@@ -574,10 +574,21 @@
      * message is visible.
      *
      * The priorTranscript shape is the simplified chat-form
-     * [{role: "operator|agent", content: "..."}], NOT the canonical
-     * Anthropic shape persisted in Chat.History.TurnsJson — the server
-     * (EnsPortal.VisualTrace.DrawChatPanel) flattens it before embedding
-     * in the bootstrap context.
+     * [{role: "operator|agent", content: "...", toolCalls?: [...]}],
+     * NOT the canonical Anthropic shape persisted in
+     * Chat.History.TurnsJson — the server (EnsPortal.VisualTrace.DrawChatPanel
+     * + EnsPortal.MessageViewer.FlattenTurnsForBootstrap) flattens it
+     * before embedding in the bootstrap context.
+     *
+     * Story 12.6 (BUG-07) — agent turns may carry an optional
+     * `toolCalls` array preserving the tool_use ↔ tool_result pairing
+     * from Chat.History.TurnsJson. For each tool call whose
+     * `result.structuredContent.sessions` is an array, the live-path
+     * `renderSearchResultList` renderer is invoked so the same tile
+     * DOM (clickable session rows) re-appears after Back-navigation,
+     * preserving the search → click-through → Back UX (BUG-07 fix).
+     * Backward compatible — pre-12.6 entries with no `toolCalls` field
+     * render as before (text-only).
      */
     function renderPriorTranscript(turns) {
         for (var i = 0; i < turns.length; i++) {
@@ -587,6 +598,42 @@
             }
             var role = turn.role;
             var content = turn.content || '';
+
+            // Story 12.6 — agent turns: re-render any preserved tool
+            // calls' result lists FIRST (matching the live handleEnvelope
+            // visual order: tool-cards / curated-list -> agent narrative).
+            // The replayed tile DOM is identical to the live path because
+            // it routes through the same renderSearchResultList helper.
+            if (role === 'agent' && turn.toolCalls && turn.toolCalls.length > 0) {
+                for (var t = 0; t < turn.toolCalls.length; t++) {
+                    var call = turn.toolCalls[t];
+                    if (!call || !call.result) {
+                        continue;
+                    }
+                    var sc = call.result.structuredContent;
+                    if (sc && Array.isArray(sc.sessions) && sc.sessions.length > 0) {
+                        var totalCount = (typeof sc.result_count === 'number') ? sc.result_count : sc.sessions.length;
+                        var limitArg = (call.args && typeof call.args.limit === 'number') ? call.args.limit : 0;
+                        // Tool-call index is the per-replay-turn position
+                        // (the live path uses the toolCallsRendered[]
+                        // index; in replay, position-within-the-turn is
+                        // the natural analog and is unique per agent
+                        // turn). renderSearchResultList writes
+                        // data-tool-call-index so the click-through
+                        // capture entry can attribute the click.
+                        renderSearchResultList(t, sc.sessions, totalCount, limitArg);
+                    }
+                }
+            }
+
+            // Skip the empty-content text block when an agent turn
+            // contains only tool calls (pure tool_use turn flattened
+            // by Story 12.6 — emitting an empty <div class="sa-msg-agent">
+            // would be visual noise above the tool tiles).
+            if (role === 'agent' && content === '' && turn.toolCalls && turn.toolCalls.length > 0) {
+                continue;
+            }
+
             var block = document.createElement('div');
             block.setAttribute('class', 'sa-message-block sa-msg-' + role);
             if (role === 'agent') {

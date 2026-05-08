@@ -288,23 +288,37 @@ Method DrawChatPanel(pSeed As %String) As %Status
 /// <p>Internal helper — flatten the canonical-Anthropic
 /// <CLASS>SessionAgent.Chat.History</CLASS>.<property>TurnsJson</property>
 /// stream into the simplified chat-shape the JS init expects:
-/// <code>[{role:"operator|agent", content:"plain-text-or-markdown"}]</code>.
+/// <code>[{role:"operator|agent", content:"plain-text-or-markdown",
+/// toolCalls?:[{id,name,args,result,status}]}]</code>.
 /// Verbatim copy from <CLASS>SessionAgent.EnsPortal.VisualTrace</CLASS>
 /// per Story 10.1 spec §"Patterns to follow verbatim".</p>
 ///
-/// <p>Mapping rules:</p>
+/// <p>Mapping rules (Story 12.6 — BUG-07 chat-history tile replay):</p>
 /// <ul>
 /// <li>Anthropic <code>"user"</code> turns with <code>type:"text"</code>
 /// blocks → <code>{role:"operator", content:&lt;text&gt;}</code>.</li>
-/// <li>Anthropic <code>"assistant"</code> turns with
-/// <code>type:"text"</code> blocks → <code>{role:"agent",
-/// content:&lt;text&gt;}</code>. Multiple text blocks are concatenated.</li>
-/// <li>Anthropic <code>"user"</code> turns with only
-/// <code>type:"tool_result"</code> blocks → SKIPPED (operator never
-/// typed them).</li>
-/// <li>Anthropic <code>"assistant"</code> turns with only
-/// <code>type:"tool_use"</code> blocks (no text) → SKIPPED.</li>
+/// <li>Anthropic <code>"assistant"</code> turns → <code>{role:"agent",
+/// content:&lt;text&gt;, toolCalls?:[...]}</code>. Multiple text blocks
+/// are concatenated. <code>type:"tool_use"</code> blocks are collected
+/// into the <code>toolCalls</code> array as
+/// <code>{id, name, args:&lt;input&gt;}</code> entries. A pure-tool_use
+/// assistant turn (no text) still emits an entry with empty
+/// <code>content</code> so the JS replay path can re-render the
+/// tool-call tiles.</li>
+/// <li>Anthropic <code>"user"</code> turns containing
+/// <code>type:"tool_result"</code> blocks → each tool_result is paired
+/// with its matching tool_use via <code>tool_use_id</code> and merged
+/// into the prior assistant entry's <code>toolCalls[i].result</code>
+/// (parsed JSON object) + <code>toolCalls[i].status</code>
+/// (<code>"error"</code> if <code>is_error=true</code> else
+/// <code>"ok"</code>). If the user turn ALSO has text blocks, an
+/// <code>operator</code> entry is emitted in addition. A pure-
+/// tool_result user turn does NOT emit a new entry.</li>
 /// </ul>
+///
+/// <p>Backward compatible — pre-Story-12.6 consumers receive
+/// <code>{role, content}</code> verbatim; the optional
+/// <code>toolCalls</code> field is ignored when absent.</p>
 ///
 /// <p>Returns the JSON-serialized array. On any failure, returns
 /// <code>"[]"</code> so the panel still renders the welcome message.</p>
@@ -325,6 +339,13 @@ ClassMethod FlattenTurnsForBootstrap(pHist As SessionAgent.Chat.History) As %Str
         Set tArr = ##class(%DynamicArray).%FromJSON(tBuf)
         If '$IsObject(tArr) Quit
 
+        ; Story 12.6 — pairing-state for tool_use ↔ tool_result merge.
+        ; tToolCallIndex maps canonical tool_use_id → "<flatEntryIdx>|<toolCallIdx>"
+        ; for every tool_use emitted by the most-recent assistant turn.
+        ; Walking the next user turn's tool_result blocks merges back
+        ; into the prior assistant entry via this map.
+        Set tToolCallIndex = ##class(%DynamicObject).%New()
+
         ; Iterate canonical turns and produce flat ones.
         Set tIter = tArr.%GetIterator()
         While tIter.%GetNext(.tIdx, .tTurn) {
@@ -333,29 +354,125 @@ ClassMethod FlattenTurnsForBootstrap(pHist As SessionAgent.Chat.History) As %Str
             Set tContent = tTurn.%Get("content")
             If '$IsObject(tContent) Continue
 
-            ; Concatenate every type:"text" block's text. Skip
-            ; tool_use / tool_result blocks (no surfacing in MVP).
+            ; Walk this turn's content blocks once, partitioning into
+            ; (a) concatenated text and (b) collected tool_use /
+            ; tool_result blocks for separate handling below.
             Set tText = ""
+            Set tToolUses = ##class(%DynamicArray).%New()
+            Set tToolResults = ##class(%DynamicArray).%New()
             Set tBlockIter = tContent.%GetIterator()
             While tBlockIter.%GetNext(.tBidx, .tBlock) {
                 If '$IsObject(tBlock) Continue
-                If tBlock.%Get("type") '= "text" Continue
-                Set tText = tText _ tBlock.%Get("text")
+                Set tBlockType = tBlock.%Get("type")
+                If tBlockType = "text" {
+                    Set tText = tText _ tBlock.%Get("text")
+                } ElseIf tBlockType = "tool_use" {
+                    Do tToolUses.%Push(tBlock)
+                } ElseIf tBlockType = "tool_result" {
+                    Do tToolResults.%Push(tBlock)
+                }
             }
 
-            ; If no text content (pure tool_use/result turn), skip.
-            If tText = "" Continue
+            ; ── Assistant turn — emit ONE entry combining text + toolCalls.
+            If tRole = "assistant" {
+                ; Reset tool-call pairing map for THIS turn's tool_use ids.
+                Set tToolCallIndex = ##class(%DynamicObject).%New()
 
-            Set tFlatTurn = ##class(%DynamicObject).%New()
-            ; Map canonical roles to chat-form roles.
-            If tRole = "user" {
-                Do tFlatTurn.%Set("role", "operator")
-            } ElseIf tRole = "assistant" {
+                Set tHasToolUses = (tToolUses.%Size() > 0)
+                If (tText = "") && ('tHasToolUses) Continue
+
+                Set tFlatTurn = ##class(%DynamicObject).%New()
                 Do tFlatTurn.%Set("role", "agent")
-            } Else {
-                ; Unknown role — pass through verbatim.
-                Do tFlatTurn.%Set("role", tRole)
+                Do tFlatTurn.%Set("content", tText)
+
+                If tHasToolUses {
+                    Set tToolCallsArr = ##class(%DynamicArray).%New()
+                    Set tTuIter = tToolUses.%GetIterator()
+                    While tTuIter.%GetNext(.tTuIdx, .tTu) {
+                        Set tCall = ##class(%DynamicObject).%New()
+                        Set tTuId = tTu.%Get("id")
+                        Do tCall.%Set("id", tTuId)
+                        Do tCall.%Set("name", tTu.%Get("name"))
+                        ; Pass tool_use.input through as `args` to match the
+                        ; live envelope's toolCallsRendered[].args field.
+                        Do tCall.%Set("args", tTu.%Get("input"))
+                        Do tToolCallsArr.%Push(tCall)
+                        ; Record (flatIdx, toolCallIdx) for tool_result merge.
+                        If tTuId '= "" {
+                            Do tToolCallIndex.%Set(tTuId, tFlat.%Size() _ "|" _ (tToolCallsArr.%Size() - 1))
+                        }
+                    }
+                    Do tFlatTurn.%Set("toolCalls", tToolCallsArr)
+                }
+                Do tFlat.%Push(tFlatTurn)
+                Continue
             }
+
+            ; ── User turn — merge any tool_result blocks into the prior
+            ; assistant entry via the pairing map; emit an operator entry
+            ; for any text content.
+            If tRole = "user" {
+                ; Merge tool_result blocks into prior assistant entry's
+                ; toolCalls[].result / .status fields.
+                Set tTrIter = tToolResults.%GetIterator()
+                While tTrIter.%GetNext(.tTrIdx, .tTr) {
+                    Set tUseId = tTr.%Get("tool_use_id")
+                    If tUseId = "" Continue
+                    Set tCoord = tToolCallIndex.%Get(tUseId)
+                    If tCoord = "" Continue
+                    Set tFlatIdx = +$Piece(tCoord, "|", 1)
+                    Set tCallIdx = +$Piece(tCoord, "|", 2)
+                    If (tFlatIdx >= tFlat.%Size()) Continue
+                    Set tPriorEntry = tFlat.%Get(tFlatIdx)
+                    If '$IsObject(tPriorEntry) Continue
+                    Set tPriorCalls = tPriorEntry.%Get("toolCalls")
+                    If '$IsObject(tPriorCalls) Continue
+                    If (tCallIdx >= tPriorCalls.%Size()) Continue
+                    Set tPriorCall = tPriorCalls.%Get(tCallIdx)
+                    If '$IsObject(tPriorCall) Continue
+
+                    ; tool_result.content is typically a JSON-serialized
+                    ; string (canonical-MCP tool envelope shape:
+                    ; {content:[...], structuredContent:{...}}). Parse to
+                    ; an object so the JS path can read .structuredContent
+                    ; without a re-parse. Defensive on parse failure —
+                    ; keep raw string.
+                    Set tRawResult = tTr.%Get("content")
+                    Set tParsedResult = ""
+                    If $IsObject(tRawResult) {
+                        Set tParsedResult = tRawResult
+                    } ElseIf tRawResult '= "" {
+                        Try {
+                            Set tParsedResult = ##class(%DynamicAbstractObject).%FromJSON(tRawResult)
+                        } Catch tParseEx {
+                            Set tParsedResult = tRawResult
+                        }
+                    }
+                    Do tPriorCall.%Set("result", tParsedResult)
+                    Set tIsError = tTr.%Get("is_error")
+                    If tIsError {
+                        Do tPriorCall.%Set("status", "error")
+                    } Else {
+                        Do tPriorCall.%Set("status", "ok")
+                    }
+                }
+
+                ; Emit the operator entry only if the user turn has text.
+                If tText '= "" {
+                    Set tFlatTurn = ##class(%DynamicObject).%New()
+                    Do tFlatTurn.%Set("role", "operator")
+                    Do tFlatTurn.%Set("content", tText)
+                    Do tFlat.%Push(tFlatTurn)
+                    ; Operator turn ends a tool-pairing window.
+                    Set tToolCallIndex = ##class(%DynamicObject).%New()
+                }
+                Continue
+            }
+
+            ; Unknown role — preserve text-only fallback as before.
+            If tText = "" Continue
+            Set tFlatTurn = ##class(%DynamicObject).%New()
+            Do tFlatTurn.%Set("role", tRole)
             Do tFlatTurn.%Set("content", tText)
             Do tFlat.%Push(tFlatTurn)
         }

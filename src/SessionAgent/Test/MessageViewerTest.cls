@@ -388,4 +388,267 @@ ClassMethod BuildEndTurnResponse(pText As %String) As %String
     Quit tResp.%ToJSON()
 }
 
+/// <p>Test (Story 12.6 / BUG-07 — chat-history tile replay) — assert
+/// the post-12.6 <method>FlattenTurnsForBootstrap</method> preserves
+/// tool_use ↔ tool_result pairing in the flattened JSON. Synthesizes
+/// a 3-turn canonical-Anthropic transcript where:</p>
+/// <ol>
+/// <li>user / text — operator query "find sessions with errors"</li>
+/// <li>assistant / tool_use — single search tool call (id=tu-01)</li>
+/// <li>user / tool_result — paired reply with structuredContent.sessions[2]</li>
+/// </ol>
+/// <p>Asserts the flattened array has 2 entries (operator + agent),
+/// the agent entry has empty content (pure tool_use turn), the
+/// <code>toolCalls</code> array has 1 entry whose <code>id</code>,
+/// <code>name</code>, <code>args</code>, <code>result</code>
+/// (parsed object), and <code>status="ok"</code> are populated. The
+/// merged <code>result.structuredContent.sessions</code> is present —
+/// load-bearing for the JS replay path's
+/// <code>renderSearchResultList</code> invocation.</p>
+Method TestFlattenTurnsPreservesToolCalls()
+{
+    Set tConvKey = "mv-tile-replay-test-" _ $Random(100000)
+    Set tHist = ##class(SessionAgent.Chat.History).LoadOrCreate("message-search", tConvKey, "_12-6-test", "")
+    Do $$$AssertTrue($IsObject(tHist), "synthetic Chat.History row created")
+    If '$IsObject(tHist) Quit
+
+    Try {
+        Set tTurns = ##class(%DynamicArray).%New()
+
+        ; Turn 1 — user text.
+        Set tUserTurn = ##class(%DynamicObject).%New()
+        Do tUserTurn.%Set("role", "user")
+        Set tUserContent = ##class(%DynamicArray).%New()
+        Set tUserBlock = ##class(%DynamicObject).%New()
+        Do tUserBlock.%Set("type", "text")
+        Do tUserBlock.%Set("text", "find sessions with errors")
+        Do tUserContent.%Push(tUserBlock)
+        Do tUserTurn.%Set("content", tUserContent)
+        Do tTurns.%Push(tUserTurn)
+
+        ; Turn 2 — assistant tool_use (no text).
+        Set tAsstTurn = ##class(%DynamicObject).%New()
+        Do tAsstTurn.%Set("role", "assistant")
+        Set tAsstContent = ##class(%DynamicArray).%New()
+        Set tToolUse = ##class(%DynamicObject).%New()
+        Do tToolUse.%Set("type", "tool_use")
+        Do tToolUse.%Set("id", "tu-01")
+        Do tToolUse.%Set("name", "find_sessions_by_status")
+        Set tToolInput = ##class(%DynamicObject).%New()
+        Do tToolInput.%Set("status", "error")
+        Do tToolInput.%Set("limit", 10)
+        Do tToolUse.%Set("input", tToolInput)
+        Do tAsstContent.%Push(tToolUse)
+        Do tAsstTurn.%Set("content", tAsstContent)
+        Do tTurns.%Push(tAsstTurn)
+
+        ; Turn 3 — user tool_result (paired by tool_use_id).
+        Set tToolResultTurn = ##class(%DynamicObject).%New()
+        Do tToolResultTurn.%Set("role", "user")
+        Set tTrContent = ##class(%DynamicArray).%New()
+        Set tToolResult = ##class(%DynamicObject).%New()
+        Do tToolResult.%Set("type", "tool_result")
+        Do tToolResult.%Set("tool_use_id", "tu-01")
+        ; tool_result.content is the canonical-MCP-shape JSON STRING.
+        Set tInnerEnv = ##class(%DynamicObject).%New()
+        Set tInnerContent = ##class(%DynamicArray).%New()
+        Set tInnerText = ##class(%DynamicObject).%New()
+        Do tInnerText.%Set("type", "text")
+        Do tInnerText.%Set("text", "Found 2 sessions with errors.")
+        Do tInnerContent.%Push(tInnerText)
+        Do tInnerEnv.%Set("content", tInnerContent)
+        Set tStructured = ##class(%DynamicObject).%New()
+        Do tStructured.%Set("result_count", 2)
+        Set tSessions = ##class(%DynamicArray).%New()
+        Set tS1 = ##class(%DynamicObject).%New()
+        Do tS1.%Set("session_id", 76928)
+        Do tS1.%Set("source_config_name", "TestSource")
+        Do tSessions.%Push(tS1)
+        Set tS2 = ##class(%DynamicObject).%New()
+        Do tS2.%Set("session_id", 76929)
+        Do tSessions.%Push(tS2)
+        Do tStructured.%Set("sessions", tSessions)
+        Do tInnerEnv.%Set("structuredContent", tStructured)
+        Do tToolResult.%Set("content", tInnerEnv.%ToJSON())
+        Do tTrContent.%Push(tToolResult)
+        Do tToolResultTurn.%Set("content", tTrContent)
+        Do tTurns.%Push(tToolResultTurn)
+
+        ; Persist + re-open lock-free for the helper call.
+        Do tHist.TurnsJson.Clear()
+        Do tTurns.%ToJSON(tHist.TurnsJson)
+        Do $$$AssertStatusOK(tHist.%Save(), "synthetic transcript persisted")
+        Set tHistRO = ##class(SessionAgent.Chat.History).ConvKeyIdxOpen("message-search", tConvKey, "_12-6-test", 0)
+        Do $$$AssertTrue($IsObject(tHistRO), "synthetic row re-opened lock-free")
+
+        Set tFlatJson = ##class(SessionAgent.EnsPortal.MessageViewer).FlattenTurnsForBootstrap(tHistRO)
+        Do $$$AssertNotEquals(tFlatJson, "[]", "flattened JSON is non-empty (Story 12.6 AC-1)")
+
+        Set tArr = ##class(%DynamicArray).%FromJSON(tFlatJson)
+        Do $$$AssertTrue($IsObject(tArr), "flattened JSON parses as array")
+        Do $$$AssertEquals(tArr.%Size(), 2, "flattened array has 2 entries (operator + agent; pure tool_result user turn does NOT emit)")
+
+        Set tT0 = tArr.%Get(0)
+        Do $$$AssertEquals(tT0.%Get("role"), "operator", "entry 0 is operator turn")
+        Do $$$AssertEquals(tT0.%Get("content"), "find sessions with errors", "entry 0 preserves operator text")
+
+        Set tT1 = tArr.%Get(1)
+        Do $$$AssertEquals(tT1.%Get("role"), "agent", "entry 1 is agent turn")
+        Do $$$AssertEquals(tT1.%Get("content"), "", "entry 1 has empty content (pure tool_use turn)")
+
+        Set tCalls = tT1.%Get("toolCalls")
+        Do $$$AssertTrue($IsObject(tCalls), "entry 1 has toolCalls array (Story 12.6 AC-1)")
+        Do $$$AssertEquals(tCalls.%Size(), 1, "entry 1 has exactly 1 tool call")
+
+        Set tCall = tCalls.%Get(0)
+        Do $$$AssertEquals(tCall.%Get("id"), "tu-01", "tool call preserves canonical id")
+        Do $$$AssertEquals(tCall.%Get("name"), "find_sessions_by_status", "tool call preserves canonical name")
+        Do $$$AssertTrue($IsObject(tCall.%Get("args")), "tool call has args object (sourced from tool_use.input)")
+        Do $$$AssertEquals(tCall.%Get("args").%Get("status"), "error", "args.status preserved")
+        Do $$$AssertEquals(tCall.%Get("args").%Get("limit"), 10, "args.limit preserved")
+        Do $$$AssertEquals(tCall.%Get("status"), "ok", "tool call status=ok (is_error absent or false)")
+
+        ; Result merged from tool_result.content (parsed JSON) — the
+        ; load-bearing shape for the JS renderSearchResultList replay path.
+        Set tResult = tCall.%Get("result")
+        Do $$$AssertTrue($IsObject(tResult), "tool call has result object (parsed from tool_result.content)")
+        Set tStructured = tResult.%Get("structuredContent")
+        Do $$$AssertTrue($IsObject(tStructured), "result.structuredContent present")
+        Do $$$AssertEquals(tStructured.%Get("result_count"), 2, "structuredContent.result_count preserved")
+        Set tSessionsBack = tStructured.%Get("sessions")
+        Do $$$AssertTrue($IsObject(tSessionsBack), "structuredContent.sessions array present")
+        Do $$$AssertEquals(tSessionsBack.%Size(), 2, "structuredContent.sessions has 2 entries")
+
+        Do tHistRO.%Close()
+    }
+    Catch ex {
+        Do $$$AssertTrue(0, "TestFlattenTurnsPreservesToolCalls threw: " _ ex.DisplayString())
+    }
+
+    ; Cleanup.
+    Set tCleanup = ##class(%SQL.Statement).%New()
+    If $$$ISOK(tCleanup.%Prepare("DELETE FROM SessionAgent_Chat.History WHERE %EXACT(SessionKey) = ?")) {
+        Do tCleanup.%Execute(tConvKey)
+    }
+    Quit
+}
+
+/// <p>Test (Story 12.6 — error-path) — assert tool_result blocks
+/// with <code>is_error=1</code> set <code>status="error"</code> on
+/// the merged tool call entry. Same fixture shape as
+/// <method>TestFlattenTurnsPreservesToolCalls</method> but with
+/// <code>is_error</code> on the tool_result.</p>
+Method TestFlattenTurnsToolResultErrorStatus()
+{
+    Set tConvKey = "mv-tile-replay-err-" _ $Random(100000)
+    Set tHist = ##class(SessionAgent.Chat.History).LoadOrCreate("message-search", tConvKey, "_12-6-err", "")
+    Do $$$AssertTrue($IsObject(tHist), "synthetic Chat.History row created")
+    If '$IsObject(tHist) Quit
+
+    Try {
+        Set tTurns = ##class(%DynamicArray).%New()
+
+        ; assistant — single tool_use.
+        Set tAsstTurn = ##class(%DynamicObject).%New()
+        Do tAsstTurn.%Set("role", "assistant")
+        Set tAsstContent = ##class(%DynamicArray).%New()
+        Set tToolUse = ##class(%DynamicObject).%New()
+        Do tToolUse.%Set("type", "tool_use")
+        Do tToolUse.%Set("id", "tu-err-01")
+        Do tToolUse.%Set("name", "session_summary")
+        Set tToolInput = ##class(%DynamicObject).%New()
+        Do tToolInput.%Set("session_id", "bogus")
+        Do tToolUse.%Set("input", tToolInput)
+        Do tAsstContent.%Push(tToolUse)
+        Do tAsstTurn.%Set("content", tAsstContent)
+        Do tTurns.%Push(tAsstTurn)
+
+        ; user — tool_result with is_error=true.
+        Set tTrTurn = ##class(%DynamicObject).%New()
+        Do tTrTurn.%Set("role", "user")
+        Set tTrContent = ##class(%DynamicArray).%New()
+        Set tTr = ##class(%DynamicObject).%New()
+        Do tTr.%Set("type", "tool_result")
+        Do tTr.%Set("tool_use_id", "tu-err-01")
+        Do tTr.%Set("is_error", 1)
+        Do tTr.%Set("content", "session not found")
+        Do tTrContent.%Push(tTr)
+        Do tTrTurn.%Set("content", tTrContent)
+        Do tTurns.%Push(tTrTurn)
+
+        Do tHist.TurnsJson.Clear()
+        Do tTurns.%ToJSON(tHist.TurnsJson)
+        Do $$$AssertStatusOK(tHist.%Save(), "error-fixture persisted")
+        Set tHistRO = ##class(SessionAgent.Chat.History).ConvKeyIdxOpen("message-search", tConvKey, "_12-6-err", 0)
+
+        Set tFlatJson = ##class(SessionAgent.EnsPortal.MessageViewer).FlattenTurnsForBootstrap(tHistRO)
+        Set tArr = ##class(%DynamicArray).%FromJSON(tFlatJson)
+        Do $$$AssertEquals(tArr.%Size(), 1, "flattened array has 1 entry (agent only)")
+        Set tCall = tArr.%Get(0).%Get("toolCalls").%Get(0)
+        Do $$$AssertEquals(tCall.%Get("status"), "error", "is_error=1 maps to status=error (Story 12.6)")
+        ; Plain-string content path — not JSON-parseable, kept verbatim.
+        Do $$$AssertEquals(tCall.%Get("result"), "session not found", "non-JSON tool_result.content preserved verbatim")
+        Do tHistRO.%Close()
+    }
+    Catch ex {
+        Do $$$AssertTrue(0, "TestFlattenTurnsToolResultErrorStatus threw: " _ ex.DisplayString())
+    }
+
+    Set tCleanup = ##class(%SQL.Statement).%New()
+    If $$$ISOK(tCleanup.%Prepare("DELETE FROM SessionAgent_Chat.History WHERE %EXACT(SessionKey) = ?")) {
+        Do tCleanup.%Execute(tConvKey)
+    }
+    Quit
+}
+
+/// <p>Test (Story 12.6 — backward-compat invariant) — pure-text
+/// transcripts (no tool_use blocks) MUST flatten identically to the
+/// pre-12.6 shape: 2 entries, no <code>toolCalls</code> field.</p>
+Method TestFlattenTurnsBackwardCompat()
+{
+    Set tConvKey = "mv-tile-bc-" _ $Random(100000)
+    Set tHist = ##class(SessionAgent.Chat.History).LoadOrCreate("message-search", tConvKey, "_12-6-bc", "")
+    If '$IsObject(tHist) Quit
+
+    Try {
+        Set tTurns = ##class(%DynamicArray).%New()
+        Set tU = ##class(%DynamicObject).%New()
+        Do tU.%Set("role", "user")
+        Set tUC = ##class(%DynamicArray).%New()
+        Set tUB = ##class(%DynamicObject).%New()
+        Do tUB.%Set("type", "text") Do tUB.%Set("text", "hello")
+        Do tUC.%Push(tUB) Do tU.%Set("content", tUC) Do tTurns.%Push(tU)
+
+        Set tA = ##class(%DynamicObject).%New()
+        Do tA.%Set("role", "assistant")
+        Set tAC = ##class(%DynamicArray).%New()
+        Set tAB = ##class(%DynamicObject).%New()
+        Do tAB.%Set("type", "text") Do tAB.%Set("text", "hi back")
+        Do tAC.%Push(tAB) Do tA.%Set("content", tAC) Do tTurns.%Push(tA)
+
+        Do tHist.TurnsJson.Clear()
+        Do tTurns.%ToJSON(tHist.TurnsJson)
+        Do tHist.%Save()
+        Set tHistRO = ##class(SessionAgent.Chat.History).ConvKeyIdxOpen("message-search", tConvKey, "_12-6-bc", 0)
+
+        Set tFlatJson = ##class(SessionAgent.EnsPortal.MessageViewer).FlattenTurnsForBootstrap(tHistRO)
+        Set tArr = ##class(%DynamicArray).%FromJSON(tFlatJson)
+        Do $$$AssertEquals(tArr.%Size(), 2, "pure-text fixture flattens to 2 entries (backward-compat)")
+        Do $$$AssertEquals(tArr.%Get(0).%Get("role"), "operator", "operator turn preserved")
+        Do $$$AssertEquals(tArr.%Get(1).%Get("role"), "agent", "agent turn preserved")
+        Do $$$AssertEquals(tArr.%Get(1).%Get("content"), "hi back", "agent text preserved")
+        Do $$$AssertTrue('tArr.%Get(1).%IsDefined("toolCalls"), "no toolCalls field on text-only agent turn (backward-compat)")
+        Do tHistRO.%Close()
+    }
+    Catch ex {
+        Do $$$AssertTrue(0, "TestFlattenTurnsBackwardCompat threw: " _ ex.DisplayString())
+    }
+
+    Set tCleanup = ##class(%SQL.Statement).%New()
+    If $$$ISOK(tCleanup.%Prepare("DELETE FROM SessionAgent_Chat.History WHERE %EXACT(SessionKey) = ?")) {
+        Do tCleanup.%Execute(tConvKey)
+    }
+    Quit
+}
+
 }

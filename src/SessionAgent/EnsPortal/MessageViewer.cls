@@ -623,38 +623,60 @@ ClassMethod RecordClickThrough(pSearchSessionKey As %String, pSessionId As %Stri
 }
 
 /// <p>Story 10.10 hotfix — override the grandparent's
-/// <code>onTabChange()</code> to dispatch refresh for our 5th tab
+/// <code>onTabChange()</code> to skip the destructive
+/// <code>refreshContents()</code> path for our 5th tab
 /// (<code>askAgentTab</code>). The grandparent's
 /// <CLASS>EnsPortal.Template.filteredViewer</CLASS>.<METHOD>onTabChange</METHOD>
 /// has a hard <code>switch (currTab) { case 1..4: ...; default: break }</code>
 /// that ignores tab indices &gt; 4 — our 5th tab never has its server-side
-/// <code>OnDrawContent</code> callback fired on tab-click. Empirical Task 0
-/// probe (Story 10.10) confirmed: clicking "Ask the agent" produced ZERO
-/// new broker calls and zero <code>^ClineDebug</code> entries — Zen's
-/// hyperevent path was never invoked. The fix is a thin override that
-/// calls <code>this.invokeSuper('onTabChange', arguments)</code> first
-/// (preserves parent semantics for tabs 1-4) then refreshes
-/// <code>chatPanelHost</code> when <code>currTab === 5</code>.</p>
+/// <code>OnDrawContent</code> callback fired on tab-click. The previous
+/// (Story 10.10) implementation called
+/// <code>chatHost.refreshContents()</code> in the override to "wake up"
+/// the panel — but per the Story 10.13 walkthrough investigation, Zen
+/// renders <code>OnDrawContent</code> at page-parse time anyway (the
+/// panel HTML is already in the DOM when the page loads, just hidden
+/// via the parent's tabGroup CSS). Calling
+/// <code>refreshContents()</code> destructively REPLACES the panel HTML
+/// — wiping the welcome message, the input field's bound event
+/// listeners, and the IIFE-scoped chat-panel.js state. The fix:
+/// short-circuit BEFORE the destructive refresh, leaving the
+/// page-load-time-rendered panel intact.</p>
 ///
-/// <p><b>Idempotence guard.</b> The parent's switch keys content refresh
-/// off <code>this._tabDisplay[name] != this.selectedId</code> — repeated
-/// clicks on the same tab don't re-issue the hyperevent. We mirror that
-/// pattern: track <code>this._tabDisplay['Agent']</code> and only refresh
-/// when the operator-context (selectedId OR first-time-empty) changed.
-/// Note: the search-agent chat panel is selectedId-INDEPENDENT (the
-/// search-session GUID stored in <code>%session.Data</code> is the
-/// operator-scope key, not the row id), so the guard collapses to "did
-/// the panel ever render in this page lifetime?" — first click renders,
-/// subsequent clicks no-op (matches the ChatHistoryView semantics of the
-/// existing chat-panel).</p>
+/// <p><b>Story 10.13 F-2 (release-blocker).</b> The pre-Story-10.13
+/// override called <code>refreshContents()</code> on every tab-click
+/// (gated only by a <code>_tabDisplay['Agent']==='__rendered__'</code>
+/// sentinel). The sentinel guard worked correctly for repeated clicks
+/// AFTER the first refresh, but the first-ever click ALWAYS hit the
+/// destructive path — wiping the working DOM. Empirically verified via
+/// chrome-devtools-mcp DOM probe: pre-first-click the transcript
+/// contained the welcome message + had bound event listeners; post-
+/// first-click the transcript was empty (refreshContents replaced the
+/// HTML; chat-panel.js init() doesn't re-run, so the new transcript
+/// has no welcome and the new input has no event listeners). The fix:
+/// onTabChange is now a no-op for the Agent tab — Zen's lazy-render
+/// already drew the panel HTML at page load, and the IIFE's init()
+/// already bound all events. There is no "refresh" we need; we just
+/// need to NOT destroy what's working.</p>
 ClientMethod onTabChange() [ Language = javascript ]
 {
     // Always invoke the parent's onTabChange first so tabs 1-4 (Header /
     // Body / Contents / Trace) keep their existing refresh semantics.
     this.invokeSuper('onTabChange', arguments);
 
-    // Tab 5 (askAgentTab) is the gap the parent's switch leaves uncovered.
-    // Refresh the chat-panel host html element if we're on it.
+    // Tab 5 (askAgentTab) is the gap the parent's switch leaves uncovered —
+    // BUT we no longer need to fill it. Per Story 10.13 F-2 investigation:
+    // Zen renders the askAgentTab's <html OnDrawContent="DrawChatPanel"/>
+    // at page-parse time (eager render); the chat-panel.js IIFE binds
+    // events at DOMContentLoaded. The previous Story 10.10 fix triggered
+    // a destructive re-render on first tab-click which wiped the IIFE-
+    // bound DOM. The correct behavior is no-op: the panel is already
+    // ready; clicking the tab just makes it visible (Zen handles the
+    // visibility toggle separately). See class doc-comment + the
+    // §"Story 10.13 F-2" doc-block above for the full rationale.
+    //
+    // We still set the sentinel for ergonomic reasons (so any future code
+    // that introspects _tabDisplay['Agent'] to detect "is the panel
+    // rendered?" gets a truthy answer).
     if (this.detailsHidden) { return; }
     var tabGroup = zen('detailsTabGroup');
     if (!tabGroup) { return; }
@@ -662,15 +684,8 @@ ClientMethod onTabChange() [ Language = javascript ]
     if (currTab !== 5) { return; }
 
     if (!this._tabDisplay) { this._tabDisplay = new Object(); }
-    // The chat panel is operator-scoped (search-session GUID lives in
-    // %session.Data) — not row-scoped. Use a sentinel so the panel
-    // renders once per page lifetime; subsequent same-tab clicks no-op.
-    if (this._tabDisplay['Agent'] === '__rendered__') { return; }
-    var chatHost = zen('chatPanelHost');
-    if (chatHost && typeof chatHost.refreshContents === 'function') {
-        chatHost.refreshContents();
-        this._tabDisplay['Agent'] = '__rendered__';
-    }
+    this._tabDisplay['Agent'] = '__rendered__';
+    // No re-render call — see Story 10.13 F-2 doc-comment above.
 }
 
 }

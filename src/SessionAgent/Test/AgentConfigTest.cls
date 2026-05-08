@@ -714,12 +714,23 @@ Method TestProviderRotationCascadesModelCredential()
     Do $$$AssertEquals(tObj.%Get("credentialName"), "SessionAgentGemini", "gemini canonical credentialName = SessionAgentGemini")
     Do $$$AssertEquals(tObj.%Get("envVarName"), "GEMINI_API_KEY", "gemini canonical envVarName = GEMINI_API_KEY")
 
-    ; openai-compatible — empty cred + empty env (operator-supplied).
+    ; openai-compatible — Story 10.13 F-3 sensible Ollama defaults.
+    ; Pre-Story 10.13 the canonical values were ALL empty, which the
+    ; AgentConfig form's onChangeProvider cascade then silently emitted
+    ; into endpointUrl + envVarName — operator clicked Save and the
+    ; SaveAgentConfig validator (Rules 5 + 7) rejected with two field
+    ; errors. The Perplexity-verified defaults (per Rule 10 research
+    ; 2026-05-08) populate Ollama's canonical local endpoint + the
+    ; conventional OLLAMA_API_KEY env-var name so the operator can
+    ; rotate to openai-compatible and Save coherent values. Empty cred
+    ; preserved (operator-supplied; Ens.Config.Credentials rotation
+    ; rare for local-Ollama).
     Set tJson = ##class(SessionAgent.UI.AgentConfig).LoadProviderDefaults("openai-compatible")
     Set tObj = ##class(%DynamicObject).%FromJSON(tJson)
     Do $$$AssertEquals(tObj.%Get("model"), "qwen2.5:32b", "openai-compatible canonical model = qwen2.5:32b")
-    Do $$$AssertEquals(tObj.%Get("credentialName"), "", "openai-compatible canonical credentialName empty")
-    Do $$$AssertEquals(tObj.%Get("envVarName"), "", "openai-compatible canonical envVarName empty")
+    Do $$$AssertEquals(tObj.%Get("credentialName"), "", "openai-compatible canonical credentialName empty (operator-supplied)")
+    Do $$$AssertEquals(tObj.%Get("envVarName"), "OLLAMA_API_KEY", "openai-compatible canonical envVarName = OLLAMA_API_KEY (Story 10.13 F-3)")
+    Do $$$AssertEquals(tObj.%Get("endpointUrl"), "http://localhost:11434/v1", "openai-compatible canonical endpointUrl = http://localhost:11434/v1 (Story 10.13 F-3)")
 
     ; Unknown provider falls through to openai canonical (defense-in-depth).
     Set tJson = ##class(SessionAgent.UI.AgentConfig).LoadProviderDefaults("nonexistent-provider-xyz")
@@ -774,6 +785,99 @@ Method TestSaveHandlerPersistsRetentionDays()
     Do ##class(SessionAgent.UI.AgentConfig).SaveAgentConfig(
         tAgentName, tOrigProvider, tOrigModel, "", "env",
         "OPENAI_API_KEY", "", "4000", "0.1", "", tEnabledStr, tOrigRetention)
+    Quit
+}
+
+/// <p>Story 10.13 F-3 end-to-end Save behavior — driving the openai-
+/// compatible cascade defaults through SaveAgentConfig produces a
+/// SUCCESS envelope (no field errors). Pre-Story 10.13 the cascade
+/// emitted empty endpointUrl + empty envVarName, which the validator
+/// rejected with two field errors. Post-fix the canonical defaults
+/// (http://localhost:11434/v1 + OLLAMA_API_KEY) satisfy the validator
+/// so the operator's first Save succeeds.</p>
+///
+/// <p>The test bypasses the JS form — the cascade itself is JS — and
+/// invokes SaveAgentConfig directly with the values the cascade WOULD
+/// have populated. Asserts <code>success=1</code> and re-reads the
+/// row to confirm the persisted endpointUrl + envVarName triple.
+/// Restores the row's original openai shape at the end so the test
+/// is self-cleaning.</p>
+Method TestOpenAICompatCascadeProducesSuccessfulSave()
+{
+    Set tAgentName = "message-search"
+
+    ; Capture FULL original row state for faithful restoration. Per
+    ; code-review finding (Story 10.13 review): a partial capture (only
+    ; Provider/Model/Endpoint/Enabled) plus a hardcoded restore EnvVarName
+    ; silently overwrites the operator's actual EnvVar/Cred/MaxTokens/
+    ; SearchChatRetentionDays values if the row had been previously
+    ; rotated to a non-openai shape or operator-mutated. Capturing every
+    ; field SaveAgentConfig writes ensures the test is genuinely
+    ; self-cleaning regardless of seed state.
+    Set tCfg0 = ##class(SessionAgent.Config.Agent).AgentNameIdxOpen(tAgentName)
+    Set tOrigProvider = "openai"
+    Set tOrigModel = "gpt-4.1-mini"
+    Set tOrigEnabled = 0
+    Set tOrigEndpoint = ""
+    Set tOrigEnvVar = "OPENAI_API_KEY"
+    Set tOrigCred = ""
+    Set tOrigMaxTokens = "4000"
+    Set tOrigRetention = 30
+    If $IsObject(tCfg0) {
+        Set tOrigProvider = tCfg0.Provider
+        Set tOrigModel = tCfg0.Model
+        Set tOrigEnabled = tCfg0.Enabled
+        Set tOrigEndpoint = tCfg0.EndpointUrl
+        If tOrigEndpoint = $Char(0) Set tOrigEndpoint = ""
+        Set tOrigEnvVar = tCfg0.EnvVarName
+        If tOrigEnvVar = $Char(0) Set tOrigEnvVar = ""
+        If tOrigEnvVar = "" Set tOrigEnvVar = "OPENAI_API_KEY"
+        Set tOrigCred = tCfg0.CredentialName
+        If tOrigCred = $Char(0) Set tOrigCred = ""
+        Set tOrigMaxTokens = +tCfg0.MaxTokens
+        If tOrigMaxTokens < 1 Set tOrigMaxTokens = 4000
+        Set tOrigRetention = +tCfg0.SearchChatRetentionDays
+        If tOrigRetention < 1 Set tOrigRetention = 30
+        Do tCfg0.%Close()
+    }
+
+    ; Drive the openai-compatible cascade values through SaveAgentConfig.
+    ; These are the EXACT values GetCanonicalDefaults("openai-compatible")
+    ; now returns post-Story-10.13 — the F-3 fix's contract is that
+    ; these values produce a successful save without operator
+    ; intervention.
+    Set tEnabledStr = $Select(tOrigEnabled = 1 : "1", 1 : "0")
+    Set tJson = ##class(SessionAgent.UI.AgentConfig).SaveAgentConfig(
+        tAgentName, "openai-compatible", "qwen2.5:32b",
+        "http://localhost:11434/v1", "env",
+        "OLLAMA_API_KEY", "", "4096", "0.1", "", tEnabledStr, tOrigRetention)
+    Set tObj = ##class(%DynamicObject).%FromJSON(tJson)
+    Do $$$AssertEquals(tObj.%Get("success"), 1, "Story 10.13 F-3: openai-compatible cascade values produce success on Save (got: " _ tJson _ ")")
+
+    ; Re-read the row and assert the persisted triple.
+    Set tCfgNew = ##class(SessionAgent.Config.Agent).AgentNameIdxOpen(tAgentName)
+    Do $$$AssertTrue($IsObject(tCfgNew), "Row resolves after openai-compatible save")
+    If $IsObject(tCfgNew) {
+        Set tEp = tCfgNew.EndpointUrl
+        If tEp = $Char(0) Set tEp = ""
+        Set tEv = tCfgNew.EnvVarName
+        If tEv = $Char(0) Set tEv = ""
+        Set tMod = tCfgNew.Model
+        If tMod = $Char(0) Set tMod = ""
+        Do $$$AssertEquals(tCfgNew.Provider, "openai-compatible", "Provider persists as openai-compatible")
+        Do $$$AssertEquals(tMod, "qwen2.5:32b", "Model persists as qwen2.5:32b")
+        Do $$$AssertEquals(tEp, "http://localhost:11434/v1", "EndpointUrl persists as the canonical Ollama endpoint")
+        Do $$$AssertEquals(tEv, "OLLAMA_API_KEY", "EnvVarName persists as OLLAMA_API_KEY")
+        Do tCfgNew.%Close()
+    }
+
+    ; Faithful restore — every field captured on entry is written back.
+    ; CredType radio is "env" if cred is empty, else "credential" (matches
+    ; the LoadAgentConfig form-state mapping).
+    Set tCredType = $Select(tOrigCred = "" : "env", 1 : "credential")
+    Do ##class(SessionAgent.UI.AgentConfig).SaveAgentConfig(
+        tAgentName, tOrigProvider, tOrigModel, tOrigEndpoint, tCredType,
+        tOrigEnvVar, tOrigCred, tOrigMaxTokens, "0.1", "", tEnabledStr, tOrigRetention)
     Quit
 }
 

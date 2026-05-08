@@ -311,6 +311,25 @@ ClassMethod EmitStyle() As %Status
     &html<.sa-concurrent-tab-banner { display: flex; align-items: center; padding: 10px 12px; margin: 0 0 8px 0; border-left: 3px solid var(--sa-banner-warning-border, #d49317); background: var(--sa-banner-warning-bg, rgba(212, 147, 23, 0.10)); color: var(--sa-banner-warning-fg, #6b4a0a); font-size: 0.94em; min-height: 40px; }>
     &html<.sa-input-locked { opacity: 0.55; cursor: not-allowed; }>
 
+    ; Story 10.13 F-4 — Search-Agent chat panel sizing on the Message
+    ; Viewer. The parent EnsPortal.MessageViewer hosts the panel inside
+    ; #detailsTabGroup → #askAgentTab, an area the parent designed for
+    ; narrow property forms (Header / Body / Contents / Trace tabs each
+    ; show ~12-16 form fields), so the area defaults to a small width
+    ; and the panel rendered ~168px wide × 36px tall (verified via
+    ; chrome-devtools-mcp DOM probe at story-implementation time). The
+    ; rule below targets the panel ONLY when it appears inside the
+    ; Message-Viewer detail-pane parent — a more specific selector
+    ; (#detailsTabGroup #askAgentTab .sa-chat-panel) wins over the base
+    ; rule's height:100%. The VisualTrace host page uses parent id
+    ; #contentTabs (NOT #detailsTabGroup) so this rule does NOT regress
+    ; that surface. The min-height: 400px reserves enough vertical
+    ; space for the welcome message + several turns of conversation;
+    ; min-width: 480px gives the transcript readable width and lets
+    ; tool-call cards lay out without awkward wrapping.
+    &html<#detailsTabGroup #askAgentTab .sa-chat-panel { min-width: 480px; min-height: 400px; }>
+    &html<#detailsTabGroup #askAgentTab .sa-message-transcript { min-height: 280px; }>
+
     &html<</style>>
     Quit $$$OK
 }

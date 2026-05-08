@@ -426,4 +426,54 @@ Method TestCitationDefensiveGuardsPresent()
     Do $$$AssertTrue(..FileContents [ "isCitationDispatchable(citeType, citeId)", "onTranscriptClick gates dispatch through validator (Story 4.0 AC-6.1)")
 }
 
+/// <p>Story 10.13 F-2 — sentinel-set-on-initial-render contract. The
+/// chat-panel.js init() function MUST set
+/// <code>zenPage._tabDisplay['Agent']='__rendered__'</code> at the end
+/// of init so the host page's onTabChange override (e.g. the
+/// <CLASS>SessionAgent.EnsPortal.MessageViewer</CLASS> override added
+/// in Story 10.10) short-circuits on the FIRST operator click. Without
+/// this sentinel, the first tab-click calls
+/// <code>chatHost.refreshContents()</code> which re-runs OnDrawContent
+/// server-side and replaces the working DOM that init() bound events
+/// to — leaving the panel inert (transcript empty, Enter no longer
+/// submits). The Story 10.10 override-side guard works correctly; this
+/// test enforces the init-side companion that the original Story 10.10
+/// implementation missed (surfaced empirically by the Story 10.9
+/// walkthrough V2).</p>
+Method TestSentinelSetOnInitialRender()
+{
+    Do $$$AssertStatusOK(..LoadFile(), "LoadFile resolved chat-panel.js at " _ ..FilePath)
+    ; Sentinel-set fragment present in init().
+    Do $$$AssertTrue(..FileContents [ "zenPage._tabDisplay['Agent'] = '__rendered__'", "init() sets _tabDisplay['Agent']='__rendered__' to short-circuit the first-click refresh (Story 10.13 F-2)")
+    ; Defensive guard around zenPage access — the Story 3.6 manual-smoke
+    ; fixture loads the JS without a Zen page; the typeof guard keeps
+    ; this safe outside a Zen page context.
+    Do $$$AssertTrue(..FileContents [ "typeof zenPage !== 'undefined'", "init() guards the sentinel-set behind a typeof zenPage check (Story 10.13 F-2 defense)")
+}
+
+/// <p>Story 10.13 F-5 — agent-aware welcome message. The
+/// <code>renderWelcomeMessage</code> helper MUST branch on
+/// <code>state.context.agentName</code> so the Search Agent
+/// (<code>message-search</code>) gets a Search-flavored greeting +
+/// Search-flavored example questions, while the Inspection Agent
+/// (<code>session-inspection</code> via VisualTrace) keeps its
+/// existing per-session greeting. Pre-Story 10.13 the welcome was
+/// hardcoded for the Inspection host and shipped verbatim on the
+/// Search host, surfacing a UX gap (operator saw "Ask anything about
+/// this session..." despite no "this session" context on Message
+/// Viewer).</p>
+Method TestWelcomeMessageAgentAware()
+{
+    Do $$$AssertStatusOK(..LoadFile(), "LoadFile resolved chat-panel.js at " _ ..FilePath)
+    ; Branch keys off the bound agentName (state.context.agentName).
+    Do $$$AssertTrue(..FileContents [ "agentName === 'message-search'", "renderWelcomeMessage branches on state.context.agentName === 'message-search' (Story 10.13 F-5)")
+    ; Search-Agent welcome opener (verbatim per the AC suggestion).
+    Do $$$AssertTrue(..FileContents [ "Ask me to find sessions across this IRIS instance", "Search-flavored welcome opener present for message-search (Story 10.13 F-5)")
+    ; Search-Agent example-question fragment (substantive content check).
+    Do $$$AssertTrue(..FileContents [ "find failed admits in the last hour", "Search-flavored example question present (Story 10.13 F-5)")
+    ; Inspection-Agent welcome STILL present (regression guard — we
+    ; branched, didn't replace).
+    Do $$$AssertTrue(..FileContents [ "Ask anything about this session", "Inspection-flavored welcome still present in else branch (Story 10.13 F-5 regression guard)")
+}
+
 }

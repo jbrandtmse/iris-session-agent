@@ -98,11 +98,25 @@ ClassMethod GetSystemPrompt(pAgentName As %String) As %String
 /// pricing table) + cred <code>SessionAgentGemini</code> + env
 /// <code>GEMINI_API_KEY</code></li>
 /// <li><b>openai-compatible</b> — model <code>qwen2.5:32b</code> (Ollama
-/// default; operator typically retypes for their stack) + empty cred
-/// + empty env (open-ended; operator-supplied) + empty endpoint
-/// (operator MUST type the local endpoint, e.g.,
-/// <code>http://localhost:11434/v1/chat/completions</code>)</li>
+/// default per Story 10.13 Rule 10 verification 2026-05-08; mid-tier
+/// tool-calling default per Perplexity research — Llama3.3:70B is the
+/// stronger alternative, qwen2.5:32b is faster on operator hardware) +
+/// empty cred (operator-supplied; Ens.Config.Credentials rotation is
+/// rare for local-Ollama) + env <code>OLLAMA_API_KEY</code> (conventional
+/// even for unauthenticated local Ollama — operator may set it to a
+/// dummy "OLLAMA" value) + endpoint
+/// <code>http://localhost:11434/v1</code> (canonical Ollama OpenAI-
+/// compatible endpoint per Perplexity research)</li>
 /// </ul>
+///
+/// <p><b>Story 10.13 F-3.</b> The openai-compatible defaults pre-Story 10.13
+/// were ALL empty — the AgentConfig form's onChangeProvider cascade
+/// populated empty strings into endpointUrl + envVarName, which the
+/// SaveAgentConfig validator (Rules 5 + 7) then rejected with two
+/// field errors. Verified-current defaults (per Perplexity research
+/// 2026-05-08) populate sensible Ollama values so the operator can
+/// rotate to openai-compatible and click Save without first re-typing
+/// the canonical endpoint + env-var name.</p>
 ///
 /// <p><b>Unknown provider name</b> returns the openai-canonical triple as
 /// the safe defaulting shape — the same fallthrough <method>LoadAgentConfig</method>
@@ -123,10 +137,15 @@ ClassMethod GetCanonicalDefaults(pProvider As %String) As %DynamicObject
         Do tObj.%Set("envVarName", "GEMINI_API_KEY")
         Do tObj.%Set("endpointUrl", "")
     } ElseIf pProvider = "openai-compatible" {
+        ; Story 10.13 F-3 — Ollama-flavored canonical defaults. Per
+        ; Perplexity Rule-10 research (2026-05-08): qwen2.5:32b for
+        ; mid-tier tool-calling, http://localhost:11434/v1 canonical
+        ; Ollama endpoint, OLLAMA_API_KEY conventional env-var name
+        ; (set to a dummy value if Ollama runs unauthenticated).
         Do tObj.%Set("model", "qwen2.5:32b")
         Do tObj.%Set("credentialName", "")
-        Do tObj.%Set("envVarName", "")
-        Do tObj.%Set("endpointUrl", "")
+        Do tObj.%Set("envVarName", "OLLAMA_API_KEY")
+        Do tObj.%Set("endpointUrl", "http://localhost:11434/v1")
     } Else {
         ; openai canonical (also the unknown-fallthrough safe default).
         Do tObj.%Set("model", "gpt-4.1-mini")

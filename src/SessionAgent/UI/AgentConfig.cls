@@ -704,6 +704,22 @@ ClientMethod onChangeProvider(value) [ Language = javascript ]
     // And re-apply credential-source visibility now that the radio may
     // have flipped above.
     zenPage.credTypeChanged();
+
+    // Story 10.13 F-3 (defense-in-depth) — when rotating to openai-
+    // compatible, EXPLICITLY ensure endpointUrlText is unhidden. The
+    // upstream providerChanged() handler already toggles visibility via
+    // setHidden(provider !== 'openai-compatible'), but the rotation-cascade
+    // path is the operator's first-encounter surface and an empirical
+    // bug here ships as a release-blocker (operator can't see the field
+    // they need to fill). The explicit setHidden(false) below is
+    // idempotent with providerChanged() and serves as a regression guard
+    // if a future edit to providerChanged() breaks the visibility branch.
+    if (value === 'openai-compatible') {
+        var endpointForceUnhide = zen('endpointUrlText');
+        if (endpointForceUnhide) {
+            endpointForceUnhide.setHidden(false);
+        }
+    }
 }
 
 /// <p>Client-side handler — fired on provider-selector change. Updates
@@ -770,7 +786,13 @@ ClientMethod providerChanged() [ Language = javascript ]
     var envVar = zen('envVarText');
     if (envVar) {
         var current = envVar.getValue() || '';
-        var canonicalDefaults = ['', 'PATH', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'GEMINI_API_KEY', 'GOOGLE_API_KEY'];
+        // Story 10.13 F-3: OLLAMA_API_KEY added to the stale-canonical guard
+        // set so a rotation FROM openai-compatible TO a hyperscaler correctly
+        // upgrades the env-var name. Without this the operator who picked
+        // openai-compatible (which now seeds OLLAMA_API_KEY per the cascade)
+        // and then rotates to openai would keep OLLAMA_API_KEY — predicted
+        // bug per Rule 8.
+        var canonicalDefaults = ['', 'PATH', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'GEMINI_API_KEY', 'GOOGLE_API_KEY', 'OLLAMA_API_KEY'];
         var isStaleCanonical = (canonicalDefaults.indexOf(current) >= 0);
         if (isStaleCanonical) {
             var newDefault = '';
@@ -778,7 +800,7 @@ ClientMethod providerChanged() [ Language = javascript ]
                 case 'openai':            newDefault = 'OPENAI_API_KEY';    break;
                 case 'anthropic':         newDefault = 'ANTHROPIC_API_KEY'; break;
                 case 'gemini':            newDefault = 'GEMINI_API_KEY';    break;
-                case 'openai-compatible': newDefault = current;             break; // preserve
+                case 'openai-compatible': newDefault = 'OLLAMA_API_KEY';    break;
             }
             if (newDefault !== current) {
                 envVar.setValue(newDefault);

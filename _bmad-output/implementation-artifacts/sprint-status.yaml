@@ -1,5 +1,5 @@
 # generated: 2026-05-02
-# last_updated: 2026-05-08 (Story 10.11 code review complete — done; 0 HIGH/MEDIUM, 3 LOW deferred)
+# last_updated: 2026-05-08 (Story 10.13 code review complete — 1 MEDIUM auto-fixed [test restoration faithfulness], 1 LOW deferred [node -c evidence-shape]; regression sweep 423/423/0 holds post-patch; status: done)
 # project: iris-session-agent
 # project_key: NOKEY
 # tracking_system: file-system
@@ -150,4 +150,5 @@ development_status:
   10-10-search-agent-tab-render-hotfix: done
   10-11-agentconfig-form-save-propagate-model-credential: done
   10-12-citation-chip-click-regression-investigate-and-fix: done
+  10-13-search-agent-ui-bundled-hotfix: done
   epic-10-retrospective: optional

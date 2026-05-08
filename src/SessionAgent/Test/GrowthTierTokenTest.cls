@@ -184,4 +184,35 @@ Method TestWcagContrastDocumentationPresent()
     Quit
 }
 
+/// <p>Story 10.13 F-4 — Search-Agent chat panel sizing rule for the
+/// Message Viewer host. Asserts <method>EmitStyle</method> emits a
+/// rule whose selector is parent-scoped to
+/// <code>#detailsTabGroup #askAgentTab .sa-chat-panel</code> with
+/// <code>min-width: 480px</code> + <code>min-height: 400px</code>.
+/// The selector specificity (parent-id chain) ensures this rule only
+/// applies on the Message Viewer host page; the VisualTrace host page
+/// uses parent id <code>#contentTabs</code> (NOT
+/// <code>#detailsTabGroup</code>) so this rule does NOT regress the
+/// Inspection Agent's chat panel sizing.</p>
+Method TestMessageViewerChatPanelSizingRule()
+{
+    Set tCss = ..CaptureEmitStyle()
+    Do $$$AssertNotEquals(tCss, "", "Captured EmitStyle output is non-empty")
+
+    ; Story 10.13 F-4 — selector + min-width + min-height present.
+    Do $$$AssertTrue(tCss [ "#detailsTabGroup #askAgentTab .sa-chat-panel", "Story 10.13 F-4: parent-scoped chat-panel selector for Message Viewer present")
+    Do $$$AssertTrue(tCss [ "min-width: 480px", "Story 10.13 F-4: min-width: 480px present in chat-panel sizing rule")
+    Do $$$AssertTrue(tCss [ "min-height: 400px", "Story 10.13 F-4: min-height: 400px present in chat-panel sizing rule")
+
+    ; VisualTrace-regression guard: the rule MUST be parent-scoped to
+    ; #detailsTabGroup ONLY. If a future edit removes the parent prefix
+    ; and applies the min-width globally to .sa-chat-panel, the
+    ; VisualTrace panel layout regresses (its parent uses #contentTabs).
+    ; Assert that the literal "#contentTabs .sa-chat-panel { min-width:"
+    ; substring is NOT present — the F-4 rule must not leak to the other
+    ; host page.
+    Do $$$AssertTrue('(tCss [ "#contentTabs .sa-chat-panel { min-width:"), "Story 10.13 F-4: rule does NOT extend to VisualTrace's #contentTabs parent (regression guard)")
+    Quit
+}
+
 }

@@ -215,21 +215,23 @@ Method TestSendChatMessageMalformedHints()
     Quit
 }
 
-/// <p>Test (Story 10.10 hotfix) — assert the
+/// <p>Test (Story 10.10 + Story 10.13 F-2) — assert the
 /// <code>onTabChange</code> ClientMethod override is declared on the
-/// subclass with the load-bearing fragments needed to dispatch
-/// <code>chatPanelHost.refreshContents()</code> when the operator clicks
-/// the askAgentTab. The grandparent's
+/// subclass with the load-bearing fragments. The grandparent's
 /// <CLASS>EnsPortal.Template.filteredViewer</CLASS>.<METHOD>onTabChange</METHOD>
 /// has a hard <code>switch (currTab) { case 1..4: ...; default: break }</code>
-/// that ignores tab-index 5; without this override, our 5th tab never
-/// fires its server-side <code>OnDrawContent</code> callback (F-1
-/// surfaced empirically via Story 10.9 walkthrough — chat panel never
-/// rendered on tab-click).</p>
+/// that ignores tab-index 5. The Story 10.10 form of this override
+/// called <code>chatHost.refreshContents()</code> to "wake up" the
+/// panel; Story 10.13 F-2 changed that path to a no-op because Zen
+/// renders <code>OnDrawContent</code> eagerly at page parse time
+/// (panel HTML is already in DOM when the page loads), and calling
+/// refreshContents destructively wipes the IIFE-bound state. The
+/// post-Story-10.13 override sets the sentinel but does NOT call
+/// refreshContents.</p>
 Method TestOnTabChangeOverridePresent()
 {
     Set tDef = ##class(%Dictionary.CompiledMethod).%OpenId("SessionAgent.EnsPortal.MessageViewer||onTabChange")
-    Do $$$AssertTrue($IsObject(tDef), "Story 10.10 hotfix: onTabChange ClientMethod is declared on the subclass")
+    Do $$$AssertTrue($IsObject(tDef), "Story 10.10 + 10.13 F-2: onTabChange ClientMethod is declared on the subclass")
     If '$IsObject(tDef) Quit
 
     Do tDef.Implementation.Rewind()
@@ -238,13 +240,23 @@ Method TestOnTabChangeOverridePresent()
         Set tBody = tBody _ tDef.Implementation.Read(32000)
     }
 
-    ; Load-bearing fragments for the F-1 fix.
+    ; Load-bearing fragments — preserved across Story 10.13 F-2 rewrite.
     Do $$$AssertTrue(tBody [ "invokeSuper", "onTabChange invokes parent's onTabChange first (preserves tabs 1-4 refresh)")
     Do $$$AssertTrue(tBody [ "currTab", "onTabChange reads currTab from the tabGroup")
-    Do $$$AssertTrue(tBody [ "chatPanelHost", "onTabChange targets the chatPanelHost html element")
-    Do $$$AssertTrue(tBody [ "refreshContents", "onTabChange calls refreshContents to fire the OnDrawContent hyperevent")
-    ; Idempotence-guard sentinel.
-    Do $$$AssertTrue(tBody [ "_tabDisplay", "onTabChange tracks _tabDisplay sentinel to avoid duplicate refresh on repeated tab clicks")
+    Do $$$AssertTrue(tBody [ "currTab !== 5", "onTabChange short-circuits when currTab is not the askAgentTab")
+    ; Sentinel-set: present (operator-introspectable; matches the
+    ; chat-panel.js init-time sentinel-set).
+    Do $$$AssertTrue(tBody [ "_tabDisplay['Agent']", "onTabChange sets _tabDisplay['Agent'] sentinel (Story 10.13 F-2)")
+    ; Story 10.13 F-2 — refreshContents() must NOT be CALLED on the Agent
+    ; tab (calling it destructively wipes the IIFE-bound chat-panel state).
+    ; A regression test against future re-introduction of the destructive
+    ; path: assert the live JS function-call form
+    ; "chatHost.refreshContents(" is NOT present in the method body. Note
+    ; we only check the CALL form (with parenthesis) not the bare
+    ; substring "refreshContents" — the post-Story-10.13 doc/comment
+    ; references the function name in prose for context, which would
+    ; trip an over-strict substring check.
+    Do $$$AssertTrue('(tBody [ "chatHost.refreshContents("), "Story 10.13 F-2: onTabChange does NOT call chatHost.refreshContents() on the Agent tab (no-op short-circuit preserves IIFE-bound DOM)")
     Quit
 }
 

@@ -270,6 +270,34 @@
         if (typeof window.addEventListener === 'function') {
             window.addEventListener('beforeunload', stopLockPolling);
         }
+
+        // Story 10.13 F-2 fix — mark the chat panel as "already rendered"
+        // on the parent Zen page's _tabDisplay sentinel so the host page's
+        // onTabChange override (e.g. SessionAgent.EnsPortal.MessageViewer's
+        // override) short-circuits on the FIRST operator click. Without
+        // this, the first tab-click calls chatHost.refreshContents() which
+        // re-runs OnDrawContent server-side and replaces the working DOM
+        // (the welcome message + the elements this IIFE bound events to),
+        // leaving the panel inert (transcript empty, Enter no longer
+        // submits). Story 10.10 introduced the sentinel guard as the
+        // intended fix for repeated-click idempotence, but the initial
+        // render path never SET the sentinel — surfaced empirically by
+        // the Story 10.9 walkthrough V2. Setting it here, once init()
+        // has finished wiring the panel, makes the first operator click
+        // a no-op (panel already works) instead of a destructive refresh.
+        // Defensive: zenPage may be absent in the Story 3.6 manual-smoke
+        // fixture; the typeof guard keeps this safe outside a Zen page.
+        try {
+            if (typeof zenPage !== 'undefined' && zenPage) {
+                if (!zenPage._tabDisplay) { zenPage._tabDisplay = {}; }
+                zenPage._tabDisplay['Agent'] = '__rendered__';
+            }
+        } catch (sentinelErr) {
+            // Swallow — sentinel-set is best-effort. If it fails, the
+            // first tab-click will refresh the panel as before (the bug
+            // we're fixing) but the panel still functions correctly on
+            // page-load-time render. No harm in swallowing.
+        }
     }
 
     /**
@@ -586,12 +614,32 @@
      * read-only assertion + 3 example questions. Pure textContent — no
      * inner-HTML, citation chips, or markdown rendering needed for the
      * static welcome.
+     *
+     * Story 10.13 F-5 — agent-aware welcome text. Pre-Story 10.13 the
+     * welcome message was hardcoded for the Inspection Agent's host
+     * (VisualTrace) and shipped verbatim on the Search Agent's host
+     * (MessageViewer), surfacing a UX gap: the Search Agent operator
+     * saw "Ask anything about this session ..." even though there's no
+     * "this session" context on the Message Viewer page. Now the
+     * welcome text branches on state.context.agentName so the Search
+     * Agent gets a Search-flavored greeting + Search-flavored example
+     * questions. The middle dot separator is a real U+00B7 character
+     * (NOT a hyphen-minus); chat-panel.js is served via
+     * SessionAgent.UI.ChatPanelAsset.cls with TranslateTable=UTF8 so
+     * the byte sequence renders correctly per Rule 12 (verified by
+     * chrome-devtools-mcp screenshot post-fix).
      */
     function renderWelcomeMessage() {
         var block = document.createElement('div');
         block.setAttribute('class', 'sa-message-block sa-msg-agent');
-        block.textContent = "Ask anything about this session OR about other sessions across this IRIS instance. I'm read-only — I can't change anything. " +
-            "Try: what happened in this session? · which messages had errors? · find sessions matching X.";
+        var agentName = (state.context && state.context.agentName) || '';
+        if (agentName === 'message-search') {
+            block.textContent = "Ask me to find sessions across this IRIS instance. I'm read-only — I'll search by status, time, source, body content, or any combination. " +
+                "Try: find failed admits in the last hour · show me sessions with errors · which messages had OrderRequest bodies?";
+        } else {
+            block.textContent = "Ask anything about this session OR about other sessions across this IRIS instance. I'm read-only — I can't change anything. " +
+                "Try: what happened in this session? · which messages had errors? · find sessions matching X.";
+        }
         state.transcriptEl.appendChild(block);
     }
 

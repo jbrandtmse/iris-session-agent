@@ -4,6 +4,20 @@ This file accumulates findings, follow-ups, and architect-decision items that ar
 
 ---
 
+## Deferred from: code review of 13-3-get-production-config-item-tool (2026-05-09)
+
+- **`%Execute()` SQLCODE not checked after runtime execution — project-wide inspection tool pattern.**
+
+  - **Source:** Story 13.3 code review; affects `GetProductionConfigItem.cls:156` and the entire `Tool.Inspection.*` family (15+ files).
+  - **Severity:** LOW (predicted-bug shape is mild: a SQL runtime error masquerades as `render_strategy="item_not_found"` rather than a `server_fault` envelope; operator sees incorrect diagnostic rather than a crash; the outer Catch still prevents exceptions from escaping).
+  - **The finding:** After `Set tRS = tStmt.%Execute(...)`, none of the inspection tools check `tRS.%SQLCODE < 0` before calling `tRS.%Next()`. A runtime SQL execution error sets SQLCODE negative and causes `%Next()` to return 0, causing the tool to emit `item_not_found` (or equivalent "no rows") when the real cause is a SQL engine fault.
+  - **Why deferred:** This is a pre-existing project-wide pattern across all 15+ inspection tools — not introduced by Story 13.3. Rule 8 test 1 applies (pre-existing, not caused by this change). Fixing consistently requires a project-wide sweep story, not a targeted Story 13.3 patch.
+  - **Natural carrier:** A future Epic 13 or Epic 14 defensive-sweep story covering all `Tool.Inspection.*` and `Tool.Search.*` classes. When that story is created, lead must grep `deferred-work.md` for this entry (Rule 9).
+  - **Owner:** Lead — to incorporate into a future defensive-sweep story.
+  - **Blocking?** No. The outer Catch prevents any exception from escaping; the only impact is misleading `render_strategy` on a SQL engine fault (uncommon in practice for stable `Ens_Config.Item` queries).
+
+---
+
 ## Deferred from: code review of story-1.1-project-initialization (2026-05-02)
 
 - **`static/` directory placement: architecture diagram vs. IPM `<FileCopy>` resolution semantics — architect decision required before Story 10.7.**

@@ -4,7 +4,7 @@
     <Module>
       <Name>iris-session-agent</Name>
       <Version>1.0.2</Version>
-      <Description>Two AI agents (Session Inspection + Message Search) embedded in the InterSystems Mgmt Portal — read your Ensemble sessions and answer questions in plain English. Pure ObjectScript, no embedded Python in the runtime path, no AI Hub dependency. Ships 23 read-only inspection + search tools, 4 LLM providers (OpenAI / Anthropic / Gemini / OpenAI-compatible), per-agent Zen config form, and lifecycle-coupled chat history.</Description>
+      <Description>Two AI agents (Session Inspection + Message Search) embedded in the InterSystems Mgmt Portal - read your Ensemble sessions and answer questions in plain English. Pure ObjectScript, no embedded Python in the runtime path, no AI Hub dependency. Ships 23 read-only inspection + search tools, 4 LLM providers (OpenAI / Anthropic / Gemini / OpenAI-compatible), per-agent Zen config form, and lifecycle-coupled chat history.</Description>
       <Keywords>iris,ensemble,interoperability,llm-agent,ai-assistant,session-inspection,message-search,visual-trace,message-viewer,tool-calling,read-only,openai,anthropic,gemini,ollama</Keywords>
       <Author>
         <Person>Joshua Brandt</Person>
@@ -20,10 +20,10 @@
       <!-- Class packages compiled into HSCUSTOM (the namespace's code database).
            Includes SessionAgent.UI.ChatPanelAsset (the CSP page that serves
            static/chat-panel.js at /csp/<ns>/SessionAgent.UI.ChatPanelAsset.cls)
-           — historical static-asset path before Story 10.7. -->
+           - historical static-asset path before Story 10.7. -->
       <Resource Name="SessionAgent.PKG"/>
 
-      <!-- Story 10.7 — vendored Markdown bundle (marked + Prism + DOMPurify
+      <!-- Story 10.7 - vendored Markdown bundle (marked + Prism + DOMPurify
            + 4 stock language packs + 2 STUB grammars + theme CSS). Shipped
            via FileCopy to the install namespace's CSP directory under a
            sa-static/ sub-folder, then served at /csp/<NS>/sa-static/<file>
@@ -34,17 +34,17 @@
            ship via a dedicated /csp/static/iris-session-agent Web App
            with ${cspdir}/static/iris-session-agent/ failed because Web
            Gateway routes only specific URL prefixes that pre-exist in
-           Apache mod_alias config — a brand-new top-level path requires
+           Apache mod_alias config - a brand-new top-level path requires
            operator-level Apache config changes. The /csp/<NS>/ path is
            already routed and serves *.js / *.css cleanly (verified Task 0).
            Mirrors Story 3.6's pivot from /csp/static/iris-session-agent/
-           to /csp/<NS>/SessionAgent.UI.ChatPanelAsset.cls — same root cause,
+           to /csp/<NS>/SessionAgent.UI.ChatPanelAsset.cls - same root cause,
            same family of workaround. The ${cspdir}/<NS>/ resolution at
            install time produces e.g. C:\InterSystems\IRISHealth\CSP\hscustom\sa-static\
            per the FileCopy target below. -->
       <FileCopy Name="src/static/" Target="${cspdir}/${namespace}/sa-static/" />
 
-      <!-- Install-time hooks (activated in Story 1.5 — orchestrator + audit + RBAC). -->
+      <!-- Install-time hooks (activated in Story 1.5 - orchestrator + audit + RBAC). -->
       <Invoke Method="Install" Class="SessionAgent.Installer"/>
       <Invoke Method="EnsureEvents" Class="SessionAgent.Audit.Emit"/>
       <Invoke Method="Install" Class="SessionAgent.Security.ReadOnlyRole"/>

@@ -59,9 +59,10 @@ Class SessionAgent.Test.InspectionSuiteVerificationTest Extends %UnitTest.TestCa
 /// the named-tool list in
 /// <method>TestRegistryListsExactlyThirteenTools</method>.</p>
 /// <p>Expected production tool count surfaced by
-/// <method>SessionAgent.Tool.Registry.ListTools</method>. As of Story 13.4
-/// this is <b>24</b> — 14 inspection tools (Stories 2.11 + 4.x + 13.4:
-/// <code>get_queue_state</code>) + 10
+/// <method>SessionAgent.Tool.Registry.ListTools</method>. As of Story 13.2
+/// this is <b>25</b> — 15 inspection tools (Stories 2.11 + 4.x + 13.4:
+/// <code>get_queue_state</code>; Story 13.2:
+/// <code>get_rule_source</code>) + 10
 /// search tools (Story 8.3: <code>search_by_time</code>,
 /// <code>search_by_status</code>, <code>search_by_source</code>,
 /// <code>search_by_target</code>, <code>search_by_message_class</code>,
@@ -70,7 +71,7 @@ Class SessionAgent.Test.InspectionSuiteVerificationTest Extends %UnitTest.TestCa
 /// <code>search_by_body_field</code>; Story 8.6:
 /// <code>inspect_body_candidates</code>; Story 8.7:
 /// <code>vocab_lookup</code>).</p>
-Parameter EXPECTEDTOOLCOUNT As %Integer = 24;
+Parameter EXPECTEDTOOLCOUNT As %Integer = 25;
 
 /// <p>Synthetic session id well outside any realistic Ens production
 /// range. Used by every "not found" / "validation error" envelope assertion
@@ -213,6 +214,14 @@ ClassMethod GetRepresentativeArgs(pToolName As %String) As %DynamicObject
         ; queue is not an error (returns zero-state, no isError). No
         ; fixture seeding required.
         Do tArgs.%Set("config_item_name", "Synthetic.NoMatch.Queue134")
+    } ElseIf pToolName = "get_rule_source" {
+        ; Story 13.2 — use the Fixture.SampleRule class compiled by
+        ; GetRuleSourceTest.OnBeforeAllTests(). On a fresh namespace
+        ; this may not yet be compiled, so the tool returns class_not_found
+        ; (not an error envelope). The suite verification test only
+        ; requires the Dispatch envelope contract (content array present,
+        ; $$$OK return); class_not_found is a valid success-shape envelope.
+        Do tArgs.%Set("rule_class", "SessionAgent.Test.Fixture.SampleRule")
     }
     Quit tArgs
 }
@@ -334,7 +343,7 @@ Method TestRegistryListsExactlyThirteenTools()
     Do $$$AssertEquals(tList.%Size(), ..#EXPECTEDTOOLCOUNT, "exactly " _ ..#EXPECTEDTOOLCOUNT _ " tools registered")
 
     ; Verify every expected name is present (order-independent).
-    Set tExpected = $ListBuild("session_summary", "session_timeline", "message_headers", "event_log", "rule_log", "get_message_body", "get_message_detail", "get_business_process_source", "get_business_process_instance", "list_business_process_methods", "find_related_sessions", "find_sessions_by_body", "explain_error", "search_by_time", "search_by_status", "search_by_source", "search_by_target", "search_by_message_class", "search_by_session", "search_by_super_session", "search_by_body_field", "inspect_body_candidates", "vocab_lookup", "get_queue_state")
+    Set tExpected = $ListBuild("session_summary", "session_timeline", "message_headers", "event_log", "rule_log", "get_message_body", "get_message_detail", "get_business_process_source", "get_business_process_instance", "list_business_process_methods", "find_related_sessions", "find_sessions_by_body", "explain_error", "search_by_time", "search_by_status", "search_by_source", "search_by_target", "search_by_message_class", "search_by_session", "search_by_super_session", "search_by_body_field", "inspect_body_candidates", "vocab_lookup", "get_queue_state", "get_rule_source")
     Set tFound = ""
     Set tIter = tList.%GetIterator()
     While tIter.%GetNext(.tKey, .tEntry) {

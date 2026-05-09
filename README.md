@@ -25,6 +25,8 @@ Two agents that read your Ensemble sessions and answer questions in plain Englis
 
 ![Search results applied as a table filter — the table narrows to the agent's matching sessions](documentation/images/readme/search-results-filter-table.png)
 
+![Inspection Agent investigating a specific session — tool call + cited narrative response](documentation/images/readme/inspection-agent-investigating-session.png)
+
 ![Per-agent configuration form (provider, model, max-iter) at SessionAgent.UI.AgentConfig.zen](documentation/images/readme/agent-config-form.png)
 
 ### Launching the agents
@@ -391,7 +393,7 @@ This module embeds two AI agents directly in the surfaces operators already use:
 
 ## Status
 
-Currently in **Phase 0 — Planning Complete, Implementation Not Started**.
+**Currently shipped — v1.0.2 (GA).** All 12 planning + implementation epics complete. Three release tags: `v1.0.0` (feature-complete, Epic 10 close), `v1.0.1` (Epic 11 patch), `v1.0.2` (Epic 12 — walkthrough hardening, this README rewrite).
 
 | Stage | Status | Artifact |
 |---|---|---|
@@ -399,35 +401,10 @@ Currently in **Phase 0 — Planning Complete, Implementation Not Started**.
 | PRD (59 FRs / 33 NFRs) | Complete | [prd.md](_bmad-output/planning-artifacts/prd.md) |
 | Architecture (10 calibration decisions, ~50-class structure) | Complete | [architecture.md](_bmad-output/planning-artifacts/architecture.md) |
 | UX Design (30 UX-DRs, 11 components) | Complete | [ux-design-specification.md](_bmad-output/planning-artifacts/ux-design-specification.md) |
-| Epics & Stories (10 epics, 64 stories) | Complete | [epics.md](_bmad-output/planning-artifacts/epics.md) |
-| Implementation Readiness Assessment | Complete — READY | [implementation-readiness-report-2026-05-02.md](_bmad-output/planning-artifacts/implementation-readiness-report-2026-05-02.md) |
-| Epic 1 (Project Foundation) | Not started | — |
+| Epics & Stories (12 epics shipped) | Complete | [epics.md](_bmad-output/planning-artifacts/epics.md) |
+| Implementation | **Shipped — v1.0.2** | regression sweep 461/461/0 |
 
-## Development Plan
-
-The v1 scope is delivered across 10 user-value-first epics. Each epic delivers a meaningful operator outcome and stands alone (later epics build on earlier ones; earlier epics don't depend on later ones). Three back-end-only epics (2, 8, 9) explicitly use a "maintainer checkpoint" framing — the maintainer validates correctness via `%UnitTest` before the operator-facing UI ships in the following epic.
-
-### MVP tier (Epics 1–4)
-
-The minimum that produces the operator's first delight moment — typing *"what happened?"* into a Visual Trace tab on a real failed session and getting a coherent multi-surface explanation. **Single agent (Inspection), single provider (OpenAI).**
-
-- **Epic 1 — Project Foundation & Installable Package** *(7 stories)*. `zpm install iris-session-agent` succeeds on IRIS 2024.1+ (Python-less); creates `SessionAgent_ReadOnly` RBAC role; pre-registers four audit event types; prints both Mgmt Portal bookmark URLs (HealthShare + plain-IRIS); README operator-prerequisites is structural.
-- **Epic 2 — Inspection Agent Backend Plumbing** *(12 stories — maintainer checkpoint)*. Provider abstraction, tool registry + dispatch policy gate, `AgentLoop` with iteration cap + 90s per-call timeout, `Chat.History` with `%OpenId(id, 4)` concurrent-tab serialization, audit ledger, three example tools, end-to-end smoke test against OpenAI mock.
-- **Epic 3 — Inspection Agent UI MVP Demo-able** *(7 stories)*. Custom `EnsPortal.VisualTrace` subclass + chat panel + citation chips wired into parent's `selectItem`/`updateTabs` API. **PRD MVP first-delight gate (Story 3.7).**
-- **Epic 4 — Inspection Agent Full Tool Catalogue** *(7 stories)*. Remaining 10 inspection tools (event log, rule log, BP introspection trio, body-class dispatch ladder, super-session join, search-table pivot, `%Status` decoder). **PRD MVP-complete gate (Story 4.7).**
-
-### Growth tier (Epics 5–10) — completing v1
-
-- **Epic 5 — Multi-Provider Support** *(4 stories)*. Anthropic ships first (validates canonical-wire inversion), then Gemini, then OpenAI-compatible (Ollama / vLLM). Tool-call-roundtrip integration test exercises every provider × every tool.
-- **Epic 6 — Per-Agent Configuration UI** *(3 stories)*. `SessionAgent.UI.AgentConfig.zen` Zen page; hot config change applies on next agent turn without IRIS restart.
-- **Epic 7 — Inspection Chat-History Lifecycle** *(3 stories)*. Daily sweep removes orphaned Inspection chat-history when underlying Ens session is purged; 1,000-session integration test.
-- **Epic 8 — Search Agent Foundation** *(7 stories — maintainer checkpoint)*. 8 indexed-access search tools + two-stage body-content search + `vocab_lookup` utility + bounded-WHERE invariant test + vocabulary persistence schemas + ~10 HL7-idiom seed templates.
-- **Epic 9 — Search Agent Vocabulary Learning** *(5 stories — maintainer checkpoint)*. Per-user vocabulary capture via `RecordSuccess` / `RecordFailure` with confidence smoothing; recursion-safe `%OnAfterSave`; vocabulary-digest assembly + first-user-message prefix injection (preserves Anthropic prompt-cache).
-- **Epic 10 — Search Agent UI Embed, Hand-off & TTL Sweep** *(9 stories)*. Custom `EnsPortal.MessageViewer` subclass + click-through hand-off to Inspection ("from search" stripe) + concurrent-tab banner + TTL sweep (30d default) + vendored Markdown bundle (`marked` + `Prism.js` + `DOMPurify`) at `/csp/static/iris-session-agent/`. **v1 SCOPE COMPLETE.**
-
-### Vision tier (post-v1, deferred)
-
-MCP serving (delegated to sibling project), vector / semantic body-content search, PHI redaction architecture, cross-namespace operation, streaming responses, LLM-extracted alias generation, cross-user `NamespaceVocabulary` baseline population, stand-alone terminal REPL. See [PRD §"Vision (Future, post-v1)"](_bmad-output/planning-artifacts/prd.md) for full enumeration.
+Post-v1 / vision-tier items (MCP serving, vector / semantic body-content search, PHI redaction architecture, cross-namespace operation, streaming responses, LLM-extracted alias generation, cross-user `NamespaceVocabulary` baseline population, stand-alone terminal REPL) are explicitly out of scope for v1 — see [PRD §"Vision (Future, post-v1)"](_bmad-output/planning-artifacts/prd.md) for full enumeration. Future cycles wait for the next walkthrough-driven feedback.
 
 ## Planning Artifacts (BMAD)
 

@@ -559,3 +559,59 @@ agent presets.
   asks the agent to enumerate its capabilities. If the agent claims a
   capability the runtime tool registry does not actually load, the prompt
   has drifted — file as a hot fix.
+
+## SQL Injection Defense in ObjectScript (Story 13.0 / Epic 12 retro AI-1)
+
+**Rule.** Any tool or method that accepts a class name, item name, or other
+operator-supplied string and inserts it into an IRIS SQL query MUST apply
+all four defense layers below. All four must be present before the story ships.
+
+**The 4 layers:**
+
+1. **LLM-prompt-level type hint.** The `GetInputSchema()` `description` field
+   for the parameter must name the expected format explicitly:
+   > *"Pass a full package-qualified class name (e.g. 'SessionAgent.Sample.BP.OrderRouter').
+   > Pass the class name only — do not include method names."*
+   This primes the LLM to supply correctly-shaped input before it reaches the server.
+
+2. **Server-side `$Match` regex validation.** Before any SQL is prepared or
+   executed, validate the input with:
+   ```objectscript
+   If '$Match(tClassName, "^[A-Za-z%][A-Za-z0-9%._]*$") {
+       Set pResult = {"isError":(1), "content":[{"type":"text","text":"invalid class_name format"}]}
+       Quit
+   }
+   ```
+   This blocks malformed input (SQL fragment injection attempts, empty strings,
+   shell metacharacters) with a structured error before SQL is ever touched.
+
+3. **Parameterized SQL (`?` placeholder).** The validated value MUST be bound
+   as a `%SQL.Statement.%Execute(arg)` parameter — NEVER concatenated into the
+   SQL text string. Even after regex validation, concatenation is forbidden:
+   ```objectscript
+   ; WRONG — never do this even after regex validation:
+   Set tSql = "SELECT ... WHERE %EXACT(Name) = '" _ tClassName _ "'"
+
+   ; CORRECT — parameterized:
+   Set tSC = tStmt.%Prepare("SELECT ... WHERE %EXACT(Name) = ?")
+   Set tRS = tStmt.%Execute(tClassName)
+   ```
+
+4. **Reviewer confirmation.** The code reviewer MUST explicitly confirm in the
+   Review Findings section that all three implementation layers (1, 2, 3) are
+   present. A story whose reviewer section does not call out all three layers
+   is not considered reviewed for SQL injection safety.
+
+**Originating context.** Epic 12 retrospective AI-1 (2026-05-09) — codified
+because Story 13.5 (`find_sessions_using_class`) is the first Epic 13 tool
+whose `class_name` parameter flows directly into a SQL `WHERE` clause across
+three `Ens.MessageHeader` columns (`SourceConfigName`, `TargetConfigName`,
+`MessageBodyClassName`). The inspection tools (13.1-13.4) use class names for
+`%OpenId` and `%Dictionary` lookups, not SQL WHERE — the injection surface
+is different but the pattern applies there too.
+
+**Reviewer enforcement.** Missing any of layers 1-3 is a HIGH-severity finding
+per Rule 8 (predicted-bug shape: malformed or adversarial class-name input
+reaches the SQL engine). Fix-now in the same story. Layer 4 (reviewer callout)
+is a MEDIUM finding if absent — the code may be correct but the review is
+incomplete.

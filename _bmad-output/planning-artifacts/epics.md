@@ -439,6 +439,14 @@ The epics below were opened after v1.0.0 shipped to address findings from operat
 
 **Severity distribution:** 3 HIGH, 4 MEDIUM, 1 LOW, 3 doc-enhancement.
 
+### Epic 13: Tool Catalog Expansion
+
+**Operator outcome:** Five new agent-introspection tools that close gaps surfaced by the 2026-05-09 demo + lead's scoping conversation. The Inspection Agent gains four source-introspection tools (`get_class_source`, `get_rule_source`, `get_production_config_item`, `get_queue_state`); the Search Agent gains `find_sessions_using_class` for cross-session class-usage discovery. Tool catalog grows from 23 to 28 (FR59 cross-matrix gate from 92 to 112 combinations). Source-of-truth artifact: `_bmad-output/implementation-artifacts/tool-catalog-expansion-2026-05-09.md`.
+
+**Stories:** 6 (13.0 setup + 5 tool-add stories).
+
+**No PRD / architecture / UX-spec edits.** Pure additive surface within the existing tool-registry pattern.
+
 ### Vision Tier — Out of Scope (post-v1)
 
 Per [PRD §"Vision (Future, post-v1)"](prd.md#vision-future-post-v1) — explicitly deferred to post-v1 work. Not in any v1 epic; included here for completeness:
@@ -2855,3 +2863,35 @@ All 8 stories ship `done`. Empirical battery (Rule 6) at retro time exercises ea
 Per Rule 1 (≤ 250 lines / spec) and the project's `/bmad-create-story` workflow, individual story specs are drafted at `/epic-cycle 12` time (Step 4a of the pipeline), not in this epic-list document.
 
 **See also:** `_bmad-output/planning-artifacts/sprint-change-proposal-2026-05-08.md` for the full impact analysis, story bundling rationale, and approval trail that opened this epic.
+
+---
+
+## Epic 13: Tool Catalog Expansion
+
+**Status:** backlog (opened 2026-05-09).
+
+**Source:** `_bmad-output/implementation-artifacts/tool-catalog-expansion-2026-05-09.md` captures all 5 tools with per-tool detail (operator-facing question, IRIS API, arguments, response shape, truncation guards, project-rule compliance, LOC estimate). Each Story 13.x spec cites this artifact as the source of truth.
+
+**Trigger:** the 2026-05-09 demo on session 80562 surfaced an explicit gap — the Inspection Agent correctly self-reported *"the full source code is needed to see the exact routing logic"* after using `get_business_process_source` (which returns signatures only). Project lead's scoping conversation expanded the tool plan to 5 new tools across the source / configuration / queue / cross-session-search axes.
+
+**Stories (in order):**
+- 13.0 — Epic 12 deferred cleanup + Epic 13 setup (Rule 7 sprint-planning gate)
+- 13.1 — `get_class_source` — Inspection tool returning full UDL source for any class with optional method-name filter (~80 LOC + tests). Pairs with `get_business_process_source` (existing). Also builds `Test.Util.RegressionSweepCount` helper that 13.2-13.5 reuse (Epic 12 retro AI-2 carry-forward).
+- 13.2 — `get_rule_source` — Inspection tool returning the `RuleDefinition` XData of an Ens rule class (~60 LOC + tests). Pairs with `rule_log` (existing).
+- 13.3 — `get_production_config_item` — Inspection tool returning adapter + custom + pool/queue settings for a config item (~80 LOC + tests). Pairs with `session_timeline` / `message_headers`.
+- 13.4 — `get_queue_state` — Inspection tool returning `Ens.Queue` row for a config item (~40 LOC + tests). Pairs with `session_summary`.
+- 13.5 — `find_sessions_using_class` — **Search** tool (cross-session, lives in `src/SessionAgent/Tool/Search/`, registers with `message-search`) for sessions touching a given class (~80 LOC + tests). Bounded-WHERE invariant per FR59.
+
+**Out of scope for Epic 13:**
+- DTL-specific transformation tool (subsumed by `get_class_source` — DTLs are just classes).
+- HL7 schema introspection (very niche, large surface).
+- Lookup-table content tool (`get_lookup_table`) — deferred per scoping conversation; nice-to-have but not blocking.
+- Production-status / list-active-productions tooling (Search-Agent-flavored, low investigation utility).
+
+**Acceptance gate:**
+All 6 stories ship `done`. Tool catalog grows to 28 entries verifiable via `Tool.Registry:ListTools`. FR59 cross-matrix gate runs clean against 112 combinations (or skips per credential resolvability per Rule 11). Each new tool ships its own test class. Live-agent demo turn (Rule 6 step 4): Inspection Agent answers *"What does the OrderRouter rule say, and where is FilePublish writing files to?"* — exercises 13.2 + 13.3 in one turn. No regression on v1.0.2 functionality. Final regression sweep clean (≈491 expected — 461 baseline + ~30 new).
+
+**Recommended ordering** (per Sprint Change Proposal — bottom-up by risk):
+13.0 → 13.4 → 13.2 → 13.1 → 13.3 → 13.5 — smallest tool first to validate the "add a new tool" path, then build up to the originally-motivating `get_class_source`, then 13.3's `Ens.Config.*` SQL family, then the Search-Agent variant last.
+
+**See also:** `_bmad-output/planning-artifacts/sprint-change-proposal-2026-05-09.md` for the full impact analysis, Story 13.0 triage of Epic 12 retro AIs (3 INCLUDE as Carry-Forward, 2 DEFER to v3), and approval trail that opened this epic.

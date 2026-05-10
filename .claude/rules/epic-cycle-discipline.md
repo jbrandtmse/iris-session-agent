@@ -312,11 +312,14 @@ surface — either the four bullets are visible in the latest turns, or
 they are not.
 
 **Apply at retro proposal time.** The lead's retro-proposal message
-MUST contain or directly precede the four bullets. The user redirect is
+MUST contain the four bullets (emitted in the SAME message as the retro
+question, not in a prior message). The user redirect is
 the enforcement mechanism: if the lead proposes the retro and the four
 bullets are missing, the user redirects with "where is the battery?"
 and the cycle restarts at this rule. Each redirect is a rule-violation
 signal worth surfacing in the retro itself (meta-self-correction).
+
+*(Epic 12 AI-4 — wording tightened 2026-05-09: "or directly precede" → "in the SAME message". Originating incident: Epic 12 lead asked the retro question, user answered yes, THEN the lead emitted the 5-bullet battery — a sequencing violation the old wording permitted.)*
 
 ## Rule 7: Operator setup at sprint planning, not at retro
 

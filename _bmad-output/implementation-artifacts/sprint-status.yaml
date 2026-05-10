@@ -171,11 +171,11 @@ development_status:
   12-7-readme-rewrite-quickstart-screenshots-cleanns: done
   epic-12-retrospective: done
 
-  epic-13: in-progress
+  epic-13: done
   13-0-epic-12-deferred-cleanup: done
   13-1-get-class-source-tool: done
   13-2-get-rule-source-tool: done
   13-3-get-production-config-item-tool: done
   13-4-get-queue-state-tool: done
   13-5-find-sessions-using-class-tool: done
-  epic-13-retrospective: optional
+  epic-13-retrospective: done

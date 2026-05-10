@@ -78,6 +78,19 @@
    - Without `%EXACT()`, queries may return incorrect results due to case folding (e.g., "Order-001" matching "order-001")
    - This applies to all IRIS SQL queries, including embedded SQL (`&sql()`) and dynamic SQL via `%SQL.Statement`
 
+## %EXACT() in SELECT Changes Column Aliases (Story 13.3 / Epic 13 retro AI-1)
+
+**Rule.** When `%EXACT(col)` appears in the **SELECT column list** (not just in WHERE), IRIS renames the output column — `tRS.%Get("ID")` returns `""` because the column is now aliased as `%EXACT(ID)`, not `ID`. Use **positional `tRS.%GetData(n)`** access for any result set built with `%EXACT()` in the SELECT list.
+
+**Originating incident.** Story 13.3 dev used `SELECT %EXACT(ID), %EXACT(ClassName), Enabled, PoolSize, %EXACT(Comment) FROM Ens_Config.Item WHERE ...`. `tRS.%Get("ID")` returned `""` in every row. Fix: switched to `tRS.%GetData(1)`, `tRS.%GetData(2)`, etc. — positional access is alias-independent.
+
+**How to apply.**
+- In WHERE: `%EXACT(col) = ?` is fine and required for case-sensitive comparison. No column alias created here.
+- In SELECT list: avoid `%EXACT(col)` when you need to read the result by name. Two safe patterns:
+  1. **Positional read:** `SET tVal = tRS.%GetData(n)` — works regardless of aliases.
+  2. **Explicit alias:** `SELECT %EXACT(col) AS col_name FROM ...` then `tRS.%Get("col_name")` — the explicit alias overrides the function-generated alias.
+- Reviewer enforcement: any code that calls `%Get("col")` after a SELECT that wraps `col` in `%EXACT()` without an explicit alias is a HIGH-severity finding (predicted-bug shape: silent empty-string return masks data).
+
 ## QUIT Statement Restrictions in Try/Catch Blocks
    - **CRITICAL**: QUIT with arguments is NOT allowed within Try/Catch blocks (ERROR #1043)
    - The $QUIT special variable determines if argumented QUIT is required (1) or not (0)

@@ -81,7 +81,7 @@ If you want to evaluate iris-session-agent without touching your main `HSCUSTOM`
 
 4. **Wire LLM provider credentials.** Pick at least one provider — OpenAI is the simplest first run. Either set the `OPENAI_API_KEY` env-var visible to the IRIS process, or create the `Ens.Config.Credentials` row in the `SATEST` namespace named `SessionAgentOpenAI` with your key in the `Password` field. See [§ "6. LLM provider API keys"](#6-llm-provider-api-keys) for the canonical credential names per provider and the env-var fallback rules.
 
-5. **Configure the agents.** Browse to `http://<host>:<port>/csp/satest/SessionAgent.UI.AgentConfig.zen`. The form lists both agents (`session-inspection` and `message-search`); for each one set `Provider` (e.g., `openai`), `Model` (e.g., `gpt-4.1-mini`), tick `Enabled`, and `Save`. The form runs against the *namespace you opened it in*, so the saved values are scoped to `SATEST` only.
+5. **Configure the agents.** Browse to `http://<host>:<port>/csp/satest/SessionAgent.UI.AgentConfig.zen`. The form lists both agents in the **Agent** dropdown (`session-inspection` and `message-search`); for each one select a **Provider** (e.g., `openai`), enter a **Model** (e.g., `gpt-4.1-mini`), tick **Enable this agent**, and click **Save**. The form runs against the *namespace you opened it in*, so the saved values are scoped to `SATEST` only.
 
 6. **Install the sample interop production.** From a `SATEST` terminal session:
 
@@ -180,7 +180,7 @@ Management Portal
 
 ### 6. LLM provider API keys
 
-The runtime supports four bundled providers — **OpenAI** (Epic 2), **Anthropic** (Epic 5 Story 5.1), **Google Gemini** (Epic 5 Story 5.2), and **OpenAI-compatible** (Epic 5 Story 5.3 — for local Ollama / vLLM / LM Studio / any compatible endpoint). MVP (Epics 1–4) requires only OpenAI; the other three are operator-optional until you configure an agent to use them via [`SessionAgent.Config.Agent`](src/SessionAgent/Config/Agent.cls).
+The runtime supports four bundled providers — **OpenAI** (Epic 2), **Anthropic** (Epic 5 Story 5.1), **Google Gemini** (Epic 5 Story 5.2), and **OpenAI-compatible** (Epic 5 Story 5.3 — for local Ollama / vLLM / LM Studio / any compatible endpoint). MVP (Epics 1–4) requires only OpenAI; the other three are operator-optional until you select one in the **Provider** dropdown on the [Agent Configuration form](#launching-the-agents) for that agent.
 
 For each cloud provider you intend to use, wire **one** of the two delivery mechanisms:
 
@@ -202,18 +202,18 @@ For each cloud provider you intend to use, wire **one** of the two delivery mech
 
   Set the `Password` field to your API key. Resolution falls back from env-var → `Ens.Config.Credentials` row → fail-fast if neither is present (per [`SessionAgent.Util.EnvSecret`](src/SessionAgent/Util/EnvSecret.cls)).
 
-**OpenAI-compatible / Ollama (Epic 5 Story 5.3):** the **full** endpoint URL — including the `/v1/chat/completions` path — goes in [`SessionAgent.Config.Agent.EndpointUrl`](src/SessionAgent/Config/Agent.cls). Examples:
+**OpenAI-compatible / Ollama (Epic 5 Story 5.3):** on the Agent Configuration form, select **Provider** = `openai-compatible`. The **Endpoint URL (OpenAI-Compatible only)** field appears — enter the **full** endpoint URL including the `/v1/chat/completions` path. Examples:
 
-  | Deployment | Canonical `Config.Agent.EndpointUrl` |
+  | Deployment | Value for the **Endpoint URL** field |
   |---|---|
   | Local Ollama | `http://localhost:11434/v1/chat/completions` |
   | Network Ollama | `http://<host>:11434/v1/chat/completions` (e.g., `http://192.168.0.123:11434/v1/chat/completions`) |
   | vLLM behind reverse-proxy | `https://<host>:8443/v1/chat/completions` |
   | LM Studio (default) | `http://localhost:1234/v1/chat/completions` |
 
-  Set `Config.Agent.Provider = 'openai-compatible'`. For default Ollama deployments **no API key is required** — leave `Config.Agent.CredentialName` empty (the provider auto-detects this and omits the `Authorization` header). For paid OpenAI-compatible endpoints (Together AI, OpenRouter, Anyscale, paid Ollama instances behind Bearer auth), wire a credential under any name and reference it via `Config.Agent.CredentialName='YourCredentialName'`. Both `http://` and `https://` schemes are supported (the provider auto-detects the scheme + non-default port from the URL — Ollama's `:11434`, llama.cpp's `:8080`, etc.).
+  For default Ollama deployments **no API key is required** — set **Credential Source** to `Environment Variable` and leave **Environment Variable Name** empty (the provider auto-detects the absence of a credential and omits the `Authorization` header). For paid OpenAI-compatible endpoints (Together AI, OpenRouter, Anyscale, paid Ollama instances behind Bearer auth), set **Credential Source** to `Ens.Config.Credentials` and pick your credential row from the **Ens.Config.Credentials Entry** dropdown. Both `http://` and `https://` schemes are supported (the provider auto-detects the scheme + non-default port from the URL — Ollama's `:11434`, llama.cpp's `:8080`, etc.).
 
-**API keys are never stored inside `SessionAgent.Config.Agent` itself.**
+**API keys are never stored inside the agent configuration itself** — they live in an `Ens.Config.Credentials` row or in an environment variable, and the configuration form only references them by name.
 
 **Cost-effective default models** (per Rule 10 spec-time research, May 2026):
 
@@ -237,22 +237,24 @@ If `DefaultSSL` does not already exist on your IRIS install, create a client-sid
 
 **How to verify:** from `%SYS`, query `SELECT Name FROM Security.SSLConfigs` — `DefaultSSL` must appear. Without this configuration, every outbound LLM call fails fast with `"OpenAI mid-flight failure (request may have been processed)"` in `Audit.LlmCall.ErrorText` — the symptom is a sub-second turn that returns no answer (no real network call ever happened). The Story 2.12 retro empirical battery surfaced this as a missing operator-prereq documentation gap; this section closes it.
 
-### 7a. System Prompt Override length cap (Story 6.1)
+### 7a. System Prompt Override length cap
 
-The `System Prompt Override` field (in [`SessionAgent.Config.Agent.SystemPromptOverride`](src/SessionAgent/Config/Agent.cls)) stores up to **8192 characters**; longer prompts are silently truncated by the persistence layer. The Story 6.1 [`SessionAgent.UI.AgentConfig.zen`](src/SessionAgent/UI/AgentConfig.cls) form's char counter warns at 7500 chars (amber) and flags exceedance at 8192 chars (red), so operators see the cap they're approaching instead of silently hitting truncation. A future Story 6.x sibling backend tweak will raise the cap (`MAXLEN=8192` → `MAXLEN=32767`) or convert the property to a stream backing — see the [deferred-work.md "SystemPromptOverride MAXLEN=8192 silent truncation" entry](_bmad-output/implementation-artifacts/deferred-work.md) for the rationale and roadmap.
+The **System Prompt Override (optional)** field on the Agent Configuration form stores up to **8192 characters**; longer prompts are silently truncated by the persistence layer. The form's live character counter warns at 7500 chars (amber) and flags exceedance at 8192 chars (red), so operators see the cap they're approaching instead of silently hitting truncation. A future backend tweak will raise the cap or convert the field to a stream backing — see the [deferred-work.md "SystemPromptOverride MAXLEN=8192 silent truncation" entry](_bmad-output/implementation-artifacts/deferred-work.md) for the rationale and roadmap.
 
 ### 8. Bookmark URLs
 
-After install, both Management Portal entry points are bookmarkable. **Use the URL pattern that matches your IRIS deployment style** — HealthShare-based deployments include the `/healthshare/` segment; plain IRIS deployments do not:
+After install, all three Management Portal entry points are bookmarkable. **Use the URL pattern that matches your IRIS deployment style** — HealthShare-based deployments include the `/healthshare/` segment; plain IRIS deployments do not:
 
 - **HealthShare deployments:**
   - `/csp/healthshare/<NS>/SessionAgent.EnsPortal.MessageViewer.zen` *(Search Agent entry — natural-language session search)*
   - `/csp/healthshare/<NS>/SessionAgent.EnsPortal.VisualTrace.zen` *(Inspection Agent — chat about a specific session)*
+  - `/csp/healthshare/<NS>/SessionAgent.UI.AgentConfig.zen` *(Agent Configuration form — Provider, Model, credentials, max iterations, system prompt override)*
 - **Plain IRIS deployments:**
   - `/csp/<NS>/SessionAgent.EnsPortal.MessageViewer.zen`
   - `/csp/<NS>/SessionAgent.EnsPortal.VisualTrace.zen`
+  - `/csp/<NS>/SessionAgent.UI.AgentConfig.zen`
 
-The Search Agent path is for the operator's "find the session I care about" entry; the Visual Trace path opens the Inspection Agent on a specific session that the operator already has selected.
+The Search Agent path is for the operator's "find the session I care about" entry; the Visual Trace path opens the Inspection Agent on a specific session; the Agent Configuration form is where the operator picks each agent's Provider, Model, and credential.
 
 ### 9. Daily purge task
 
@@ -262,7 +264,7 @@ The installer schedules `SessionAgent.Task.PurgeOrphanedChatHistory` to run dail
 
 By default, the IPM `<Invoke>` install path scopes all install-time work to the **single** namespace named in `module.xml` (typically `HSCUSTOM`). Operators running multiple interop namespaces on the same IRIS instance — for example, a dedicated test namespace, a per-tenant namespace, or a second production interop namespace — can install iris-session-agent into each of them independently using the `InstallIntoNamespace` entry point.
 
-**Architectural decision: `Config.Agent` rows are PER-NAMESPACE.** Each namespace's `SessionAgent_Config.Agent` table is independent — flipping `Enabled=1` or changing `Provider` in one namespace does not affect any other namespace. This is the safer default (no cross-namespace coupling, no operator confusion about which namespace's `Provider` is "the" provider). If you maintain identical config across namespaces today, you re-enter it in each one. A future `CopyConfigBetweenNamespaces(pSrc, pDst)` helper is tracked in `_bmad-output/implementation-artifacts/deferred-work.md` for operators with cross-namespace identical config.
+**Architectural decision: agent configuration is PER-NAMESPACE.** Each namespace stores its own agent settings — toggling **Enable this agent** or changing the **Provider** in one namespace does not affect any other namespace. This is the safer default (no cross-namespace coupling, no operator confusion about which namespace's Provider is "the" Provider). If you maintain identical config across namespaces today, you re-enter it in each one. A future `CopyConfigBetweenNamespaces(pSrc, pDst)` helper is tracked in `_bmad-output/implementation-artifacts/deferred-work.md` for operators with cross-namespace identical config.
 
 **Operator walkthrough.** Run these steps once per additional target namespace. Substitute `OTHERNS` with the actual namespace name and `HSCUSTOM` with the source database where the SessionAgent.PKG `.cls` files live (the source database that already has the package — typically `HSCUSTOM` if you installed via the IPM `<Invoke>` path).
 
@@ -316,7 +318,7 @@ By default, the IPM `<Invoke>` install path scopes all install-time work to the 
    On Linux: `cp -r /usr/irissys/csp/hscustom/sa-static /usr/irissys/csp/OTHERNS/sa-static`. Without this copy (on pre-v1.0.1 installs) the chat panel fell back to Story 3.2 MVP rendering (Markdown text + code-fence-only blocks; no syntax highlighting) — functional but visually degraded. **No-longer-required for v1.0.1+** — kept here as a recovery fallback if the automatic copy fails (the install log emits a `WARN: bundle copy failed` line pointing at this section if so).
    </details>
 
-5. **Configure each namespace separately.** Browse to the Story 6.1 Zen form at `/csp/<lower-namespace>/SessionAgent.UI.AgentConfig.zen` (substitute the actual lowercase namespace name in the URL — e.g., `/csp/otherns/SessionAgent.UI.AgentConfig.zen`). The same form layout, but the saved values are scoped to the namespace you accessed it from. Set `Provider`, `EnvVarName`, `Model`, etc., and check `Enabled` to flip the agent on for that namespace.
+5. **Configure each namespace separately.** Browse to the Agent Configuration form at `/csp/<lower-namespace>/SessionAgent.UI.AgentConfig.zen` (substitute the actual lowercase namespace name in the URL — e.g., `/csp/otherns/SessionAgent.UI.AgentConfig.zen`). The same form layout, but the saved values are scoped to the namespace you accessed it from. Select the **Provider**, fill in the **Model**, choose a **Credential Source** + **Environment Variable Name** (or **Ens.Config.Credentials Entry**), and tick **Enable this agent** to flip the agent on for that namespace.
 
 **API key supply.** API keys are looked up via `Ens.Config.Credentials` rows scoped to the namespace where the agent runs (per Story 2.3). Each target namespace must have its own credential rows installed; see [§ "6. LLM provider API keys"](#6-llm-provider-api-keys) above for the credential-row creation steps, and run them once per target namespace.
 

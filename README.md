@@ -1,7 +1,7 @@
 # iris-session-agent
 
 > [!NOTE]
-> **v1.0.2 + Epic 13 Tool Catalog Expansion is feature-complete.**
+> **v1.0.3 (Epic 13 Tool Catalog Expansion) is feature-complete.**
 >
 
 An open-source InterSystems IRIS module that adds an AI assistant chat experience to the Interoperability operator's existing Management Portal. Two agents share infrastructure inside one IPM-installable package and run on **IRIS / IRIS for Health 2024.1+** in pure ObjectScript — no embedded Python in the runtime path, no AI Hub dependency.
@@ -43,7 +43,7 @@ The custom Search and Inspection screens do **not** appear as new menu entries i
 
 For HealthShare deployments the path includes `/healthshare/` between `csp/` and the namespace — see [§ "8. Bookmark URLs"](#8-bookmark-urls) for the full pattern.
 
-## v1.0.2 scope-complete summary
+## v1.0.3 scope-complete summary
 
 | Capability | Story / Epic | Operator-observable surface |
 |---|---|---|
@@ -441,7 +441,7 @@ These tools run on the Message Viewer screen and find sessions matching natural-
 
 ## Status
 
-**Currently shipped — v1.0.2 + Epic 13 Tool Catalog Expansion.** All 13 planning + implementation epics complete. Release tags: `v1.0.0` (feature-complete, Epic 10 close), `v1.0.1` (Epic 11 patch), `v1.0.2` (Epic 12 — walkthrough hardening). Epic 13 (Tool Catalog Expansion — 6 new tools, 509/509 regression sweep) ships as an incremental improvement on v1.0.2.
+**Currently shipped — v1.0.3 (GA).** All 13 planning + implementation epics complete. Release tags: `v1.0.0` (feature-complete, Epic 10 close), `v1.0.1` (Epic 11 patch), `v1.0.2` (Epic 12 — walkthrough hardening), `v1.0.3` (Epic 13 — Tool Catalog Expansion: 6 new tools, 28 total, 509/509 regression sweep).
 
 | Stage | Status | Artifact |
 |---|---|---|
@@ -450,7 +450,7 @@ These tools run on the Message Viewer screen and find sessions matching natural-
 | Architecture (10 calibration decisions, ~50-class structure) | Complete | [architecture.md](_bmad-output/planning-artifacts/architecture.md) |
 | UX Design (30 UX-DRs, 11 components) | Complete | [ux-design-specification.md](_bmad-output/planning-artifacts/ux-design-specification.md) |
 | Epics & Stories (13 epics shipped) | Complete | [epics.md](_bmad-output/planning-artifacts/epics.md) |
-| Implementation | **Shipped — v1.0.2 + Epic 13** | regression sweep 509/509/0 |
+| Implementation | **Shipped — v1.0.3** | regression sweep 509/509/0 |
 
 Post-v1 / vision-tier items (MCP serving, vector / semantic body-content search, PHI redaction architecture, cross-namespace operation, streaming responses, LLM-extracted alias generation, cross-user `NamespaceVocabulary` baseline population, stand-alone terminal REPL) are explicitly out of scope for v1 — see [PRD §"Vision (Future, post-v1)"](_bmad-output/planning-artifacts/prd.md) for full enumeration. Future cycles wait for the next walkthrough-driven feedback.
 

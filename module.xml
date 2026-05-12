@@ -3,8 +3,8 @@
   <Document name="iris-session-agent.ZPM">
     <Module>
       <Name>iris-session-agent</Name>
-      <Version>1.0.2</Version>
-      <Description>Two AI agents (Session Inspection + Message Search) embedded in the InterSystems Mgmt Portal - read your Ensemble sessions and answer questions in plain English. Pure ObjectScript, no embedded Python in the runtime path, no AI Hub dependency. Ships 23 read-only inspection + search tools, 4 LLM providers (OpenAI / Anthropic / Gemini / OpenAI-compatible), per-agent Zen config form, and lifecycle-coupled chat history.</Description>
+      <Version>1.0.3</Version>
+      <Description>Two AI agents (Session Inspection + Message Search) embedded in the InterSystems Mgmt Portal - read your Ensemble sessions and answer questions in plain English. Pure ObjectScript, no embedded Python in the runtime path, no AI Hub dependency. Ships 28 read-only inspection + search tools, 4 LLM providers (OpenAI / Anthropic / Gemini / OpenAI-compatible), per-agent Zen config form, and lifecycle-coupled chat history.</Description>
       <Keywords>iris,ensemble,interoperability,llm-agent,ai-assistant,session-inspection,message-search,visual-trace,message-viewer,tool-calling,read-only,openai,anthropic,gemini,ollama</Keywords>
       <Author>
         <Person>Joshua Brandt</Person>

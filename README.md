@@ -1,7 +1,7 @@
 # iris-session-agent
 
 > [!NOTE]
-> **v1.0.0 is feature-complete.**
+> **v1.0.2 + Epic 13 Tool Catalog Expansion is feature-complete.**
 >
 
 An open-source InterSystems IRIS module that adds an AI assistant chat experience to the Interoperability operator's existing Management Portal. Two agents share infrastructure inside one IPM-installable package and run on **IRIS / IRIS for Health 2024.1+** in pure ObjectScript — no embedded Python in the runtime path, no AI Hub dependency.
@@ -30,24 +30,31 @@ The custom Search and Inspection screens do **not** appear as new menu entries i
 
 - **Search Agent (Message Viewer screen):**
   - Direct URL: `http://<host>:<port>/csp/<lower-namespace>/SessionAgent.EnsPortal.MessageViewer.zen` *(bookmarkable)*
+  - Example on a default IRIS install against HSCUSTOM: `http://localhost:52773/csp/hscustom/SessionAgent.EnsPortal.MessageViewer.zen`
   - Mgmt Portal breadcrumb: `Interoperability → Message Viewer + Search Agent`
 - **Inspection Agent (Visual Trace screen):**
   - Direct URL: `http://<host>:<port>/csp/<lower-namespace>/SessionAgent.EnsPortal.VisualTrace.zen?SESSIONID=<id>` *(bookmarkable; pin the URL with a specific session id to land on a known incident)*
-  - From the Search Agent screen: clicking a session-ID badge in any agent reply opens that session in the custom Visual Trace screen (Story 12.3 fix — session-ID links route through the SessionAgent VisualTrace, not the standard one).
+  - Example: `http://localhost:52773/csp/hscustom/SessionAgent.EnsPortal.VisualTrace.zen?SESSIONID=1234`
+  - From the Search Agent screen: clicking a session-ID badge in any agent reply opens that session in the custom Visual Trace screen (session-ID links route through the SessionAgent VisualTrace, not the standard one).
+- **Agent Configuration form:**
+  - Direct URL: `http://<host>:<port>/csp/<lower-namespace>/SessionAgent.UI.AgentConfig.zen`
+  - Example: `http://localhost:52773/csp/hscustom/SessionAgent.UI.AgentConfig.zen`
+  - Configure provider, model, API key credential, max iterations, and system prompt override per namespace.
 
 For HealthShare deployments the path includes `/healthshare/` between `csp/` and the namespace — see [§ "8. Bookmark URLs"](#8-bookmark-urls) for the full pattern.
 
-## v1.0.0 scope-complete summary
+## v1.0.2 scope-complete summary
 
 | Capability | Story / Epic | Operator-observable surface |
 |---|---|---|
-| Session Inspection agent (read-only Ens.* introspection) | Epic 4 (13 tools) | VisualTrace chat tab |
-| Message Search agent (10 search tools + vocabulary) | Epic 8 (10 tools) | MessageViewer chat tab |
+| Session Inspection agent (read-only Ens.* introspection) | Epic 4 + Epic 13 (17 tools total) | VisualTrace chat tab |
+| Message Search agent (11 search tools + vocabulary) | Epic 8 + Epic 13 (11 tools total) | MessageViewer chat tab |
 | Search → Inspection hand-off ("from search" stripe + click-through context) | Epic 10 (Stories 10.1–10.5) | Visible stripe in inspection chat after click-through |
 | Silent vocabulary learning (per-user alias capture) | Epic 9 (Stories 9.2–9.5) | `vocab_lookup` tool surfaces saved aliases; sweep keeps the table bounded |
 | Sweep tasks (audit + chat-history retention) | Epic 7 + Story 10.6 | Mgmt Portal Task Manager (`SessionAgent.PurgeOrphanedChatHistory`, `SessionAgent.PurgeStaleSearchChatHistory`, `SessionAgent.UserVocabularyDecay`) |
 | Vendored Markdown bundle (citations + code blocks render under CDN-blocked browsers) | Story 10.7 | `<script src="markdown-bundle.min.js">` ships with the module |
-| FR59 cross-matrix gate (23 tools × 4 providers = 92) | Story 5.4 + 8.x + 10.9 | `SessionAgent.Test.ToolCallRoundtripIntegrationTest` (mock + live) |
+| Tool Catalog Expansion (5 new agent-introspection tools + `find_sessions_using_class`) | Epic 13 | 6 new tools across both agents; `get_rule_source`, `get_class_source`, `get_queue_state`, `get_production_config_item`, `find_sessions_using_class` |
+| FR59 cross-matrix gate (28 tools × 4 providers = 112) | Story 5.4 + 8.x + 10.9 + 13.x | `SessionAgent.Test.ToolCallRoundtripIntegrationTest` (mock + live) |
 
 ## Try it in a clean namespace (recommended for evaluation)
 
@@ -375,8 +382,8 @@ An Ensemble session leaves a trace across six disconnected data surfaces — `En
 
 This module embeds two AI agents directly in the surfaces operators already use:
 
-- **Session Inspection Agent** — a chat tab on a custom subclass of `EnsPortal.VisualTrace`. Reads the six session-trace surfaces in parallel via 13 disciplined tool calls and answers questions like *"what happened?"* in plain English with citations back to the underlying rule-log / event-log / message-headers rows.
-- **Message Search Agent** — a chat tab on a custom subclass of `EnsPortal.MessageViewer`. Helps operators find sessions by natural-language query (*"find me failed admits from the last hour"*) using 8 indexed-access tools + a two-stage body-content search (≤50 candidates) + per-user vocabulary learning that captures aliases on click-through.
+- **Session Inspection Agent** — a chat tab on a custom subclass of `EnsPortal.VisualTrace`. Reads the six session-trace surfaces in parallel via 17 disciplined tool calls and answers questions like *"what happened?"* in plain English with citations back to the underlying rule-log / event-log / message-headers rows. Includes tools for BP source inspection, queue-state monitoring, production config-item interrogation, rule-source retrieval, and arbitrary class-source lookup added in Epic 13.
+- **Message Search Agent** — a chat tab on a custom subclass of `EnsPortal.MessageViewer`. Helps operators find sessions by natural-language query (*"find me failed admits from the last hour"*) using 10 indexed-access search tools + a two-stage body-content search (≤50 candidates) + per-user vocabulary learning that captures aliases on click-through. Epic 13 adds `find_sessions_using_class` to locate sessions by the class names flowing through them.
 
 **Design properties** that drive the v1 architecture:
 
@@ -386,9 +393,55 @@ This module embeds two AI agents directly in the surfaces operators already use:
 - **MCP-exportable tool registry.** The tool dispatch contract `(toolName, jsonArgs) → jsonResult` stays MCP-friendly with no `%session.Data` reads, no Zen state coupling, no exceptions as error signals. MCP serving itself is delegated to the sibling [`iris-execute-mcp-v2`](https://github.com/jbrandtmse/iris-execute-mcp-v2) project.
 - **Lifecycle-coupled chat history.** When `Ens.MessageHeader.Purge()` removes a session, a daily sweep removes the orphaned chat-history rows so no stale conversations accumulate.
 
+## Tool Catalog
+
+All 28 tools are registered in `SessionAgent.Tool.Registry` and are dispatched via the read-only tool dispatch gate (`MutatesState=0` enforced on every call). Tools are organized by agent.
+
+### Session Inspection Agent (17 tools)
+
+These tools run on the Visual Trace screen and examine a specific Ensemble session in depth.
+
+| Tool | Description |
+|---|---|
+| `session_summary` | Return shape, duration, error count, and root message class for an Ens session |
+| `session_timeline` | Return chronological message events in an Ens session |
+| `message_headers` | Return `Ens.MessageHeader` rows for a session, optionally filtered by minimum severity |
+| `event_log` | Read `Ens.Util.Log` entries for a session, optionally filtered by `message_id` or `min_severity` |
+| `rule_log` | Read `Ens.Rule.Log` decisions for a session |
+| `explain_error` | Decode a `%Status` value or IRIS error code into operator-readable explanation |
+| `get_message_detail` | Return full message header + body summary + linked rule-log decisions for a single message |
+| `get_message_body` | Open and render a message body via the runtime body-class dispatch ladder |
+| `get_business_process_instance` | Read the persistent BP instance row(s) for an Ens session |
+| `get_business_process_source` | Read the structured source representation of a Business Process class |
+| `list_business_process_methods` | List a class's compiled methods with signatures via `%Dictionary` reflection |
+| `find_related_sessions` | Find Ens sessions sharing a super-session key |
+| `find_sessions_by_body` | Pivot through an `Ens.SearchTableBase` subclass to find sessions by body field value |
+| `get_rule_source` | Read the raw RuleDefinition XML from a compiled Ensemble rule class *(Epic 13)* |
+| `get_class_source` | Read the full ObjectScript source of any compiled class *(Epic 13)* |
+| `get_queue_state` | Return the depth and oldest-message age of a named Ensemble queue *(Epic 13)* |
+| `get_production_config_item` | Read adapter class, pool size, enabled flag, and configured settings of any named production config item *(Epic 13)* |
+
+### Message Search Agent (11 tools)
+
+These tools run on the Message Viewer screen and find sessions matching natural-language queries.
+
+| Tool | Description |
+|---|---|
+| `search_by_session` | Look up a single Ens session by SessionId |
+| `search_by_status` | Find sessions whose messages match one or more Status values |
+| `search_by_time` | Find sessions whose messages fall inside a caller-supplied time window |
+| `search_by_source` | Find sessions originating from a given `SourceConfigName` |
+| `search_by_target` | Find sessions targeting a given `TargetConfigName` |
+| `search_by_message_class` | Find sessions whose messages have a given `MessageBodyClassName` |
+| `search_by_super_session` | Enumerate sessions sharing a super-session key |
+| `search_by_body_field` | Pivot through an `Ens.SearchTableBase` subclass to find sessions by body field |
+| `inspect_body_candidates` | Two-stage indexed-prefilter + body-content inspection for unindexed body patterns (≤50 candidates) |
+| `vocab_lookup` | Manage per-user vocabulary aliases (list, save, search modes); silent alias capture on session click-through |
+| `find_sessions_using_class` | Find sessions referencing a given class name in `SourceConfigName`, `TargetConfigName`, or `MessageBodyClassName` *(Epic 13)* |
+
 ## Status
 
-**Currently shipped — v1.0.2 (GA).** All 12 planning + implementation epics complete. Three release tags: `v1.0.0` (feature-complete, Epic 10 close), `v1.0.1` (Epic 11 patch), `v1.0.2` (Epic 12 — walkthrough hardening, this README rewrite).
+**Currently shipped — v1.0.2 + Epic 13 Tool Catalog Expansion.** All 13 planning + implementation epics complete. Release tags: `v1.0.0` (feature-complete, Epic 10 close), `v1.0.1` (Epic 11 patch), `v1.0.2` (Epic 12 — walkthrough hardening). Epic 13 (Tool Catalog Expansion — 6 new tools, 509/509 regression sweep) ships as an incremental improvement on v1.0.2.
 
 | Stage | Status | Artifact |
 |---|---|---|
@@ -396,8 +449,8 @@ This module embeds two AI agents directly in the surfaces operators already use:
 | PRD (59 FRs / 33 NFRs) | Complete | [prd.md](_bmad-output/planning-artifacts/prd.md) |
 | Architecture (10 calibration decisions, ~50-class structure) | Complete | [architecture.md](_bmad-output/planning-artifacts/architecture.md) |
 | UX Design (30 UX-DRs, 11 components) | Complete | [ux-design-specification.md](_bmad-output/planning-artifacts/ux-design-specification.md) |
-| Epics & Stories (12 epics shipped) | Complete | [epics.md](_bmad-output/planning-artifacts/epics.md) |
-| Implementation | **Shipped — v1.0.2** | regression sweep 461/461/0 |
+| Epics & Stories (13 epics shipped) | Complete | [epics.md](_bmad-output/planning-artifacts/epics.md) |
+| Implementation | **Shipped — v1.0.2 + Epic 13** | regression sweep 509/509/0 |
 
 Post-v1 / vision-tier items (MCP serving, vector / semantic body-content search, PHI redaction architecture, cross-namespace operation, streaming responses, LLM-extracted alias generation, cross-user `NamespaceVocabulary` baseline population, stand-alone terminal REPL) are explicitly out of scope for v1 — see [PRD §"Vision (Future, post-v1)"](_bmad-output/planning-artifacts/prd.md) for full enumeration. Future cycles wait for the next walkthrough-driven feedback.
 
@@ -412,7 +465,7 @@ All planning artifacts live under [`_bmad-output/planning-artifacts/`](_bmad-out
 - **[Product Requirements Document (PRD)](_bmad-output/planning-artifacts/prd.md)** — 59 functional requirements across 8 capability areas + 33 non-functional requirements across 7 categories. Locks the binding capability contract for v1.
 - **[Architecture Decision Document](_bmad-output/planning-artifacts/architecture.md)** — 10 calibration decisions, ~50-class structure, six-Topic decision tree, all FR/NFR coverage traced.
 - **[UX Design Specification](_bmad-output/planning-artifacts/ux-design-specification.md)** — 30 UX-DRs, 11 `sa-*` components, design-token system, phased UX roadmap (MVP Epic 3 → Growth Epic 10).
-- **[Epics & Stories Breakdown](_bmad-output/planning-artifacts/epics.md)** — 10 epics, 64 stories, full FR/AR/NFR/UX-DR coverage map, bidirectional mapping to architect's original 18-step sequence, cross-cutting story patterns.
+- **[Epics & Stories Breakdown](_bmad-output/planning-artifacts/epics.md)** — 13 epics shipped, full FR/AR/NFR/UX-DR coverage map, bidirectional mapping to architect's original 18-step sequence, cross-cutting story patterns.
 
 ### Validation
 

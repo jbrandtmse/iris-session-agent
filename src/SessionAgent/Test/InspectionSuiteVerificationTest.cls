@@ -58,14 +58,15 @@ Class SessionAgent.Test.InspectionSuiteVerificationTest Extends %UnitTest.TestCa
 /// incrementing the catalog must update this constant + the named-tool
 /// list in <method>TestRegistryListsExpectedToolCount</method> + the
 /// representative-args table in <method>GetRepresentativeArgs</method>.</p>
-/// <p>As of Story 14.3 this is <b>33</b> — 21 inspection tools
+/// <p>As of Story 14.4 this is <b>35</b> — 23 inspection tools
 /// (Stories 2.11 + 4.x + 13.4: <code>get_queue_state</code>; Story 13.2:
 /// <code>get_rule_source</code>; Story 13.1:
 /// <code>get_class_source</code>; Story 13.3:
 /// <code>get_production_config_item</code>; Story 14.1:
 /// <code>get_query_knowledge</code>; Story 14.2:
 /// <code>list_active_body_types</code>, <code>describe_message_class</code>,
-/// <code>discover_tables</code>) + 11
+/// <code>discover_tables</code>; Story 14.4:
+/// <code>save_schema_note</code>, <code>get_schema_notes</code>) + 11
 /// search tools (Story 8.3: <code>search_by_time</code>,
 /// <code>search_by_status</code>, <code>search_by_source</code>,
 /// <code>search_by_target</code>, <code>search_by_message_class</code>,
@@ -81,7 +82,7 @@ Class SessionAgent.Test.InspectionSuiteVerificationTest Extends %UnitTest.TestCa
 /// this constant 27→28 or extending the named-tool list — the three
 /// count-equality assertions in this class failed against the live
 /// 28-tool registry until Story 14.0 reconciled them.</p>
-Parameter EXPECTEDTOOLCOUNT As %Integer = 33;
+Parameter EXPECTEDTOOLCOUNT As %Integer = 35;
 
 /// <p>Synthetic session id well outside any realistic Ens production
 /// range. Used by every "not found" / "validation error" envelope assertion
@@ -279,8 +280,33 @@ ClassMethod GetRepresentativeArgs(pToolName As %String) As %DynamicObject
         ; required.
         Do tArgs.%Set("sql", "SELECT TOP 1 ID, SessionId FROM Ens.MessageHeader ORDER BY ID DESC")
         Do tArgs.%Set("max_rows", 1, "number")
+    } ElseIf pToolName = "save_schema_note" {
+        ; Story 14.4 — representative save with the ztest- test-fixture
+        ; subject convention so sweeps stay clean; OnAfterOneTest deletes
+        ; every ztest-% SchemaNote row this dispatch persists.
+        Do tArgs.%Set("subject", "ztest-isv-schema-note-144")
+        Do tArgs.%Set("note", "ISV representative-args fixture note (cleaned up by OnAfterOneTest)")
+    } ElseIf pToolName = "get_schema_notes" {
+        ; Story 14.4 — synthetic fragment that matches no rows; empty
+        ; result is a success envelope, so no fixture seeding required.
+        Do tArgs.%Set("subject_fragment", "ztest-no-match-fragment-144")
+        Do tArgs.%Set("max_results", 5, "number")
     }
     Quit tArgs
+}
+
+/// <p>Story 14.4 — the <code>save_schema_note</code> representative-args
+/// dispatch in <method>TestAllToolsExerciseAgainstFixture</method>
+/// persists a real <CLASS>SessionAgent.Knowledge.SchemaNote</CLASS> row.
+/// Sweep every <code>ztest-</code>-prefixed row after each test so the
+/// suite never pollutes the namespace's schema notes (the first-turn
+/// digest reads this table on every agent's first turn).</p>
+Method OnAfterOneTest(testname As %String) As %Status
+{
+    ; Delegate to the shared status-checked sweep (Story 14.4 review fix
+    ; — a silently failed DELETE leaves ztest- rows feeding every agent's
+    ; first-turn digest; project rule §"Write Status Checking").
+    Quit ##class(SessionAgent.Test.SchemaNoteToolTest).DeleteFixtureRows()
 }
 
 /// <p>AC-4 — L1 read-only invariant. Iterate every concrete subclass of
@@ -364,8 +390,10 @@ Method TestAllToolsValidationFailureReturnsEnvelope()
     ; a success envelope, not an isError envelope. Story 8.3 adds
     ; search_by_time (default 24h window when no bounds supplied);
     ; Story 14.2 adds list_active_body_types (default 168h census) and
-    ; discover_tables (default unfiltered 50-row listing).
-    Set tNoRequiredArgs = $ListBuild("search_by_time", "list_active_body_types", "discover_tables")
+    ; discover_tables (default unfiltered 50-row listing); Story 14.4
+    ; adds get_schema_notes (default 10-row unfiltered note listing for
+    ; the active namespace).
+    Set tNoRequiredArgs = $ListBuild("search_by_time", "list_active_body_types", "discover_tables", "get_schema_notes")
     Set tNoRequiredCount = 0
     While tIter.%GetNext(.tKey, .tEntry) {
         Set tToolName = tEntry.%Get("name")
@@ -403,7 +431,7 @@ Method TestRegistryListsExpectedToolCount()
     Do $$$AssertEquals(tList.%Size(), ..#EXPECTEDTOOLCOUNT, "exactly " _ ..#EXPECTEDTOOLCOUNT _ " tools registered")
 
     ; Verify every expected name is present (order-independent).
-    Set tExpected = $ListBuild("session_summary", "session_timeline", "message_headers", "event_log", "rule_log", "get_message_body", "get_message_detail", "get_business_process_source", "get_business_process_instance", "list_business_process_methods", "find_related_sessions", "find_sessions_by_body", "explain_error", "search_by_time", "search_by_status", "search_by_source", "search_by_target", "search_by_message_class", "search_by_session", "search_by_super_session", "search_by_body_field", "inspect_body_candidates", "vocab_lookup", "get_queue_state", "get_rule_source", "get_class_source", "get_production_config_item", "find_sessions_using_class", "get_query_knowledge", "list_active_body_types", "describe_message_class", "discover_tables", "execute_readonly_sql")
+    Set tExpected = $ListBuild("session_summary", "session_timeline", "message_headers", "event_log", "rule_log", "get_message_body", "get_message_detail", "get_business_process_source", "get_business_process_instance", "list_business_process_methods", "find_related_sessions", "find_sessions_by_body", "explain_error", "search_by_time", "search_by_status", "search_by_source", "search_by_target", "search_by_message_class", "search_by_session", "search_by_super_session", "search_by_body_field", "inspect_body_candidates", "vocab_lookup", "get_queue_state", "get_rule_source", "get_class_source", "get_production_config_item", "find_sessions_using_class", "get_query_knowledge", "list_active_body_types", "describe_message_class", "discover_tables", "execute_readonly_sql", "save_schema_note", "get_schema_notes")
     Set tFound = ""
     Set tIter = tList.%GetIterator()
     While tIter.%GetNext(.tKey, .tEntry) {

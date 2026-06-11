@@ -54,7 +54,8 @@ Some HealthShare-Foundation-configured namespaces serve their pages with `/healt
 | Sweep tasks (audit + chat-history retention) | Epic 7 + Story 10.6 | Mgmt Portal Task Manager (`SessionAgent.PurgeOrphanedChatHistory`, `SessionAgent.PurgeStaleSearchChatHistory`, `SessionAgent.UserVocabularyDecay`) |
 | Vendored Markdown bundle (citations + code blocks render under CDN-blocked browsers) | Story 10.7 | `<script src="markdown-bundle.min.js">` ships with the module |
 | Tool Catalog Expansion (5 new agent-introspection tools + `find_sessions_using_class`) | Epic 13 | 6 new tools across both agents; `get_rule_source`, `get_class_source`, `get_queue_state`, `get_production_config_item`, `find_sessions_using_class` |
-| FR59 cross-matrix gate (33 tools × 4 providers = 132) | Story 5.4 + 8.x + 10.9 + 13.x + 14.1 + 14.2 + 14.3 | `SessionAgent.Test.ToolCallRoundtripIntegrationTest` (mock + live) |
+| FR59 cross-matrix gate (35 tools × 4 providers = 140) | Story 5.4 + 8.x + 10.9 + 13.x + 14.1 + 14.2 + 14.3 + 14.4 | `SessionAgent.Test.ToolCallRoundtripIntegrationTest` (mock + live) |
+| Learned schema notes (FR63: `save_schema_note` / `get_schema_notes` + first-turn digest injection for both agents) | Story 14.4 | Agent-discovered namespace facts persist across conversations with `age_days` staleness; `SessionAgent.Knowledge.SchemaNoteDigest` rides the uncached first-user-message segment (NFR-P6-preserving) |
 | Schema-discovery tools (FR61: `list_active_body_types`, `describe_message_class`, `discover_tables`) | Story 14.2 | Both agents discover live table/column/index state instead of hallucinating names into SQL |
 | Guarded dynamic SQL (FR60: `execute_readonly_sql` + `Tool.Query.Base` pipeline + `ReadOnlySqlInvariantTest`) | Story 14.3 | Open-ended analytical SELECTs under a compiler-level read-only gate (statementType), caps, and corpus-fed SQLCODE hints |
 
@@ -407,9 +408,9 @@ This module embeds two AI agents directly in the surfaces operators already use:
 
 ## Tool Catalog
 
-All 33 tools are registered in `SessionAgent.Tool.Registry` and are dispatched via the read-only tool dispatch gate (`MutatesState=0` enforced on every call). Tools are organized by agent.
+All 35 tools are registered in `SessionAgent.Tool.Registry` and are dispatched via the read-only tool dispatch gate (`MutatesState=0` enforced on every call — `save_schema_note` writes only to the agent-owned `SessionAgent_Knowledge.SchemaNote` table, never to `Ens.*`, so the FR31 `Ens.*`-mutation flag stays 0, the same agent-owned-table exemption `vocab_lookup`'s save mode established; the table row itself is the durable record of each write, and every write additionally emits the `(SessionAgent, SchemaNoteWrite, explicit)` audit event with the emission outcome surfaced as `audit_emitted` in the tool envelope). Tools are organized by agent.
 
-### Session Inspection Agent (21 tools)
+### Session Inspection Agent (23 tools)
 
 These tools run on the Visual Trace screen and examine a specific Ensemble session in depth.
 
@@ -436,6 +437,8 @@ These tools run on the Visual Trace screen and examine a specific Ensemble sessi
 | `list_active_body_types` | Windowed census of message body classes active in `Ens.MessageHeader` with per-class message counts *(Epic 14; exposed to both agents)* |
 | `describe_message_class` | Describe a persistent class's SQL projection: authoritative `schema.table` mapping, columns, indexes, extent subclasses, collection child tables vs embedded collections, and `AdditionalInfo` key census *(Epic 14; exposed to both agents)* |
 | `discover_tables` | List SQL tables/views from `INFORMATION_SCHEMA.TABLES`, optionally filtered by a name fragment; default excludes `%`-system schemas *(Epic 14; exposed to both agents)* |
+| `save_schema_note` | Persist a timestamped learned schema note (a discovered namespace fact) to the agent-owned `SessionAgent_Knowledge.SchemaNote` table; upserts by subject and refreshes the verified timestamp *(Epic 14; exposed to both agents)* |
+| `get_schema_notes` | Read the namespace's saved schema notes, most recently verified first, each with an `age_days` staleness marker; optional subject-fragment filter *(Epic 14; exposed to both agents)* |
 
 ### Message Search Agent (11 tools)
 
@@ -478,6 +481,16 @@ The `get_query_knowledge` tool reads from an install-seeded knowledge corpus —
 
 - **Seeding:** `SessionAgent.Knowledge.SeedContent.Seed()` runs automatically during `SessionAgent.Installer.Install` (after the search-vocabulary seed). Seeding is idempotent — articles upsert by unique `Slug`, so re-installs never duplicate rows.
 - **Operator verification:** the install log prints `[iris-session-agent] 47 query knowledge articles ensured` so you can confirm the corpus shipped; or probe `SELECT COUNT(*) FROM SessionAgent_Knowledge.Article`.
+
+### Learned schema notes *(Epic 14 — Story 14.4)*
+
+Where the knowledge corpus ships *static* expertise, the **learned schema notes** subsystem persists facts the agents *discover at runtime* — e.g. "order IDs live in `SessionAgent.Sample.Msg.OrderRequest.OrderId`" or "`EnsLib.HL7.SearchTable` is installed in this namespace" — so they survive across conversations instead of being re-derived every session.
+
+- **Storage:** `SessionAgent_Knowledge.SchemaNote` — keyed by the unique `(Namespace, Subject)` pair. `save_schema_note` upserts: re-saving an existing subject overwrites the note body and refreshes its UTC `VerifiedAt` timestamp. The namespace is always taken from the trust-boundary caller context, never from LLM input.
+- **Staleness semantics:** retrieval (`get_schema_notes`) returns notes most-recently-verified first, each carrying `age_days` (UTC day delta). The tool description directs the agent to re-verify facts whose `age_days` is large before relying on them — old facts decay into *hypotheses*, not truths.
+- **First-turn digest injection (both agents):** `SessionAgent.Knowledge.SchemaNoteDigest.Build` renders the namespace's top 10 most-recently-verified notes (2,000-char cap, per-line age markers) into each conversation's **first user message** via the same two-array channel as the search agent's vocabulary digest — the search agent receives *vocabulary digest + schema-notes digest* concatenated; the inspection agent receives the schema-notes digest. The digest rides the *uncached* first-user-message segment, so the Anthropic prompt-cache `system + tools` prefix stays bit-identical across turns (NFR-P6). A namespace with no notes injects nothing.
+- **Audit:** every schema-note write emits the pre-registered `(SessionAgent, SchemaNoteWrite, explicit)` audit event; the tool envelope reports `audit_emitted` so registration drift is operator-visible.
+- **Documented, accepted residual risk:** notes are shared per namespace and replayed into every conversation's first turn in that namespace — agent-authored note content is a persistent prompt-context channel. Mitigations: notes are written only through `save_schema_note` (server-side normalization + length caps), digest lines are single-line snippets (160 chars) whose subjects and bodies cannot forge the prefix-block delimiter, and all operators of a namespace already share the same data visibility. Per-user scoping or content screening is possible future hardening (tracked in `deferred-work.md`).
 
 ## Status
 

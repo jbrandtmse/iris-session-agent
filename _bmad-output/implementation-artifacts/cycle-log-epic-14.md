@@ -30,3 +30,10 @@
 2026-06-11T11:46:18Z	Story 14.3	qa_complete	model=claude-fable-5 tests_added=11 first_run_failures=0 clarifications=0 closing_sections_present=true sweep=582/582/0 output_tokens=161847 notes=comment-prefixed-EXPLAIN-bypass-finding-for-reviewer
 2026-06-11T12:06:06Z	Story 14.3	cr_complete	model=claude-fable-5 resolved=5 deferred=2 dismissed=1 high=1 med=2 low=2 clarifications=0 closing_sections_present=true sweep=582/582/0 output_tokens=235125 notes=HIGH-comment-prefix-EXPLAIN-bypass-fixed
 2026-06-11T12:06:48Z	Story 14.3	smoke_complete	method=api result=pass iterations=1 defects_caught=0 evidence=select3rows433ms;insert=not_select+writeproof-unchanged;-29hint-present model=claude-fable-5
+2026-06-11T12:07:25Z	Story 14.3	committed	sha=4a0d4e8 submodules=
+2026-06-11T12:09:31Z	Story 14.4	story_created	path=_bmad-output/implementation-artifacts/14-4-learned-schema-notes-digest-injection.md spec_lines=104 model=claude-fable-5
+2026-06-11T12:59:25Z	Story 14.4	dev_complete	model=claude-fable-5 files=17 tests_added=28 sweep=610/610/0 clarifications=0 cycle_iteration=2 closing_sections_present=true output_tokens=421787 notes=socket-drop-recovered;MutatesState0-deviation-documented
+2026-06-11T12:59:25Z	Story 14.4	adr_verifications_complete	result=none_required model=claude-fable-5
+2026-06-11T13:09:28Z	Story 14.4	qa_complete	model=claude-fable-5 tests_added=6 first_run_failures=0 clarifications=0 closing_sections_present=true sweep=616/616/0 output_tokens=187649
+2026-06-11T13:54:16Z	Story 14.4	cr_complete	model=claude-fable-5 resolved=14 deferred=4 dismissed=7 high=0 med=5 low=8 clarifications=0 closing_sections_present=true sweep=616/616/0 output_tokens=321421
+2026-06-11T13:55:04Z	Story 14.4	smoke_complete	method=api result=pass iterations=1 defects_caught=0 evidence=save(audit=1)+get(age_days=0)+digest-carries-note+cleanup-ok model=claude-fable-5

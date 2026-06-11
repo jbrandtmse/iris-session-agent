@@ -50,14 +50,29 @@
 /// text on the FIRST user turn only). Assistant turns and tool_result
 /// turns from Step 7 are pushed to BOTH arrays via the same OREF so they
 /// share content; only the first-turn user-block <code>text</code> field
-/// differs. When digest injection does not apply (inspection agent, or
-/// search-agent second turn onward), <code>tTurnsForLlm</code> is set to
+/// differs. When digest injection does not apply (any agent's second
+/// turn onward), <code>tTurnsForLlm</code> is set to
 /// the same OREF as <code>tTurns</code> so the dual-push cost collapses
 /// to zero. Per architecture §"Vocabulary digest in <i>uncached</i>
 /// first-user-message prefix" + NFR-P6 prompt-cache discipline: placing
 /// the digest in the <code>messages[0].content[0].text</code> segment
 /// keeps the cached <code>system + tools</code> prefix bit-identical
 /// across turns, preserving Anthropic prompt-cache hit rate.</p>
+///
+/// <p><b>Story 14.4 extension (FR63 / D4) — learned-schema-notes digest
+/// for BOTH agents.</b> The SAME two-array machinery now fires on EVERY
+/// agent's first turn: the search agent's first-user-message prefix is
+/// the vocabulary digest plus the
+/// <method>SessionAgent.Knowledge.SchemaNoteDigest.Build</method> digest
+/// concatenated (vocab first, blank-line separated; single
+/// <code>---</code> delimiter block preserved); the inspection agent
+/// receives the schema-notes digest only. The schema-notes digest has
+/// NO seed fallback — a namespace with zero notes yields an empty
+/// digest and the user-block collapses to <code>"User: " + pUserText</code>
+/// with no orphan delimiter (the Story 9.4 AC-3 row-5 collapse,
+/// now exercised on both agents). The two-array invariant itself is
+/// UNCHANGED — only the digest composition and the agent guard were
+/// extended.</p>
 ///
 /// <p><b>References.</b></p>
 /// <ul>
@@ -229,27 +244,48 @@ ClassMethod RunTurn(pAgentName As %String, pSessionKey As %String, pPortalUser A
         Set tTurns = ..LoadTurns(tHist)
 
         ; Story 9.4 — search-agent first-user-message vocabulary digest
-        ; injection. Compute the digest BEFORE building the user-turn
+        ; injection; Story 14.4 (FR63 / D4) extends the SAME two-array
+        ; machinery with the learned-schema-notes digest for BOTH
+        ; agents. Compute the digest BEFORE building the user-turn
         ; OREFs so we can decide whether two parallel turn arrays are
-        ; needed (digest applies) or one shared array suffices (no
-        ; digest applies). Guards:
-        ;   1. Search-agent only — pAgentName = "message-search". The
-        ;      inspection-agent path is unchanged from Story 2.12 / 4.x.
-        ;   2. First turn only — tTurns.%Size() = 0 means no prior user
+        ; needed (digest machinery applies) or one shared array
+        ; suffices. Guards:
+        ;   1. First turn only — tTurns.%Size() = 0 means no prior user
         ;      or assistant turns persisted (replay through LoadTurns).
-        ; When both guards pass, build a digest-prefixed user-block for
-        ; the LLM array and a canonical user-block for the persistence
-        ; array. See class doc-comment §"Two-array invariant".
+        ;   2. Digest composition is per-agent (Story 14.4 D4):
+        ;        message-search   = vocabulary digest + schema-notes
+        ;                           digest concatenated (vocab FIRST,
+        ;                           blank-line separated; the single
+        ;                           "---" delimiter block structure is
+        ;                           preserved);
+        ;        all other agents = schema-notes digest only (the
+        ;                           inspection agent's first first-turn
+        ;                           injection).
+        ; When the first-turn guard passes, build a digest-prefixed
+        ; user-block for the LLM array and a canonical user-block for
+        ; the persistence array. See class doc-comment §"Two-array
+        ; invariant".
         Set tInjectDigest = 0
         Set tInjectedUserText = pUserText
-        If (pAgentName = "message-search") && (tTurns.%Size() = 0) {
-            Set tDigest = ##class(SessionAgent.Search.VocabularyDigest).Build(pPortalUser)
-            ; Empty-digest edge case (AC-3 row 5): if VocabularyDigest
-            ; ever returns "" (defensive — Build's seed-fallback path
-            ; should always return non-empty, but the empty case must
-            ; not orphan a delimiter). We still flag tInjectDigest=1 so
-            ; the two-array machinery wires through, but tInjectedUserText
-            ; collapses to "User: " + pUserText with no prefix block.
+        If tTurns.%Size() = 0 {
+            Set tDigest = ""
+            If pAgentName = "message-search" {
+                Set tDigest = ##class(SessionAgent.Search.VocabularyDigest).Build(pPortalUser)
+            }
+            ; Story 14.4 — schema-notes digest rides the SAME uncached
+            ; first-user-message segment (NFR-P6: the cached system +
+            ; tools prefix stays bit-identical across turns). Unlike
+            ; VocabularyDigest there is NO seed fallback — an empty
+            ; digest (no notes for this namespace) collapses gracefully.
+            Set tSchemaDigest = ##class(SessionAgent.Knowledge.SchemaNoteDigest).Build(tCtx.Namespace)
+            If tSchemaDigest '= "" {
+                Set tDigest = $Select(tDigest = "": tSchemaDigest, 1: tDigest _ $Char(10) _ $Char(10) _ tSchemaDigest)
+            }
+            ; Empty-digest edge case (Story 9.4 AC-3 row 5 semantics,
+            ; now applied to BOTH agents): when the combined digest is
+            ; empty the user-block collapses to "User: " + pUserText
+            ; with no orphan delimiter. We still flag tInjectDigest=1 so
+            ; the two-array machinery wires through.
             If tDigest '= "" {
                 Set tInjectedUserText = tDigest _ $Char(10) _ $Char(10) _ "---" _ $Char(10) _ $Char(10) _ "User: " _ pUserText
             } Else {
@@ -272,14 +308,15 @@ ClassMethod RunTurn(pAgentName As %String, pSessionKey As %String, pPortalUser A
         Do tTurns.%Push(tUserTurn)
 
         ; Build tTurnsForLlm — the array sent to the provider. When
-        ; digest injection does not apply (inspection agent OR
-        ; search-agent non-first turn), reuse the same OREF as tTurns
-        ; so the assistant/tool_result pushes in Step 7 land on a
-        ; single shared array (zero dual-push cost). When digest
-        ; injection applies, fork a parallel array that shares all
-        ; pre-user history OREFs but has its own digest-prefixed
-        ; user-turn OREF as the final element. Subsequent assistant /
-        ; tool_result turns are pushed to BOTH arrays.
+        ; digest injection does not apply (any agent's non-first turn —
+        ; Story 14.4 extended the first-turn machinery to BOTH agents),
+        ; reuse the same OREF as tTurns so the assistant/tool_result
+        ; pushes in Step 7 land on a single shared array (zero
+        ; dual-push cost). When digest injection applies, fork a
+        ; parallel array that shares all pre-user history OREFs but has
+        ; its own digest-prefixed user-turn OREF as the final element.
+        ; Subsequent assistant / tool_result turns are pushed to BOTH
+        ; arrays.
         If tInjectDigest = 0 {
             Set tTurnsForLlm = tTurns
         } Else {

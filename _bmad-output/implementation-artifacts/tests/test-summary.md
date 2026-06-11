@@ -1,93 +1,91 @@
-# Test Automation Summary — Story 14.0 (qa-generate-e2e-tests stage, 2026-06-11; updated by code-review triage same day)
+# Test Automation Summary — Story 14.1 (qa-generate-e2e-tests stage, 2026-06-11)
 
 ## Scope
 
-Gap coverage for the Story 14.0 `EnsureIsErrorOnExecuteFailure` retrofit, complementing the
-dev-authored `SessionAgent.Test.ExecuteFailureGateTest` (6 methods: helper unit tests +
-Inspection `session_timeline` end-to-end — restaged by the code-review pass as a
-graceful-skip assertion, see below). Framework: IRIS `%UnitTest`
-(project standard — no JS test framework applies to ObjectScript backend stories).
+Gap coverage for Story 14.1 (knowledge corpus + `get_query_knowledge` tool),
+complementing the dev-authored `KnowledgeCorpusTest` (5 methods) and
+`GetQueryKnowledgeTest` (7 methods). Framework: IRIS `%UnitTest` (project
+standard — ObjectScript backend story, no UI surface).
 
-**Code-review update (2026-06-11):** SessionTimeline's span DATEDIFF and EventLog's
-severity-count statements were re-classified best-effort (graceful-skip on execute
-failure) by the review pass, and FSUC's Invoke now classifies RunQuery failures via
-`ShapeRunQueryErrorEnvelope` (execute marker → `render_strategy="execute_error"`).
-This file's test inventory reflects the post-review state: 5 methods in
-`ExecuteFailureAdaptedSitesTest`, and `ExecuteFailureGateTest`'s e2e renamed to
-`TestSessionTimelineSpanFailureGracefulSkip`.
+Dev coverage already included: seed idempotency + 47-count lock, topic
+representation, ASCII grep, SQLCODE-hint contract, unique-Slug, topic/keyword/
+combined retrieval e2e via `Tool.Registry.Dispatch`, validation envelopes,
+max_results clamp, char-budget truncation. The 4 gap candidates were assessed;
+all 4 were real gaps and got one test each.
 
 ## Generated Tests
 
-### ObjectScript %UnitTest (adapted-guard sites)
+### ObjectScript %UnitTest (gap coverage)
 
-- [x] `src/SessionAgent/Test/ExecuteFailureAdaptedSitesTest.cls` — 5 methods, all passing:
-  - `TestRunQueryReturnsErrorStatusOnExecuteFailure` — drives a REAL runtime `%Execute`
-    failure (constant scalar `(SELECT DATEDIFF('ms','garbage-a','garbage-b')) >= 0`
-    subquery in a table-context WHERE; empirically probed `prep=1 afterExecute=-400`,
-    data-independent) through `FindSessionsUsingClass.RunQuery` and asserts the Story 14.0
-    adapted guard returns an error `%Status` carrying
-    `"SQL execute failed for find_sessions_using_class"` + a generic negative `"SQLCODE -"`
-    (review fix: literal -400 was engine-version brittle) — proving the
-    guard fires before `%Next()` instead of falling through to a silent zero-row success.
-  - `TestRunQueryCleanColFilterSucceeds` — sanity sibling proving the failure above is
-    caused by the guard, not the direct-call fixture shape.
-  - `TestShapeRunQueryErrorEnvelopeExecuteMarker` (review fix) — execute-marker %Status →
-    canonical `render_strategy="execute_error"` envelope (corrected taxonomy; the
-    pre-review code mislabeled execute failures `prepare_error` with contradictory
-    "prepare failed: ... execute failed" text).
-  - `TestShapeRunQueryErrorEnvelopeNonMarkerFallsBack` (review fix) — non-marker %Status
-    keeps the Story 11.2 `prepare_error` shape (classifier does not over-label).
-  - `TestInvokeConvertsRunQueryErrorToCanonicalEnvelope` — validation arm: a RunQuery
-    error `%Status` (staged deterministically via `time_window_hours = -5` →
-    `BuildBoundedWhereClause` TimeWindowTooSmall) is converted by `Invoke` into the
-    canonical envelope (`isError=1`, `render_strategy="prepare_error"`,
-    operator-readable `content[0].text`, `structuredContent.error_text`) with `Invoke`
-    returning `$$$OK` per the envelope-based error contract.
+- [x] `src/SessionAgent/Test/KnowledgeCorpusTest.cls` — 1 method added (now 6):
+  - `TestInstallerWiresKnowledgeSeed` — Installer-integration regression lock:
+    reads the compiled `SessionAgent.Installer:Install` implementation via
+    `%Dictionary.MethodDefinition` and asserts it contains
+    `##class(SessionAgent.Knowledge.SeedContent).Seed()` and
+    `LogPostSeedKnowledgeCount`, and that the helper method exists. A live
+    re-Install was judged too expensive (per stage scope guidance); the
+    source-grep lock catches the predicted-bug shape (future Installer refactor
+    drops the seed call → installs ship an empty corpus, breaking the Story
+    14.3/14.5 consumer contract).
+- [x] `src/SessionAgent/Test/GetQueryKnowledgeTest.cls` — 3 methods added (now 10):
+  - `TestRegistryListToolsIncludesGetQueryKnowledge` — ListTools manifest shape
+    per the project-wide `TestRegistryListToolsIncludes<Tool>` precedent
+    (GetQueryKnowledge was the only tool missing one): name surfaced, non-empty
+    Description, Description primes consult-BEFORE-authoring-SQL usage and
+    names the topic taxonomy, input_schema present with a 7-entry `topic.enum`
+    (static-taxonomy lock) + `keywords` + `max_results` properties.
+  - `TestRelevanceRankingDeterministic` — fixture-based multi-term scoring
+    order: 4 `ztest-` fixtures with 3/2/1/1 term hits against a 3-term query
+    must order strictly by score desc then slug asc (tie pair). The dev's
+    combined e2e only pinned position 0 against live corpus content; this
+    locks the full ordering deterministically (matters for Story 14.5 golden
+    questions).
+  - `TestKeywordSpecialCharactersRobust` — keyword-input robustness: single/
+    double quotes never error (parameterized binding), pure `%` term acts as
+    match-all but stays bounded by max_results, `_` is locked as an accepted
+    single-char LIKE wildcard via fixture (`ztrw_marker` query matches stored
+    `ztrw-marker`), and a 12-term string beyond the 8-term cap returns a
+    success-shape envelope.
 
 ## Coverage Decisions (gap assessment, not duplication)
 
-- **Single-call public-Invoke e2e returning `render_strategy="execute_error"`: not
-  stageable post-review.** All Search-family statements are table-context
-  (`FROM Ens.MessageHeader` / `Ens_Config.SearchTableProp` /
-  `SessionAgent_Search.UserVocabulary`); per the Story 14.0 Task-4 probes, table-context
-  predicates are silently coerced, and the one in-repo shape failing AT `%Execute`
-  (SessionTimeline's scalar no-FROM DATEDIFF) is best-effort post-review (graceful skip,
-  covered by `TestSessionTimelineSpanFailureGracefulSkip`). The AC-3c execute_error
-  evidence is therefore the FSUC two-link chain: real runtime `%Execute` failure →
-  marker `%Status` (`TestRunQueryReturnsErrorStatusOnExecuteFailure`, real engine
-  SQLCODE) → canonical `execute_error` envelope
-  (`TestShapeRunQueryErrorEnvelopeExecuteMarker`).
-- **`GetBusinessProcessInstance` graceful-skip: existing coverage sufficient.**
-  `BusinessProcessIntrospectionTest.TestInstanceLiveSessionReturnsBp` and
-  `TestInstanceNoBpReturnsHasBpFalse` already lock both envelope shapes through the
-  adapted augmentation guards; the failure arm (`%SQLCODE < 0` on the Ens_BP.Context /
-  Thread probes) is not stageable for the same table-context-coercion reason. No
-  redundant test added.
-- **Golden-questions doc artifact (AC-6): skipped** — not testable in `%UnitTest`
-  (doc artifact; consumed by Story 14.5 eval run).
-- **Locale note:** IRIS error-text prefixes are localized on this server (localized
-  "#5001" prefix observed); all assertions target locale-independent substrings authored
-  by project code.
+- **Gap (a) Installer integration** — no prior test asserted the wiring (grep
+  evidence lived only in dev Completion Notes). Added as cheap source
+  introspection; live re-Install intentionally NOT run.
+- **Gap (b) ranking determinism** — real gap; added fixture-based test.
+- **Gap (c) LIKE wildcard semantics** — assessed the tool: keyword terms bind
+  via `?` placeholders (no injection surface), but `%`/`_` are NOT escaped and
+  pass through as LIKE wildcards. Judged semantically acceptable (benign
+  broadening for an LLM caller, never an error) and LOCKED as documented
+  behavior in the test doc-comment rather than "fixed" — if a future story
+  decides to escape, this test fails loudly and forces a deliberate decision.
+- **Gap (d) ListTools manifest** — real gap (every other tool has the test);
+  added per the `GetClassSourceTest` template.
 
 ## Verification (verbatim evidence)
 
-- QA stage (pre-review): `iris_execute_tests` class-level
-  `{"total":3,"passed":3,"failed":0,"skipped":0}`; full-suite SQL ground-truth
-  aggregate Total=518 / Passed=518 / Failed=0 (= dev baseline 515 + 3 new).
-- Post-review-triage (2026-06-11): `iris_execute_tests` class-level
-  `{"total":5,"passed":5,"failed":0,"skipped":0}` for
-  `ExecuteFailureAdaptedSitesTest`; `{"total":6,"passed":6,"failed":0,"skipped":0}` for
-  `ExecuteFailureGateTest` (incl. `TestSessionTimelineSpanFailureGracefulSkip`).
-- Canonical SQL ground-truth probe (numerical-MAX form, per
-  `.claude/rules/object-script-testing.md`), post-review full-suite latest-run
-  aggregate: **Total=520 / Passed=520 / Failed=0** (= 518 + 2 new classifier tests).
-- `SessionAgent.Test.Util:RegressionSweepCount()` (direct invocation): `sc=1`; counts
-  per SQL probe above (Output args not surfaced via MCP).
-- Rule 8 discoverability: class lives in `SessionAgent.Test`, extends
-  `%UnitTest.TestCase`, methods are `Test*` with no underscores, no `Property Test*`,
-  `%OnNew(initvalue)` implemented — discovered by the default per-class suite sweep.
+- Per-method SQL ground-truth roster (numerical-MAX form): all 16 methods of
+  `KnowledgeCorpusTest` (6) + `GetQueryKnowledgeTest` (10) Status=1.
+- Full-suite SQL ground-truth aggregate (canonical probe,
+  `.claude/rules/object-script-testing.md`): **Total=536 / Passed=536 /
+  Failed=0** — reconciles exactly to the 532 dev baseline + 4 new tests.
+- Environment incident during the sweep (NOT caused by this story): the
+  latest-run aggregate initially showed 536/531/5 — five failures from
+  pre-existing run 160 (`AgentConfigTest.TestLoadAgentConfigReturnsSeededRow`
+  + 4 `GetProductionConfigItemTest` methods). Probe showed the sample
+  production was uninstalled (0 `Ens_Config.Item` rows) — the Rule 7
+  watch-item sample-production-state drift. Re-Bootstrapped
+  (`SessionAgent.Sample.Bootstrap.InstallProduction` +
+  `StartProductionIfStopped`; `Ens.Director.IsProductionRunning` → 1) and
+  re-ran both classes: all pass; aggregate then 536/536/0.
+- Rule 8 discoverability: both classes live in `SessionAgent.Test`, extend
+  `%UnitTest.TestCase`, new methods are `Test*`-prefixed camelCase with no
+  underscores, helper `SaveRankFixture` is non-Test-prefixed, no
+  `Property Test*`, no opt-out tags. Discovery proven empirically by the
+  536-count aggregate including all 4 new methods. Class sizes: 330 / 207
+  lines (≤ ~500 rule).
 
 ## Next Steps
 
-- Lead's per-story smoke gate runs after code review; this class participates in the
-  Epic 14 per-class regression sweep (now 62 test classes).
+- Code-review stage inspects these artifacts next; lead's per-story smoke
+  follows. The Epic 14 per-class regression sweep baseline is now **536**.

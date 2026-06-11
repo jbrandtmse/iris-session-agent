@@ -91,6 +91,7 @@ result is accepted.
 | **`SQLCODE -1` on an alias** | The alias is a reserved word (`COUNT`, `ROWS`). Rename it. |
 | **`SQLCODE -25` ("encountered after end of query")** | A `%PARALLEL`/`%IGNOREINDEX` hint placed *after* the table name (must be *before*), or `%NOLOCK` used where the endpoint rejects it. See `01`/`03`. |
 | **`SQLCODE -37` / `-40`** | `SUBSTR`/`LOCATE` used on a stream or as an `{fn}` escape that isn't supported — use `SUBSTRING`/`CHARINDEX`. |
+| **`SQLCODE -400` ("fatal error occurred")** | Internal failure, often from a malformed statement or an unsupported construct on this endpoint. Simplify the statement, re-check syntax piece by piece, retry; check `messages.log` if it persists. |
 | **Timeout / very slow** | Narrow the time window; lower `TOP N`; add `%PARALLEL` for large aggregates/anti-joins; add a matching time predicate *on a correlation JOIN* (not just WHERE); avoid `COUNT(DISTINCT)` on huge tables. See `03`. |
 
 ## When you hit a knowledge gap

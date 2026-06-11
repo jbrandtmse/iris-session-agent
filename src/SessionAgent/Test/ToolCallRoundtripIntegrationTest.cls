@@ -785,8 +785,10 @@ ClassMethod RunMatrix() As %DynamicObject
 /// (13.1 get_class_source, 13.2 get_rule_source, 13.3
 /// get_production_config_item, 13.4 get_queue_state, 13.5
 /// find_sessions_using_class) without bumping this lock (the Epic 13
-/// retro AI-3 stale-count incident shape).
-/// When a 5th provider or 29th tool is added, this assertion
+/// retro AI-3 stale-count incident shape); Story 14.1 grows it to
+/// 4 × 29 = 116 (18 inspection + 11 search — adds
+/// <code>get_query_knowledge</code>).
+/// When a 5th provider or 30th tool is added, this assertion
 /// auto-fails so the maintainer updates the expected count +
 /// acknowledges the matrix grew. Defensive against silent shrinkage
 /// too (a regression deleting a tool).</p>
@@ -795,7 +797,7 @@ ClassMethod RunMatrix() As %DynamicObject
 Method TestMatrixCardinalityMatchesCatalog()
 {
     Set tMatrix = ..EnumerateMatrix()
-    Do $$$AssertEquals(tMatrix.%Size(), 112, "Matrix cardinality at Story 14.0 close = 4 providers × 28 tools (17 inspection + 11 search) = 112 pairs (got: " _ tMatrix.%Size() _ ")")
+    Do $$$AssertEquals(tMatrix.%Size(), 116, "Matrix cardinality at Story 14.1 close = 4 providers × 29 tools (18 inspection + 11 search) = 116 pairs (got: " _ tMatrix.%Size() _ ")")
 }
 
 /// <p><b>AC-5 — Dispatch policy gate.</b> Structurally verify that every

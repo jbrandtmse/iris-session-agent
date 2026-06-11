@@ -47,14 +47,14 @@ Some HealthShare-Foundation-configured namespaces serve their pages with `/healt
 
 | Capability | Story / Epic | Operator-observable surface |
 |---|---|---|
-| Session Inspection agent (read-only Ens.* introspection) | Epic 4 + Epic 13 (17 tools total) | VisualTrace chat tab |
+| Session Inspection agent (read-only Ens.* introspection) | Epic 4 + Epic 13 + Epic 14 (18 tools total) | VisualTrace chat tab |
 | Message Search agent (11 search tools + vocabulary) | Epic 8 + Epic 13 (11 tools total) | MessageViewer chat tab |
 | Search → Inspection hand-off ("from search" stripe + click-through context) | Epic 10 (Stories 10.1–10.5) | Visible stripe in inspection chat after click-through |
 | Silent vocabulary learning (per-user alias capture) | Epic 9 (Stories 9.2–9.5) | `vocab_lookup` tool surfaces saved aliases; sweep keeps the table bounded |
 | Sweep tasks (audit + chat-history retention) | Epic 7 + Story 10.6 | Mgmt Portal Task Manager (`SessionAgent.PurgeOrphanedChatHistory`, `SessionAgent.PurgeStaleSearchChatHistory`, `SessionAgent.UserVocabularyDecay`) |
 | Vendored Markdown bundle (citations + code blocks render under CDN-blocked browsers) | Story 10.7 | `<script src="markdown-bundle.min.js">` ships with the module |
 | Tool Catalog Expansion (5 new agent-introspection tools + `find_sessions_using_class`) | Epic 13 | 6 new tools across both agents; `get_rule_source`, `get_class_source`, `get_queue_state`, `get_production_config_item`, `find_sessions_using_class` |
-| FR59 cross-matrix gate (28 tools × 4 providers = 112) | Story 5.4 + 8.x + 10.9 + 13.x | `SessionAgent.Test.ToolCallRoundtripIntegrationTest` (mock + live) |
+| FR59 cross-matrix gate (29 tools × 4 providers = 116) | Story 5.4 + 8.x + 10.9 + 13.x + 14.1 | `SessionAgent.Test.ToolCallRoundtripIntegrationTest` (mock + live) |
 
 ## Try it in a clean namespace (recommended for evaluation)
 
@@ -405,9 +405,9 @@ This module embeds two AI agents directly in the surfaces operators already use:
 
 ## Tool Catalog
 
-All 28 tools are registered in `SessionAgent.Tool.Registry` and are dispatched via the read-only tool dispatch gate (`MutatesState=0` enforced on every call). Tools are organized by agent.
+All 29 tools are registered in `SessionAgent.Tool.Registry` and are dispatched via the read-only tool dispatch gate (`MutatesState=0` enforced on every call). Tools are organized by agent.
 
-### Session Inspection Agent (17 tools)
+### Session Inspection Agent (18 tools)
 
 These tools run on the Visual Trace screen and examine a specific Ensemble session in depth.
 
@@ -430,6 +430,7 @@ These tools run on the Visual Trace screen and examine a specific Ensemble sessi
 | `get_class_source` | Read the full ObjectScript source of any compiled class *(Epic 13)* |
 | `get_queue_state` | Return the depth and oldest-message age of a named Ensemble queue *(Epic 13)* |
 | `get_production_config_item` | Read adapter class, pool size, enabled flag, and configured settings of any named production config item *(Epic 13)* |
+| `get_query_knowledge` | Retrieve distilled IRIS-SQL/Interop query expertise from the install-seeded knowledge corpus, by topic and/or keywords *(Epic 14; exposed to both agents)* |
 
 ### Message Search Agent (11 tools)
 
@@ -448,6 +449,13 @@ These tools run on the Message Viewer screen and find sessions matching natural-
 | `inspect_body_candidates` | Two-stage indexed-prefilter + body-content inspection for unindexed body patterns (≤50 candidates) |
 | `vocab_lookup` | Manage per-user vocabulary aliases (list, save, search modes); silent alias capture on session click-through |
 | `find_sessions_using_class` | Find sessions referencing a given class name in `SourceConfigName`, `TargetConfigName`, or `MessageBodyClassName` *(Epic 13)* |
+
+### Query Knowledge corpus *(Epic 14)*
+
+The `get_query_knowledge` tool reads from an install-seeded knowledge corpus — 47 articles distilled from `docs/iris-query-guide/` into the `SessionAgent_Knowledge.Article` table across 7 topics (`methodology`, `dialect`, `message-model`, `performance`, `discovery`, `reference`, `cookbook`). The corpus teaches the agents the IRIS SQL dialect's silent-wrong-results traps (integer-vs-string filters, case folding, encoded columns, `TOP` not `LIMIT`) plus the `Ens.MessageHeader` message model and copy-adaptable query recipes, without bloating the cached system prompt.
+
+- **Seeding:** `SessionAgent.Knowledge.SeedContent.Seed()` runs automatically during `SessionAgent.Installer.Install` (after the search-vocabulary seed). Seeding is idempotent — articles upsert by unique `Slug`, so re-installs never duplicate rows.
+- **Operator verification:** the install log prints `[iris-session-agent] 47 query knowledge articles ensured` so you can confirm the corpus shipped; or probe `SELECT COUNT(*) FROM SessionAgent_Knowledge.Article`.
 
 ## Status
 

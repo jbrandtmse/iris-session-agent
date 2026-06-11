@@ -58,11 +58,12 @@ Class SessionAgent.Test.InspectionSuiteVerificationTest Extends %UnitTest.TestCa
 /// incrementing the catalog must update this constant + the named-tool
 /// list in <method>TestRegistryListsExpectedToolCount</method> + the
 /// representative-args table in <method>GetRepresentativeArgs</method>.</p>
-/// <p>As of Story 14.0 this is <b>28</b> — 17 inspection tools
+/// <p>As of Story 14.1 this is <b>29</b> — 18 inspection tools
 /// (Stories 2.11 + 4.x + 13.4: <code>get_queue_state</code>; Story 13.2:
 /// <code>get_rule_source</code>; Story 13.1:
 /// <code>get_class_source</code>; Story 13.3:
-/// <code>get_production_config_item</code>) + 11
+/// <code>get_production_config_item</code>; Story 14.1:
+/// <code>get_query_knowledge</code>) + 11
 /// search tools (Story 8.3: <code>search_by_time</code>,
 /// <code>search_by_status</code>, <code>search_by_source</code>,
 /// <code>search_by_target</code>, <code>search_by_message_class</code>,
@@ -77,7 +78,7 @@ Class SessionAgent.Test.InspectionSuiteVerificationTest Extends %UnitTest.TestCa
 /// this constant 27→28 or extending the named-tool list — the three
 /// count-equality assertions in this class failed against the live
 /// 28-tool registry until Story 14.0 reconciled them.</p>
-Parameter EXPECTEDTOOLCOUNT As %Integer = 28;
+Parameter EXPECTEDTOOLCOUNT As %Integer = 29;
 
 /// <p>Synthetic session id well outside any realistic Ens production
 /// range. Used by every "not found" / "validation error" envelope assertion
@@ -246,6 +247,13 @@ ClassMethod GetRepresentativeArgs(pToolName As %String) As %DynamicObject
         ; Dispatch envelope contract holds.
         Do tArgs.%Set("class_name", "SessionAgent.Sample.BP.OrderRouter")
         Do tArgs.%Set("limit", 5, "number")
+    } ElseIf pToolName = "get_query_knowledge" {
+        ; Story 14.1 — topic-only retrieval against the install-seeded
+        ; knowledge corpus (seeded idempotently by KnowledgeCorpusTest /
+        ; Installer). Returns an "ok" envelope with dialect articles; no
+        ; Ens fixture seeding required.
+        Do tArgs.%Set("topic", "dialect")
+        Do tArgs.%Set("max_results", 2, "number")
     }
     Quit tArgs
 }
@@ -368,7 +376,7 @@ Method TestRegistryListsExpectedToolCount()
     Do $$$AssertEquals(tList.%Size(), ..#EXPECTEDTOOLCOUNT, "exactly " _ ..#EXPECTEDTOOLCOUNT _ " tools registered")
 
     ; Verify every expected name is present (order-independent).
-    Set tExpected = $ListBuild("session_summary", "session_timeline", "message_headers", "event_log", "rule_log", "get_message_body", "get_message_detail", "get_business_process_source", "get_business_process_instance", "list_business_process_methods", "find_related_sessions", "find_sessions_by_body", "explain_error", "search_by_time", "search_by_status", "search_by_source", "search_by_target", "search_by_message_class", "search_by_session", "search_by_super_session", "search_by_body_field", "inspect_body_candidates", "vocab_lookup", "get_queue_state", "get_rule_source", "get_class_source", "get_production_config_item", "find_sessions_using_class")
+    Set tExpected = $ListBuild("session_summary", "session_timeline", "message_headers", "event_log", "rule_log", "get_message_body", "get_message_detail", "get_business_process_source", "get_business_process_instance", "list_business_process_methods", "find_related_sessions", "find_sessions_by_body", "explain_error", "search_by_time", "search_by_status", "search_by_source", "search_by_target", "search_by_message_class", "search_by_session", "search_by_super_session", "search_by_body_field", "inspect_body_candidates", "vocab_lookup", "get_queue_state", "get_rule_source", "get_class_source", "get_production_config_item", "find_sessions_using_class", "get_query_knowledge")
     Set tFound = ""
     Set tIter = tList.%GetIterator()
     While tIter.%GetNext(.tKey, .tEntry) {

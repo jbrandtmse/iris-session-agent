@@ -123,6 +123,15 @@ ClassMethod Install(pVars) As %Status
         If $$$ISERR(tSC) Quit
         Do ..LogPostSeedVocabularyCount()
 
+        ; (5b) Query-knowledge corpus seed (Story 14.1 / FR62). Idempotent —
+        ; Seed() upserts by unique Slug, so re-running never duplicates
+        ; (NFR-R5). Status is propagated per project rule "Write Status
+        ; Checking"; the post-seed article count is logged so operators can
+        ; confirm the corpus shipped.
+        Set tSC = ##class(SessionAgent.Knowledge.SeedContent).Seed()
+        If $$$ISERR(tSC) Quit
+        Do ..LogPostSeedKnowledgeCount()
+
         ; (6) Operator reminders to install log (bookmark URLs + README pointer).
         Do ..PrintOperatorReminders()
     }
@@ -602,6 +611,42 @@ ClassMethod LogPostSeedVocabularyCount() [ Private ]
     }
     Catch ex {
         Do ..LogProgress("Exception in LogPostSeedVocabularyCount: " _ ex.DisplayString())
+    }
+}
+
+/// <p>Story 14.1 helper — queries the post-Seed row count from
+/// <code>SessionAgent_Knowledge.Article</code> and emits the
+/// operator-visible <code>"&lt;count&gt; query knowledge articles ensured"</code>
+/// log line (NFR-R5; SeedVocabulary precedent). On a fresh install the
+/// count is the full corpus (~47); on a re-install the count is unchanged
+/// (idempotency confirmed at the operator-visible level).</p>
+///
+/// <p>Defensive — if the count query fails for any reason, logs a
+/// diagnostic line and returns; does NOT propagate as an error so the
+/// overall install succeeds.</p>
+ClassMethod LogPostSeedKnowledgeCount() [ Private ]
+{
+    Try {
+        Set tStmt = ##class(%SQL.Statement).%New()
+        Set tPrepSC = tStmt.%Prepare("SELECT COUNT(*) AS Cnt FROM SessionAgent_Knowledge.Article")
+        If $$$ISERR(tPrepSC) {
+            Do ..LogProgress("Failed to prepare knowledge-article count query: " _ $System.Status.GetErrorText(tPrepSC))
+            Quit
+        }
+        Set tRS = tStmt.%Execute()
+        If tRS.%SQLCODE < 0 {
+            Do ..LogProgress("Knowledge-article count query failed: SQLCODE " _ tRS.%SQLCODE _ " " _ tRS.%Message)
+            Quit
+        }
+        If tRS.%Next() {
+            Set tCount = tRS.%Get("Cnt")
+            Do ..LogProgress(tCount _ " query knowledge articles ensured")
+        } Else {
+            Do ..LogProgress("Knowledge-article count query returned no rows")
+        }
+    }
+    Catch ex {
+        Do ..LogProgress("Exception in LogPostSeedKnowledgeCount: " _ ex.DisplayString())
     }
 }
 

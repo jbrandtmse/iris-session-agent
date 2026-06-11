@@ -41,7 +41,7 @@ The custom Search and Inspection screens do **not** appear as new menu entries i
   - Example: `http://localhost:52773/csp/hscustom/SessionAgent.UI.AgentConfig.zen`
   - Configure provider, model, API key credential, max iterations, and system prompt override per namespace.
 
-For HealthShare deployments the path includes `/healthshare/` between `csp/` and the namespace — see [§ "8. Bookmark URLs"](#8-bookmark-urls) for the full pattern.
+Some HealthShare-Foundation-configured namespaces serve their pages with `/healthshare/` between `csp/` and the namespace instead — see [§ "8. Bookmark URLs"](#8-bookmark-urls) for how to determine which pattern your namespace uses.
 
 ## v1.0.4 scope-complete summary
 
@@ -81,7 +81,7 @@ If you want to evaluate iris-session-agent without touching your main `HSCUSTOM`
 
 4. **Wire LLM provider credentials.** Pick at least one provider — OpenAI is the simplest first run. Either set the `OPENAI_API_KEY` env-var visible to the IRIS process, or create the `Ens.Config.Credentials` row in the `SATEST` namespace named `SessionAgentOpenAI` with your key in the `Password` field. See [§ "6. LLM provider API keys"](#6-llm-provider-api-keys) for the canonical credential names per provider and the env-var fallback rules.
 
-5. **Configure the agents.** Browse to `http://<host>:<port>/csp/satest/SessionAgent.UI.AgentConfig.zen`. The form lists both agents in the **Agent** dropdown (`session-inspection` and `message-search`); for each one select a **Provider** (e.g., `openai`), enter a **Model** (e.g., `gpt-4.1-mini`), tick **Enable this agent**, and click **Save**. The form runs against the *namespace you opened it in*, so the saved values are scoped to `SATEST` only.
+5. **Configure the agents.** Browse to `http://<host>:<port>/csp/satest/SessionAgent.UI.AgentConfig.zen`. The form lists both agents in the **Agent** dropdown (`session-inspection` and `message-search`); for each one select a **Provider** (e.g., `openai`), enter a **Model** (e.g., `gpt-4.1-mini`), wire the key — if you created an `Ens.Config.Credentials` row in step 4, set **Credential Source** = `Ens.Config.Credentials` and pick the row in the **Ens.Config.Credentials Entry** dropdown (the credentials row is not picked up until the agent references it — see [§ "6. LLM provider API keys"](#6-llm-provider-api-keys)) — then tick **Enable this agent** and click **Save**. The form runs against the *namespace you opened it in*, so the saved values are scoped to `SATEST` only.
 
 6. **Install the sample interop production.** From a `SATEST` terminal session:
 
@@ -133,6 +133,8 @@ Do $System.OBJ.Load("https://pm.community.intersystems.com/packages/zpm/latest/i
 ```
 
 This loads the canonical IPM bootstrap from the InterSystems community package repository, compiling all `%IPM.*` classes into `%SYS`. Verify with `zpm version` — should report a 0.10.x or later version.
+
+> **Alternatives (verified on a fresh IRIS for Health 2026.1 install, 2026-06-10):** (1) If your IRIS host can't load directly from a URL, download `https://pm.community.intersystems.com/packages/zpm/latest/installer` to a local file first and run `Do $System.OBJ.Load("<path>\zpm-installer.xml","ck")`. (2) If you only need IPM in a single namespace, you can run that `Load` directly **in the target namespace** (e.g., `HSCUSTOM`) instead of `%SYS` — IPM installs there self-contained and `zpm "load ..."` works immediately, no Step 2b mapping required. The `%SYS` + `enable -map -globally` route remains the right choice when multiple namespaces need `zpm`.
 
 **Step 2b — Enable IPM across your namespaces**
 
@@ -192,7 +194,9 @@ For each cloud provider you intend to use, wire **one** of the two delivery mech
   | Anthropic | `ANTHROPIC_API_KEY` |
   | Google Gemini | `GEMINI_API_KEY` |
 
-- **`Ens.Config.Credentials` row (traditional on-prem installs)** — create a credentials row with the canonical `SystemName` the runtime expects, then no further configuration is needed:
+- **`Ens.Config.Credentials` row (traditional on-prem installs)** — two steps (verified on a fresh IRIS for Health 2026.1 install, 2026-06-10):
+
+  **(a)** Create a credentials row with the canonical `SystemName`:
 
   | Provider | `SystemName` (canonical) | `Username` (any non-empty marker) |
   |---|---|---|
@@ -200,7 +204,11 @@ For each cloud provider you intend to use, wire **one** of the two delivery mech
   | Anthropic | `SessionAgentAnthropic` | `anthropic-bearer` |
   | Google Gemini | `SessionAgentGemini` | `gemini-key` |
 
-  Set the `Password` field to your API key. Resolution falls back from env-var → `Ens.Config.Credentials` row → fail-fast if neither is present (per [`SessionAgent.Util.EnvSecret`](src/SessionAgent/Util/EnvSecret.cls)).
+  Set the `Password` field to your API key.
+
+  **(b)** Point the agent at the row: on the [Agent Configuration form](#launching-the-agents), set **Credential Source** = `Ens.Config.Credentials` and pick the row in the **Ens.Config.Credentials Entry** dropdown, then **Save** — for *each* agent (`session-inspection` and `message-search`). Creating the credentials row alone is **not** sufficient: the freshly-seeded agent configuration defaults to the env-var mechanism (`EnvVarName = OPENAI_API_KEY` with an empty credential reference), and key resolution uses only what the agent's configuration row references (per [`SessionAgent.LLM.Provider`](src/SessionAgent/LLM/Provider.cls) → [`SessionAgent.Util.EnvSecret`](src/SessionAgent/Util/EnvSecret.cls)). Resolution order is env-var first, then the referenced credentials row, then fail-fast with a structured "check EnvVarName / CredentialName" error in the chat panel.
+
+  > **Windows note (env-var path):** the IRIS service process does not see your desktop user's environment variables. Set the variable at **Machine** scope and restart the IRIS service, or use the `Ens.Config.Credentials` mechanism instead — on a fresh Windows install the credentials row is usually the faster path.
 
 **OpenAI-compatible / Ollama (Epic 5 Story 5.3):** on the Agent Configuration form, select **Provider** = `openai-compatible`. The **Endpoint URL (OpenAI-Compatible only)** field appears — enter the **full** endpoint URL including the `/v1/chat/completions` path. Examples:
 
@@ -235,7 +243,7 @@ If `DefaultSSL` does not already exist on your IRIS install, create a client-sid
 - **Management Portal:** *System Administration → Security → SSL/TLS Configurations → Create New Configuration*. Set **Name** = `DefaultSSL`, **Type** = `Client`, **Min Protocol** = `TLSv1.2`, **Server certificate verification** = `None` (acceptable for outbound calls to well-known TLS termination on `api.openai.com`; tighten to `Require` + provide a CA file in hardened deployments).
 - **ObjectScript / SQL:** create with `Security.SSLConfigs.Create("DefaultSSL", ...)` from `%SYS` — see [`irislib/Security/SSLConfigs.cls`](irislib/Security/SSLConfigs.cls) for the full signature.
 
-**How to verify:** from `%SYS`, query `SELECT Name FROM Security.SSLConfigs` — `DefaultSSL` must appear. Without this configuration, every outbound LLM call fails fast with `"OpenAI mid-flight failure (request may have been processed)"` in `Audit.LlmCall.ErrorText` — the symptom is a sub-second turn that returns no answer (no real network call ever happened). The Story 2.12 retro empirical battery surfaced this as a missing operator-prereq documentation gap; this section closes it.
+**How to verify:** from `%SYS`, query `SELECT Name FROM Security.SSLConfigs` — `DefaultSSL` must appear. Without this configuration, every outbound LLM call fails fast with `"OpenAI mid-flight failure (request may have been processed): ... SSL/TLS configuration 'DefaultSSL' is not activated"` — rendered verbatim in the chat panel and recorded in `Audit.LlmCall.ErrorText` (reproduced on a fresh 2026.1 install, 2026-06-10). The symptom is a sub-second turn that returns the error instead of an answer (no real network call ever happened). The Story 2.12 retro empirical battery surfaced this as a missing operator-prereq documentation gap; this section closes it.
 
 ### 7a. System Prompt Override length cap
 
@@ -243,13 +251,13 @@ The **System Prompt Override (optional)** field on the Agent Configuration form 
 
 ### 8. Bookmark URLs
 
-After install, all three Management Portal entry points are bookmarkable. **Use the URL pattern that matches your IRIS deployment style** — HealthShare-based deployments include the `/healthshare/` segment; plain IRIS deployments do not:
+After install, all three Management Portal entry points are bookmarkable. **The URL prefix is determined by which Web Application your IRIS instance defines for the namespace — not by whether the product is "IRIS for Health".** Check *System Administration → Security → Applications → Web Applications*: if the namespace has a `/csp/healthshare/<ns>` application (created by HealthShare Foundation installs), use the HealthShare pattern; if it only has `/csp/<ns>` (the namespace default), use the plain pattern. Verified 2026-06-10: a fresh **IRIS for Health 2026.1** install serves `HSCUSTOM` at `/csp/hscustom/...` only — the `/csp/healthshare/hscustom/...` form returns *404 Not Found* there.
 
-- **HealthShare deployments:**
+- **HealthShare-Foundation-configured namespaces:**
   - `/csp/healthshare/<NS>/SessionAgent.EnsPortal.MessageViewer.zen` *(Search Agent entry — natural-language session search)*
   - `/csp/healthshare/<NS>/SessionAgent.EnsPortal.VisualTrace.zen` *(Inspection Agent — chat about a specific session)*
   - `/csp/healthshare/<NS>/SessionAgent.UI.AgentConfig.zen` *(Agent Configuration form — Provider, Model, credentials, max iterations, system prompt override)*
-- **Plain IRIS deployments:**
+- **Plain namespaces (namespace-default `/csp/<ns>` Web Application — includes `HSCUSTOM` on a fresh IRIS for Health install):**
   - `/csp/<NS>/SessionAgent.EnsPortal.MessageViewer.zen`
   - `/csp/<NS>/SessionAgent.EnsPortal.VisualTrace.zen`
   - `/csp/<NS>/SessionAgent.UI.AgentConfig.zen`

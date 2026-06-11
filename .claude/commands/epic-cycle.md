@@ -12,6 +12,10 @@ Uses the standard `Agent` tool to spawn pipeline-stage subagents and the `Skill`
 
 If `Agent` is a deferred tool, load its schema via `ToolSearch` with `"select:Agent"` before first use. If `Agent` is unavailable, halt and surface to the user.
 
+### Project pre-flight — epic-cycle discipline rules (iris-session-agent)
+
+Before any epic setup or story work, the lead MUST read `.claude/rules/epic-cycle-discipline.md`. It captures this project's accumulated retrospective lessons as load-bearing rules — spec length governance, no `[x]` without verification, higher-level MCP first, stale-reference scan at story start, one-liner check before deferring, the epic-end empirical battery and its pre-retro enforcement checklist, operator setup at sprint planning, the raised defer threshold, binding predicted-bug deferrals, external-default research, mandatory live integration smoke tests, and rendered-text readability. Each rule cites the real incident that motivated it. These rules bind the lead throughout the cycle and, per the file's application matrix, the dev and code-review stages as well — pass the file path in every pipeline-stage spawn prompt (see Spawn Prompt Skeleton item 5). Without reading this file, the autonomy starts cold and the lessons are inert.
+
 ## Task Sequence
 
 **Per Epic (setup, executed once per epic before any stories):**
@@ -80,10 +84,11 @@ Every Agent spawn prompt must include, in this order:
 2. The story file path (captured at story creation).
 3. The list of files modified by upstream stages (for QA: dev's `## Files Modified`; for code review: dev's + QA's combined list).
 4. The project's ADR registry path (typically `docs/adr/`) as factual context.
-5. The directive: `Use the Skill tool to invoke /<bmad-skill-name>.`
-6. The stage-specific rule block (see below).
-7. The closing-summary directive — quote the section names inline so the agent has them at hand.
-8. Skill-specific context.
+5. The project discipline-rules path `.claude/rules/epic-cycle-discipline.md` as required reading — its rules bind the dev and code-review stages per the file's application matrix (notably Rule 2: no `[x]` without verbatim verification evidence; Rule 3: typed MCP before generic `iris_execute_command`; Rule 8: "fix now" is the default over deferring).
+6. The directive: `Use the Skill tool to invoke /<bmad-skill-name>.`
+7. The stage-specific rule block (see below).
+8. The closing-summary directive — quote the section names inline so the agent has them at hand.
+9. Skill-specific context.
 
 ### Stage-specific rule blocks (copy into spawn prompts)
 

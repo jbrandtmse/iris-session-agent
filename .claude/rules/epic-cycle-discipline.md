@@ -681,6 +681,6 @@ the next UI story would have repeated the same failure mode.
 
 ## How to load these rules in a future cycle
 
-The `/epic-cycle` slash command's pre-flight reads this file alongside `docs/epic-cycle-teams.md`. Both are required reading before any story work begins. See [`.claude/commands/epic-cycle.md`](../commands/epic-cycle.md) for the pre-flight sequence.
+The `/epic-cycle` slash command's project pre-flight reads this file before any epic setup or story work begins, and passes its path in every pipeline-stage spawn prompt so dev and code-review agents inherit the rules per the application matrix. See [`.claude/commands/epic-cycle.md`](../commands/epic-cycle.md) ("Project pre-flight" + Spawn Prompt Skeleton item 5). (`docs/epic-cycle-teams.md` described the deprecated team-based pipeline and is no longer part of the pre-flight.)
 
 For non-cycle work on this project, the lead inherits these rules via the auto-memory feedback entry `feedback_epic_cycle_discipline.md` — see [`MEMORY.md`](../../C:/Users/Josh/.claude/projects/c--git-iris-session-agent/memory/MEMORY.md).

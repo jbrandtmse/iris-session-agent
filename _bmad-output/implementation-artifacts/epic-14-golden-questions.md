@@ -158,3 +158,40 @@ run time: 223 messages / 37 session starts in the trailing day). This validates 
   guide §01 and the Story 13.3 aliasing rule.
 - **Outcome: 13/13 PASS + schema-note round-trip PASS; zero toolchain failures — nothing to
   fix-now under Rule 8.**
+
+---
+
+## User-led live walkthrough — Epic 14 close (Rule 6 bullet 5), 2026-06-11
+
+**Method.** Driven through the chat panel in a real browser (chrome-devtools MCP) against the
+live sample production; provider gpt-4.1-mini unless noted. Screenshots in
+`_bmad-output/implementation-artifacts/evidence/walkthrough-*.png`.
+
+| GQ | Outcome | Notes |
+|---|---|---|
+| GQ-1 | **PASS** | First SQL attempt prepare-failed (visible error tool-card), agent self-corrected; honest one-day-of-data caveat (293 msgs / 47 sessions) |
+| GQ-2 | **PASS** | Error rates per target (FilePublish 19/41, SqlPersist 18/41) |
+| GQ-3 | **PASS (route note)** | Correct top failure modes; used event-log tools rather than the %ODBCOUT SQL grouping |
+| GQ-4 | **PASS** | Slow tail 4-8ms; self-corrected from -29; used describe_message_class mid-loop |
+| GQ-5 | **PASS** | Preferred typed list_active_body_types (164/86/43) |
+| GQ-6 | **PASS** | True 8-field shape; honest no-AdditionalInfo; real-column pivot |
+| GQ-7 | **PASS** | Empty result presented as "none found", not an error |
+| GQ-8 | **PASS (after 1 transient)** | First attempt hit a non-reproducing OpenAI HTTP 431 (header sizes instrumented normal on success; investigated per Rule 5, not reproduced); retry: tool-first diagnosis, injected SqlPersist+FilePublish failures named |
+| GQ-9 | **PASS (with nudge)** | Agent's first fragments missed; operator nudge -> real tables + exact OrderResponse columns; no invented names |
+| GQ-10 trap | **PASS** | Agent used typed search_by_status with enumerated statuses (audit 333) — coercion trap had no surface; 19 genuinely-filtered results |
+| GQ-11 | **PASS (polish note)** | Full chronological table with error flags; statuses shown as integer codes not %EXTERNAL words |
+| GQ-12 | **PASS** | Component name discovered first; 123/day |
+| GQ-13 | **PASS** | Per-source volumes annotated with real host classes; honest not-found for framework service |
+| Schema note | **PASS** | save_schema_note in one conversation; BRAND-NEW conversation recalled the fact via first-turn digest (digest char-cap visible in quote) |
+| EXPLAIN (14.6) | **PASS** | Plan-reasoning answer: master-map scan, temp-file aggregation, no TimeCreated index, optimization offer |
+
+**Multi-provider spot-check (credential probe first; all resolvable):**
+- anthropic / claude-haiku-4-5-20251001 — tool round trip + disclosed SQL (audit 404-405); integer predicate per card, though enum value guessed (model-quality note)
+- gemini / gemini-2.5-flash — tool round trip + disclosed SQL (audit 406-407)
+- openai-compatible / Ollama @ 192.168.0.123:11434 — **walkthrough fix-now**: bare-host EndpointUrl normalized to /chat/completions (no /v1) -> live 404; `NormalizeChatCompletionsLocation` case-4 fixed to /v1/chat/completions + regression test (4/4). Post-fix the request reaches Ollama and OpenAI-shaped envelopes round-trip (model-capability 400 for dolphin3 rendered cleanly; full tool round trip blocked on a tools-capable model loading on that box — its resident gemma-4:31b was busy). Timeout path also exercised: graceful mid-flight-failure envelope.
+
+**Defects caught by the walkthrough/battery (all fixed or documented):**
+1. Ambient test pollution of live Config.Agent rows (Enabled=0 earlier; EnvVarName=PATH at battery time) from interrupted test runs — restored both times; durable-fix candidate for the retro.
+2. OpenAICompat bare-host URL 404 — fixed now (commit pending), test-locked.
+3. Transient OpenAI HTTP 431 (1 occurrence, not reproduced, instrumentation showed normal header sizes on success) — documented.
+4. Cosmetic: curated session-list renderer shows "Unknown(undefined)" rows when fed SQL-shaped rows missing expected fields (GQ-12) — retro polish candidate.

@@ -64,6 +64,23 @@ Method TestUrlConstructionAppendsSuffixWhenAbsent()
     Quit
 }
 
+/// <p>Epic 14 walkthrough fix (2026-06-11) — operator supplies a BARE
+/// host:port URL (e.g. <code>http://192.168.0.123:11434</code>, no path).
+/// The parser returns an empty/root Location; the helper must produce
+/// <code>/v1/chat/completions</code> (NOT <code>/chat/completions</code>,
+/// which 404s on Ollama / LM Studio / vLLM — verified live against
+/// Ollama: "404 page not found").</p>
+Method TestUrlConstructionBareHostGetsV1Path()
+{
+    Set tParsed = ##class(SessionAgent.LLM.Provider).ParseEndpointUrl("http://192.168.0.123:11434")
+    Set tNorm = ##class(SessionAgent.LLM.OpenAICompatProvider).NormalizeChatCompletionsLocation(tParsed.%Get("location"))
+    Do $$$AssertEquals(tNorm, "/v1/chat/completions", "bare host:port endpoint normalizes to /v1/chat/completions")
+    ; Root-slash form behaves identically.
+    Set tNorm2 = ##class(SessionAgent.LLM.OpenAICompatProvider).NormalizeChatCompletionsLocation("/")
+    Do $$$AssertEquals(tNorm2, "/v1/chat/completions", "root-slash location normalizes to /v1/chat/completions")
+    Quit
+}
+
 /// <p>AC-3 #2 — operator supplies the OpenAI-canonical full URL form
 /// (path already includes <code>/chat/completions</code>).
 /// <method>SessionAgent.LLM.Provider.ParseEndpointUrl</method> returns

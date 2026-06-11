@@ -51,3 +51,5 @@
 2026-06-11T15:56:32Z	Story 14.6	qa_complete	model=claude-fable-5 tests_added=3 first_run_failures=0 clarifications=0 closing_sections_present=true sweep=629/629/0 output_tokens=180826
 2026-06-11T16:14:25Z	Story 14.6	cr_complete	model=claude-fable-5 resolved=1 deferred=0 dismissed=2 high=0 med=1 low=0 clarifications=0 closing_sections_present=true sweep=629/629/0 output_tokens=220887
 2026-06-11T16:15:03Z	Story 14.6	smoke_complete	method=api result=pass iterations=1 defects_caught=0 evidence=EXPLAIN-SELECT=1planrow;EXPLAIN-DELETE=not_select model=claude-fable-5
+2026-06-11T16:23:03Z	Epic 14	epic_summary	stories=7 total_high=2 total_med=31 total_low=33 total_smoke_defects=2 rework_events=3 sweep_final=629/629/0 tools=28to35 fable_stage_count=all input_tokens_total=na output_tokens_total=~3.9M
+2026-06-11T16:23:03Z	Epic 14	battery_bullets_1to4_complete	artifacts=35tools-0emptydesc audit_triples=48-incl-SchemaNoteWrite live=openai-2-dynsql-selfcorrect-audit309-310 sweep=629/629/0 credentials=3x-resolvable defect_caught=EnvVarName-PATH-pollution-restored model=claude-fable-5

@@ -1,3 +1,220 @@
+# Epic Cycle Workflow — Installation Kit
+
+A self-contained kit for installing the `/epic-cycle` slash command and its BMAD skill customizations into any BMAD project. Run this as a Claude Code session — the session reads each step, performs the indicated file operations, and verifies the result.
+
+## What this installs
+
+| File | Purpose |
+| --- | --- |
+| `_bmad/custom/skill-rules.md` | Cross-cutting rules registry, loaded by every BMAD skill via `persistent_facts` |
+| `_bmad/custom/bmad-create-story.toml` | Loads `skill-rules.md` for the story-creation skill |
+| `_bmad/custom/bmad-dev-story.toml` | Loads `skill-rules.md` for the dev skill |
+| `_bmad/custom/bmad-qa-generate-e2e-tests.toml` | Loads `skill-rules.md` for the QA skill |
+| `_bmad/custom/bmad-code-review.toml` | Loads `skill-rules.md` for the code-review skill |
+| `.claude/commands/epic-cycle.md` | The slash command body (self-contained at runtime) |
+
+Optional, project-defined later:
+
+| File | Purpose |
+| --- | --- |
+| `_bmad/custom/branch-naming.yaml` | Per-project tracker / branch-naming convention overrides |
+
+---
+
+## Step 1: Detect prior state
+
+Before writing any files, inspect what's already present and decide whether to back up.
+
+Run these checks (the Claude session executes each; report findings inline):
+
+```bash
+# 1. Does the slash command already exist?
+test -f .claude/commands/epic-cycle.md && echo "PRESENT" || echo "ABSENT"
+
+# 2. Does it reference deprecated multi-agent patterns?
+grep -E "TeamCreate|TeamDelete|SendMessage|team_name|shutdown_request|shutdown_response|STATUS: completed|STATUS: clarification_needed" .claude/commands/epic-cycle.md 2>/dev/null | wc -l
+
+# 3. Are the BMAD .toml customizations present?
+ls _bmad/custom/bmad-*.toml 2>/dev/null
+
+# 4. Do any .toml files carry an `on_complete` hook?
+grep -l "on_complete" _bmad/custom/bmad-*.toml 2>/dev/null
+
+# 5. Does a prior rules registry exist?
+ls _bmad/custom/*-skill-rules.md _bmad/custom/skill-rules.md 2>/dev/null
+```
+
+**Decision table:**
+
+| Finding | Action |
+| --- | --- |
+| Slash command absent | Proceed to Step 2 — clean install. |
+| Slash command present, zero deprecated-pattern matches | Back up to `.claude/commands/epic-cycle.md.bak-<UTC>` and continue. |
+| Slash command present with deprecated-pattern matches | Back up to `.claude/commands/epic-cycle.md.bak-<UTC>`, report the matching lines to the user, continue. |
+| `.toml` files absent | Proceed to Step 2. |
+| `.toml` files present without `on_complete` | Back up each to `<file>.bak-<UTC>`, overwrite in Step 2. |
+| `.toml` files present with `on_complete` | Back up each, overwrite in Step 2 (the new versions omit `on_complete`). |
+| Prior rules registry under a different name (e.g., `<project>-skill-rules.md`) | Rename to `skill-rules.md` after backing up, OR back up + delete (the new install creates `skill-rules.md` from scratch — manual merge if the prior registry had project-specific rules). |
+
+**Backup convention:** `<original-path>.bak-<UTC-timestamp>` (e.g., `.claude/commands/epic-cycle.md.bak-2026-05-22T14-30-00Z`). Backups stay in place so the developer can diff post-install.
+
+Surface the detection report to the user before writing anything. If anything looks unusual (e.g., a prior registry with custom project-specific rules), pause and ask whether to preserve those rules in the new `skill-rules.md`.
+
+---
+
+## Step 2: Write BMAD skill customizations
+
+### File 1: `_bmad/custom/skill-rules.md`
+
+Write the following content verbatim:
+
+```markdown
+# BMAD Skill Rules
+
+Loaded as `persistent_facts` by every BMAD skill on activation. Project-specific rules can be appended below Rule 7.
+
+## Rule 1 — Integration ACs (`bmad-create-story`)
+
+Every story that introduces a service, module, or shared component MUST include at least one Integration AC of the form:
+
+> *Consumer `X` reads from this service/module and produces observable effect `Y`.*
+
+The integration AC must be testable by the consumer's automation tier (unit, integration, E2E, browser-MCP, API smoke), not by inspecting the introducing module's internal state.
+
+A story that introduces a service without naming any consumers must explicitly say so in an "Integration ACs" section ("No consumers in this story; the first consumer will be Story X.Y."). Silence is not acceptable.
+
+## Rule 2 — Consumed-by linkage (`bmad-create-story`)
+
+Every service-introducing story includes a `## Consumed-by` section listing downstream consumer stories by ID and purpose.
+
+Every consumer story lists the service in its `## Consumes` section, and its Integration ACs exercise the consumer against a real instance — not a mock.
+
+## Rule 3 — Real-runtime test evidence (`bmad-code-review`)
+
+A code review MUST NOT approve a story whose code touches a user-facing surface unless the QA-generated test suite includes at least one test that exercises the deliverable against its real target runtime:
+
+- UI / browser-deployed — browser-MCP or Playwright test asserting on observable DOM / render state.
+- CLI / library — actual invocation with stdout / stderr / exit-code / produced-file assertions.
+- Service / API — a real HTTP request with status code + response body + side-effect assertions.
+
+This is distinct from the lead's manual per-story smoke, which runs *after* code review as a separate workflow gate. Rule 3 governs the *test artifacts* code review can inspect; the manual smoke is a later, independent check.
+
+Pure non-user-facing stories (build pipeline, internal tooling, refactor) are exempt; note the exemption in the review. Missing real-runtime test evidence on a user-facing story is a HIGH finding.
+
+## Rule 4 — Closing summary in the final message (all skills, under `/epic-cycle`)
+
+When invoked under `/epic-cycle`, the skill MUST end its final assistant message with these sections in order:
+
+```markdown
+## Files Modified
+- <full path from repo root>
+(or "(none)")
+
+## Tests Added
+- <full path from repo root>
+(or "(none)")
+
+## Decisions
+- <one-line summary>
+(or "(none)")
+
+## Issues Encountered
+- <one-line summary>
+(or "(none)")
+```
+
+The closing summary is part of the agent's normal output. If the agent forgets the sections, the lead reconstructs the file list from `git status --short` — normal extraction.
+
+If the skill cannot make confident progress for ANY reason — ambiguous ACs, missing prerequisite, a user-preference choice, an environment failure, or anything risking a stated constraint — halt BEFORE the closing summary and end with a `## Clarification Needed` section instead. State the question, what was tried, and what's blocking, in one paragraph.
+
+Outside `/epic-cycle`, this rule does not apply — emit a normal completion summary.
+
+## Rule 5 — NFR tripwire response (`bmad-dev-story`, `bmad-code-review`)
+
+If an NFR is found to be unmeasurable, mathematically impossible, internally contradictory, or otherwise un-implementable as worded:
+
+1. Halt the story implementation at the affected task.
+2. Amend the relevant planning artifact (`prd.md`, `architecture.md`, or `epics.md`) in place.
+3. Document original-vs-amended wording with rationale in the story's Dev Agent Record.
+4. Continue against the amended NFR.
+
+Do NOT work around with code comments + `deferred-work.md`.
+
+## Rule 6 — ADR violations are HIGH severity (`bmad-dev-story`, `bmad-code-review`)
+
+An AC implementation that violates an Accepted ADR (Architecture Decision Record — a short, numbered document under `docs/adr/` capturing a single committed architectural or technical decision and its rationale) — wrong tool stack, wrong architectural pattern, contradicts a committed methodology — is a HIGH-severity finding, not a LOW deferrable.
+
+`bmad-dev-story` must consult the ADR registry (typically `docs/adr/`) for any architectural or methodology decisions referenced in the story's ACs / Dev Notes, and match implementation to ADR commitments.
+
+`bmad-code-review` must:
+
+1. Cross-check each AC against the project's ADR registry.
+2. Verify that ADR-constrained implementations match the ADR's commitment.
+3. File mismatches as HIGH. Auto-resolve inline where reasonable; otherwise pause for the lead.
+
+## Rule 7 — Sub-agent tool inventory is harness-inherited (all skills)
+
+Sub-agents spawned by `/epic-cycle` inherit whatever MCP namespaces and tools are mounted on the harness running the lead. There is no project-local mechanism to add a tool just for sub-agents.
+
+**Implication:** ADR-tooled AC verifications (browser-MCP smokes, performance traces, audits) are placed on the **lead**, not on sub-agents. Sub-agent MCP propagation is best-effort defense-in-depth, not the primary gate.
+
+## Rule 8 — Test discoverability (`bmad-qa-generate-e2e-tests`)
+
+Generated tests MUST be discoverable by the project's default test suite — (a) correct naming convention, (b) not excluded by ignore files, (c) not tagged in a way that opts them out of the default run.
+
+A test that exists but does not run in the default suite is invisible to CI and to the next story's regression check. Undiscoverable tests are a HIGH finding on subsequent code review.
+
+## Project-specific rules (add below as retros surface them)
+
+> Add additional rules here as retrospectives identify durable patterns. Number sequentially after Rule 8. Each rule should state what it applies to, the obligation, and (briefly) why.
+```
+
+### File 2: `_bmad/custom/bmad-create-story.toml`
+
+```toml
+[workflow]
+persistent_facts = [
+  "file:{project-root}/_bmad/custom/skill-rules.md",
+]
+```
+
+### File 3: `_bmad/custom/bmad-dev-story.toml`
+
+```toml
+[workflow]
+persistent_facts = [
+  "file:{project-root}/_bmad/custom/skill-rules.md",
+]
+```
+
+### File 4: `_bmad/custom/bmad-qa-generate-e2e-tests.toml`
+
+```toml
+[workflow]
+persistent_facts = [
+  "file:{project-root}/_bmad/custom/skill-rules.md",
+]
+```
+
+### File 5: `_bmad/custom/bmad-code-review.toml`
+
+```toml
+[workflow]
+persistent_facts = [
+  "file:{project-root}/_bmad/custom/skill-rules.md",
+]
+```
+
+---
+
+## Step 3: Write `.claude/commands/epic-cycle.md`
+
+Write everything between the BEGIN and END markers below to that file path, verbatim, including the frontmatter. Overwrite any existing file (you should have already backed it up in Step 1).
+
+```text
+=== BEGIN .claude/commands/epic-cycle.md ===
+```
+
 ---
 description: Run the BMAD Method epic development cycle for one or more epics
 ---
@@ -812,3 +1029,71 @@ Derivable from per-stage entries; a convenience, not a source of truth.
 - **Auto-resolving merge conflicts at SC-4** — Three-way-merge conflicts at end-of-epic must be surfaced to the user. Git's auto-resolution can silently drop intentional changes.
 - **Spawning pipeline sub-agents without honoring the skill's declared model** — Omitting the `model` parameter on the `Agent` call makes every stage inherit the lead's model instead of the `model:` the skill's frontmatter declares (e.g. dev/qa intend `sonnet`, code-review intends `opus`). Resolve each stage skill's frontmatter `model:` and pass it on the spawn (see Agent Invocation Pattern). Lead-run gate skills are the exception — they run inline on the lead's model by design.
 - **Mis-scoping or forgetting to restore the IDE file-sync toggle** — On IRIS/ObjectScript projects, disable `objectscript.conn.active` ONLY transiently around each branch-changing git operation (Window A: epic-start branching; Window B: SC-4 merge), and restore it immediately after each window. Do NOT leave the sync disabled for the whole epic — the per-story pipeline (commits/pushes, which don't change branches) must run with the sync ON. Each window's restore is mandatory `try/finally`-style: restore on success, halt, failure, merge conflict, or cancellation; an un-restored toggle leaves the workspace silently disconnected from IRIS (no error — just no sync). Never `git add` the transiently-toggled `.vscode/settings.json` into any commit.
+
+```text
+=== END .claude/commands/epic-cycle.md ===
+```
+
+---
+
+## Step 4: Validate
+
+After writing all files, run these checks:
+
+1. **Slash command does NOT reference deprecated multi-agent patterns:**
+   ```bash
+   grep -E "TeamCreate|TeamDelete|SendMessage|team_name|shutdown_request|shutdown_response|STATUS: completed|STATUS: clarification_needed" .claude/commands/epic-cycle.md
+   ```
+   Expected: zero matches outside the Anti-Patterns section. Acceptable: the one mention in Anti-Patterns explicitly forbidding these patterns.
+
+2. **All five customization files exist:**
+   ```bash
+   ls _bmad/custom/
+   ```
+   Expected: `skill-rules.md`, `bmad-create-story.toml`, `bmad-dev-story.toml`, `bmad-qa-generate-e2e-tests.toml`, `bmad-code-review.toml`.
+
+3. **No `.toml` carries an `on_complete` hook:**
+   ```bash
+   grep -l "on_complete" _bmad/custom/bmad-*.toml
+   ```
+   Expected: zero matches. Verification gates and closing-summary instructions live in the slash command's spawn-prompt skeleton.
+
+4. **No `.toml` references deprecated envelopes:**
+   ```bash
+   grep -E "STATUS: completed|STATUS: clarification_needed|SendMessage|shutdown_request" _bmad/custom/bmad-*.toml
+   ```
+   Expected: zero matches.
+
+5. **Each `.toml` loads `skill-rules.md` via `persistent_facts`:**
+   ```bash
+   grep -c "persistent_facts" _bmad/custom/bmad-*.toml
+   ```
+   Expected: each file reports `1`.
+
+6. **The slash command contains every section:** open `.claude/commands/epic-cycle.md` and confirm presence of: Pre-flight Runtime Check, Task Sequence, Permission Mode, Skill Tool Invocation, Agent Invocation Pattern (with Spawn Prompt Skeleton, Stage-specific rule blocks, Clarification protocol, Pipeline Flow), Smart Parallelism, Per-Story Smoke, Retrospective Review & Story X.0 Creation, Source Control Branching (with the conditional IRIS/ObjectScript IDE file-sync toggle, Rules SC-1 through SC-8, and Tracker format flexibility), Resume Semantics, Sprint Planning Per Epic, Retrospective Per Epic, Lead Creates Story Files, Context Handoff Between Stages, ADR-Aware Execution, When to Pause, Handling Clarifications, Submodule / Sub-Repository Commit Order, Completion Logging, Workflow Telemetry, Anti-Patterns.
+
+7. **Telemetry metadata is documented:**
+   ```bash
+   grep -c "spawn_at" .claude/commands/epic-cycle.md
+   grep -c "model=" .claude/commands/epic-cycle.md
+   grep -c "closing_sections_present" .claude/commands/epic-cycle.md
+   ```
+   First two ≥ 3 matches; third ≥ 2 matches.
+
+8. **The slash command instructs honoring the skill's declared model on sub-agent spawns:**
+   ```bash
+   grep -c "declared model\|model: <the skill" .claude/commands/epic-cycle.md
+   ```
+   Expected: ≥ 1 match (the Agent Invocation Pattern resolves each stage skill's frontmatter `model:` and passes it on the `Agent` call).
+
+9. **The slash command includes the conditional IRIS/ObjectScript IDE file-sync toggle:**
+   ```bash
+   grep -c "objectscript.conn.active\|IDE file-sync toggle" .claude/commands/epic-cycle.md
+   ```
+   Expected: ≥ 2 matches (the toggle subsection under Source Control Branching + the Pipeline Flow steps + the Anti-Pattern). The toggle must be conditional — it applies only when `.vscode/settings.json` has `objectscript.conn.active: true`, and is skipped entirely on non-ObjectScript projects.
+
+---
+
+## Step 5: Done
+
+The workflow is ready to use. Projects can add custom rules to `_bmad/custom/skill-rules.md` (under "Project-specific rules") as retrospectives identify durable patterns, and can pin branch-naming conventions in `_bmad/custom/branch-naming.yaml` if the JIRA-style defaults don't fit. This kit document can be retained as the authoring source for future regeneration, or deleted — the slash command and customizations are self-contained at runtime.

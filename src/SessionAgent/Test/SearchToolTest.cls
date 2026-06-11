@@ -1463,10 +1463,12 @@ Method TestVocabLookupListLimitParameterRespected()
 /// surface — a future author who flips the flag (e.g., to allow a
 /// future write-tool) gets a CI failure here.</p>
 ///
-/// <p><b>Expected total — 10 tools:</b> 8 indexed-access search tools
+/// <p><b>Expected total — 11 tools:</b> 8 indexed-access search tools
 /// (search_by_time/status/source/target/message_class/session/super_session/body_field)
-/// + inspect_body_candidates + vocab_lookup. Closes the Epic 8
-/// acceptance gate (AC-15).</p>
+/// + inspect_body_candidates + vocab_lookup + find_sessions_using_class
+/// (Story 13.5; count reconciled 10→11 in Story 14.0 — Epic 13 retro
+/// AI-3 incident, the bump was missed when 13.5 shipped). Closes the
+/// Epic 8 acceptance gate (AC-15).</p>
 Method TestAllSearchToolsAreReadOnly()
 {
     Set tStmt = ##class(%SQL.Statement).%New()
@@ -1483,13 +1485,13 @@ Method TestAllSearchToolsAreReadOnly()
         Do $$$AssertEquals(+tParam.Default, 0, tClassName _ " MutatesState=0 (NFR-S1 L1 read-only invariant)")
         If +tParam.Default = 1 Set tWriteTools = tWriteTools _ tClassName _ ", "
     }
-    Do $$$AssertEquals(tCount, 10, "exactly 10 production search tools registered (Epic 8 acceptance gate)")
+    Do $$$AssertEquals(tCount, 11, "exactly 11 production search tools registered (Epic 8 acceptance gate + Story 13.5 find_sessions_using_class)")
     Do $$$AssertEquals(tWriteTools, "", "no write-capable search tool present (read-only contract)")
     Quit
 }
 
 /// <p>Story 8.7 AC-9 — comprehensive envelope-shape iteration. For each
-/// of the 10 production search tools, build a representative input,
+/// of the 11 production search tools, build a representative input,
 /// invoke, and assert the result is either a structured success
 /// envelope (<code>structuredContent</code> present) OR a structured
 /// error envelope (<code>isError:1</code> + <code>content[0].text</code>).
@@ -1521,7 +1523,7 @@ Method TestAllSearchToolsReturnValidEnvelopes()
         }
         Set tCount = tCount + 1
     }
-    Do $$$AssertEquals(tCount, 10, "exactly 10 production search tools iterated (Epic 8 acceptance gate)")
+    Do $$$AssertEquals(tCount, 11, "exactly 11 production search tools iterated (Epic 8 acceptance gate + Story 13.5 find_sessions_using_class)")
     Quit
 }
 
@@ -1565,6 +1567,12 @@ ClassMethod BuildRepresentativeVocabArgs(pToolName As %String) As %DynamicObject
         Do tArgs.%Set("prefilter_value", "Synthetic.NoMatch.Status")
     } ElseIf pToolName = "vocab_lookup" {
         Do tArgs.%Set("mode", "list")
+    } ElseIf pToolName = "find_sessions_using_class" {
+        ; Story 13.5 tool (representative args added in Story 14.0 —
+        ; Epic 13 retro AI-3 reconciliation). No-match class name returns
+        ; an empty-result success envelope; no fixture coupling.
+        Do tArgs.%Set("class_name", "Synthetic.NoMatch.Class140")
+        Do tArgs.%Set("limit", 5, "number")
     }
     Quit tArgs
 }

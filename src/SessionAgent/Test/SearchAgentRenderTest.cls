@@ -303,4 +303,64 @@ Method TestChatPanelAssetServesNewBytes()
     Do $$$AssertTrue(..FileContents [ "onSearchResultClick", "Fallback: file-on-disk contains onSearchResultClick (Story 10.2 AC-8 test (d) fallback)")
 }
 
+/// <p><b>Story 14.5 AC-2 QA gap coverage — the SERVED asset carries the
+/// Epic 14 welcome capability text.</b> Same HTTP-fetch-with-file-fallback
+/// pattern as <method>TestChatPanelAssetServesNewBytes</method>:
+/// <CLASS>SessionAgent.UI.ChatPanelAsset</CLASS> streams the repo file at
+/// request time, so this locks the operator-visible serving path (not
+/// just the file-on-disk surface that
+/// <CLASS>SessionAgent.Test.ChatPanelJsTest</CLASS> asserts). Loops the
+/// response stream to read the full body (the welcome branches sit near
+/// the tail of the ~98 KB asset — a single bounded Read could truncate
+/// before them).</p>
+Method TestChatPanelAssetServesEpic14CapabilitySentence()
+{
+    Set tFetched = 0
+    Set tBody = ""
+    Try {
+        Set tHttp = ##class(%Net.HttpRequest).%New()
+        Set tHttp.Server = "127.0.0.1"
+        Set tHttp.Port = 52773
+        Set tHttp.Timeout = 10
+        Set tHttp.FollowRedirect = 1
+        Set tHttp.Username = "_SYSTEM"
+        Set tHttp.Password = "SYS"
+        Set tSC = tHttp.Get("/csp/hscustom/SessionAgent.UI.ChatPanelAsset.cls")
+        Set tHttpStatus = 0
+        If $$$ISOK(tSC), $IsObject(tHttp.HttpResponse) {
+            Set tHttpStatus = tHttp.HttpResponse.StatusCode
+        }
+        If $$$ISOK(tSC), tHttpStatus = 200 {
+            Set tCandidateBody = ""
+            While 'tHttp.HttpResponse.Data.AtEnd {
+                Set tCandidateBody = tCandidateBody _ tHttp.HttpResponse.Data.Read(32000)
+            }
+            ; Confirm the body is actually chat-panel.js — not the Login
+            ; form or any other >10KB HTML interstitial (gateway error
+            ; page, auth redirect). Story 14.5 review fix: require a
+            ; positive asset marker, not just login-absence.
+            If $Length(tCandidateBody) > 10000, '(tCandidateBody [ "<title>Login"), (tCandidateBody [ "renderWelcomeMessage") {
+                Set tFetched = 1
+                Set tBody = tCandidateBody
+            }
+        }
+    } Catch ex {
+        Set tFetched = 0
+    }
+    If tFetched {
+        Do $$$AssertTrue(tBody [ "analytics and statistics questions with read-only SQL", "served asset carries the Epic 14 capability sentence (Story 14.5 AC-2)")
+        Do $$$AssertTrue(tBody [ "I always show the SQL I ran", "served asset carries the SQL-disclosure reassurance (Story 14.5 AC-2)")
+        Do $$$AssertTrue(tBody [ "what's the error rate by target in the last 24 hours?", "served asset carries the inspection-branch analytic example (Story 14.5 AC-2)")
+        Do $$$AssertTrue('(tBody [ "find sessions matching X"), "served asset does NOT carry the stale before-state example (Story 14.5 AC-2)")
+        Quit
+    }
+    ; Fallback — HTTP unavailable; same source of truth via file-on-disk
+    ; (ChatPanelAsset streams this file at request time per its OnPage).
+    Do $$$AssertStatusOK(..LoadFile(), "Fallback: LoadFile resolved chat-panel.js at " _ ..FilePath)
+    Do $$$AssertTrue(..FileContents [ "analytics and statistics questions with read-only SQL", "Fallback: file-on-disk carries the Epic 14 capability sentence (Story 14.5 AC-2)")
+    Do $$$AssertTrue(..FileContents [ "I always show the SQL I ran", "Fallback: file-on-disk carries the SQL-disclosure reassurance (Story 14.5 AC-2)")
+    Do $$$AssertTrue(..FileContents [ "what's the error rate by target in the last 24 hours?", "Fallback: file-on-disk carries the inspection-branch analytic example (Story 14.5 AC-2)")
+    Do $$$AssertTrue('(..FileContents [ "find sessions matching X"), "Fallback: file-on-disk does NOT carry the stale before-state example (Story 14.5 AC-2)")
+}
+
 }

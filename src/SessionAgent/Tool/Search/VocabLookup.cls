@@ -262,6 +262,8 @@ ClassMethod InvokeList(pPortalUser As %String, pLimit As %String, ByRef pResult 
     Set tArgs(2) = pPortalUser
     Set tArgs = $Select(tArgIdx<2:2, 1:tArgIdx)
     Set tRs = tStmt.%Execute(tArgs...)
+    ; Story 14.0 — centralized execute-failure gate (cr-13-3).
+    If ##class(SessionAgent.Tool.Base).EnsureIsErrorOnExecuteFailure(pResult, tRs, ..#ToolName) Quit
 
     Set tVocab = []
     Set tCount = 0
@@ -358,6 +360,8 @@ ClassMethod InvokeSave(pPortalUser As %String, pAlias As %String, pDescription A
     ; Story 11.2 — centralized prepare-failure gate.
     If ##class(SessionAgent.Tool.Base).EnsureIsErrorOnPrepareFailure(pResult, tPrepSC, ..#ToolName) Quit
     Set tRsBefore = tStmt.%Execute(pPortalUser, pAlias)
+    ; Story 14.0 — centralized execute-failure gate (cr-13-3).
+    If ##class(SessionAgent.Tool.Base).EnsureIsErrorOnExecuteFailure(pResult, tRsBefore, ..#ToolName) Quit
     If tRsBefore.%Next() Set tFoundIdBefore = tRsBefore.%Get("ID")
     Set tAction = $Select(tFoundIdBefore '= "": "incremented", 1: "created")
 
@@ -379,15 +383,28 @@ ClassMethod InvokeSave(pPortalUser As %String, pAlias As %String, pDescription A
     }
 
     ; ---- Re-probe to read post-save SuccessCount for envelope shaping.
-    ; Surface a prep failure rather than silently defaulting to 0 (review
-    ; fix LOW-9.2-F03) — drift would otherwise be invisible to callers.
+    ; Story 14.0 review fix — this read-back runs AFTER RecordSuccess has
+    ; already COMMITTED the save. An isError envelope here would misreport
+    ; a persisted save as failed (inviting a duplicate retry) and the
+    ; early Quit would skip the mode:"save" envelope fields. Both the
+    ; prepare and execute checks are therefore ADAPTED to best-effort
+    ; semantics: on failure, skip the count enrichment (new_success_count
+    ; stays 0 with a count_read_back_failed marker) and still emit the
+    ; success envelope — the save DID succeed.
     Set tNewSuccessCount = 0
+    Set tCountReadBackFailed = 0
     Set tStmt2 = ##class(%SQL.Statement).%New()
     Set tPrepSC2 = tStmt2.%Prepare("SELECT TOP 1 SuccessCount FROM SessionAgent_Search.UserVocabulary WHERE %EXACT(PortalUser) = ? AND %EXACT(Alias) = ?")
-    ; Story 11.2 — centralized prepare-failure gate.
-    If ##class(SessionAgent.Tool.Base).EnsureIsErrorOnPrepareFailure(pResult, tPrepSC2, ..#ToolName) Quit
-    Set tRsAfter = tStmt2.%Execute(pPortalUser, pAlias)
-    If tRsAfter.%Next() Set tNewSuccessCount = +tRsAfter.%Get("SuccessCount")
+    If $$$ISOK(tPrepSC2) {
+        Set tRsAfter = tStmt2.%Execute(pPortalUser, pAlias)
+        If $IsObject(tRsAfter) && (tRsAfter.%SQLCODE >= 0) {
+            If tRsAfter.%Next() Set tNewSuccessCount = +tRsAfter.%Get("SuccessCount")
+        } Else {
+            Set tCountReadBackFailed = 1
+        }
+    } Else {
+        Set tCountReadBackFailed = 1
+    }
 
     Do pResult.structuredContent.%Set("mode", "save")
     Do pResult.structuredContent.%Set("portal_user", pPortalUser)
@@ -395,6 +412,10 @@ ClassMethod InvokeSave(pPortalUser As %String, pAlias As %String, pDescription A
     Do pResult.structuredContent.%Set("message_body_class", pBodyClass)
     Do pResult.structuredContent.%Set("action", tAction)
     Do pResult.structuredContent.%Set("new_success_count", tNewSuccessCount, "number")
+    ; Story 14.0 review fix — additive drift signal: 1 when the post-save
+    ; count read-back failed and new_success_count is therefore a default
+    ; 0, not the persisted value. The save itself succeeded.
+    If tCountReadBackFailed Do pResult.structuredContent.%Set("count_read_back_failed", 1, "number")
     Do pResult.structuredContent.%Set("audit_emitted", tAuditEmitted, "number")
     Do pResult.structuredContent.%Set("description_persisted", $Select(pDescription'="": 1, 1: 0), "number")
     Do pResult.structuredContent.%Set("indexed_lead_column", "PortalUser")
@@ -445,6 +466,8 @@ ClassMethod InvokeSearch(pPortalUser As %String, pAlias As %String, pLimit As %S
     Set tArgs(3) = tPattern
     Set tArgs = 3
     Set tRs = tStmt.%Execute(tArgs...)
+    ; Story 14.0 — centralized execute-failure gate (cr-13-3).
+    If ##class(SessionAgent.Tool.Base).EnsureIsErrorOnExecuteFailure(pResult, tRs, ..#ToolName) Quit
 
     Set tMatches = []
     Set tCount = 0

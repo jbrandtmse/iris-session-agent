@@ -680,12 +680,20 @@
         var block = document.createElement('div');
         block.setAttribute('class', 'sa-message-block sa-msg-agent');
         var agentName = (state.context && state.context.agentName) || '';
+        // Story 14.5 AC-2 (Rule 4 watch-item closure) — Epic 14 capability
+        // areas added in operator phrasing, NO tool-name enumeration (the
+        // Epic 4→8 stale-enumeration class): analytics/statistics questions
+        // answered with read-only SQL (always disclosed in the answer),
+        // schema discovery for unfamiliar message types, and remembered
+        // per-namespace schema notes.
         if (agentName === 'message-search') {
             block.textContent = "Ask me to find sessions across this IRIS instance. I'm read-only — I'll search by status, time, source, body content, or any combination. " +
-                "Try: find failed admits in the last hour · show me sessions with errors · which messages had OrderRequest bodies?";
+                "I can also answer analytics and statistics questions with read-only SQL (I always show the SQL I ran), describe unfamiliar message types, and remember schema notes for this namespace. " +
+                "Try: find failed admits in the last hour · show me sessions with errors · how many messages per day went through the order router this month?";
         } else {
             block.textContent = "Ask anything about this session OR about other sessions across this IRIS instance. I'm read-only — I can't change anything. " +
-                "Try: what happened in this session? · which messages had errors? · find sessions matching X.";
+                "I can also answer analytics and statistics questions with read-only SQL (I always show the SQL I ran), describe unfamiliar message types, and remember schema notes for this namespace. " +
+                "Try: what happened in this session? · which messages had errors? · what's the error rate by target in the last 24 hours?";
         }
         state.transcriptEl.appendChild(block);
     }

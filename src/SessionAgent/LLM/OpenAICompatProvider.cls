@@ -647,10 +647,16 @@ ClassMethod NormalizeChatCompletionsLocation(pLocation As %String) As %String [ 
         Set tLoc = $Extract(tLoc, 1, * - 1)
     }
 
-    ; Case 4 — empty or root "/" → produce "/chat/completions" with one
-    ; leading slash. Otherwise concatenate.
+    ; Case 4 — empty or root "/" (operator entered a bare host:port URL,
+    ; e.g. "http://192.168.0.123:11434"). Every known OpenAI-compatible
+    ; server (Ollama, LM Studio, vLLM) serves the chat endpoint under
+    ; "/v1/chat/completions" — a bare "/chat/completions" 404s on all of
+    ; them (Epic 14 walkthrough finding, 2026-06-11: live Ollama returned
+    ; "404 page not found" for the bare-host form). Servers with a
+    ; non-/v1 prefix still work by entering the full path explicitly
+    ; (Case 1 pass-through).
     If tLoc = "" || (tLoc = "/") {
-        Quit "/chat/completions"
+        Quit "/v1/chat/completions"
     }
 
     Quit tLoc _ "/chat/completions"

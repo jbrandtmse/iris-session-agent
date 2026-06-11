@@ -9,9 +9,9 @@
 /// the structural enforcement that makes the read-only catalog promise
 /// auditable.</p>
 ///
-/// <p><b>AC-5 — Comprehensive 13-tool exercise.</b>
-/// <method>TestAllThirteenToolsExerciseAgainstFixture</method> dispatches
-/// EVERY one of the 13 v1 tools with a representative input chosen so
+/// <p><b>AC-5 — Comprehensive all-tool exercise.</b>
+/// <method>TestAllToolsExerciseAgainstFixture</method> dispatches
+/// EVERY registered tool with a representative input chosen so
 /// the dispatch returns a non-error envelope where realistic, or the
 /// well-defined "missing/not_found" envelope where the input is
 /// deliberately empty. Validates the no-throws contract (no exception
@@ -22,7 +22,7 @@
 /// LLM-discretion gap).</p>
 ///
 /// <p><b>Validation-input verification.</b>
-/// <method>TestAllThirteenToolsValidationFailureReturnsEnvelope</method>
+/// <method>TestAllToolsValidationFailureReturnsEnvelope</method>
 /// dispatches each tool with empty <code>{}</code> args (or syntactically
 /// minimal input that fails the tool's required-field check) and asserts
 /// the result is the standard <code>{isError:1, content:[...]}</code>
@@ -30,7 +30,7 @@
 /// FR37-conformance gate.</p>
 ///
 /// <p><b>No fixture seeding.</b> This test class does NOT seed Ens
-/// fixtures. The 13-tool exercise reuses existing tool semantics —
+/// fixtures. The all-tool exercise reuses existing tool semantics —
 /// <code>session_summary</code>'s "session_exists=false" envelope for an
 /// unknown session, <code>get_message_body</code>'s "header_not_found"
 /// envelope for an unknown id, etc. Per-tool happy-path assertions are
@@ -53,18 +53,20 @@
 Class SessionAgent.Test.InspectionSuiteVerificationTest Extends %UnitTest.TestCase
 {
 
-/// <p>Number of v1 tools the registry MUST surface after Story 4.7 lands.
-/// Bumped from 12 (post-Story 4.6) to 13 (post-Story 4.7 ExplainError).
-/// Future stories incrementing the catalog must update this constant +
-/// the named-tool list in
-/// <method>TestRegistryListsExactlyThirteenTools</method>.</p>
 /// <p>Expected production tool count surfaced by
-/// <method>SessionAgent.Tool.Registry.ListTools</method>. As of Story 13.3
-/// this is <b>27</b> — 17 inspection tools (Stories 2.11 + 4.x + 13.4:
-/// <code>get_queue_state</code>; Story 13.2:
+/// <method>SessionAgent.Tool.Registry.ListTools</method>. Future stories
+/// incrementing the catalog must update this constant + the named-tool
+/// list in <method>TestRegistryListsExpectedToolCount</method> + the
+/// representative-args table in <method>GetRepresentativeArgs</method>.</p>
+/// <p>As of Story 14.4 this is <b>35</b> — 23 inspection tools
+/// (Stories 2.11 + 4.x + 13.4: <code>get_queue_state</code>; Story 13.2:
 /// <code>get_rule_source</code>; Story 13.1:
 /// <code>get_class_source</code>; Story 13.3:
-/// <code>get_production_config_item</code>) + 10
+/// <code>get_production_config_item</code>; Story 14.1:
+/// <code>get_query_knowledge</code>; Story 14.2:
+/// <code>list_active_body_types</code>, <code>describe_message_class</code>,
+/// <code>discover_tables</code>; Story 14.4:
+/// <code>save_schema_note</code>, <code>get_schema_notes</code>) + 11
 /// search tools (Story 8.3: <code>search_by_time</code>,
 /// <code>search_by_status</code>, <code>search_by_source</code>,
 /// <code>search_by_target</code>, <code>search_by_message_class</code>,
@@ -72,8 +74,15 @@ Class SessionAgent.Test.InspectionSuiteVerificationTest Extends %UnitTest.TestCa
 /// <code>search_by_super_session</code>; Story 8.5:
 /// <code>search_by_body_field</code>; Story 8.6:
 /// <code>inspect_body_candidates</code>; Story 8.7:
-/// <code>vocab_lookup</code>).</p>
-Parameter EXPECTEDTOOLCOUNT As %Integer = 27;
+/// <code>vocab_lookup</code>; Story 13.5:
+/// <code>find_sessions_using_class</code>) + 1 query tool (Story 14.3:
+/// <code>execute_readonly_sql</code>).</p>
+/// <p><b>Story 14.0 correction (Epic 13 retro AI-3 incident):</b> Story
+/// 13.5 shipped <code>find_sessions_using_class</code> without bumping
+/// this constant 27→28 or extending the named-tool list — the three
+/// count-equality assertions in this class failed against the live
+/// 28-tool registry until Story 14.0 reconciled them.</p>
+Parameter EXPECTEDTOOLCOUNT As %Integer = 35;
 
 /// <p>Synthetic session id well outside any realistic Ens production
 /// range. Used by every "not found" / "validation error" envelope assertion
@@ -112,9 +121,10 @@ ClassMethod GetConcreteToolClasses() As %DynamicArray
     Set tList = []
     Set tStmt = ##class(%SQL.Statement).%New()
     ; Story 8.3 — also discover concrete search tools that extend the
-    ; Tool.Search.Base intermediate abstract. Keep this filter in
-    ; lockstep with SessionAgent.Tool.Registry's discovery filter.
-    Set tSC = tStmt.%Prepare("SELECT %EXACT(Name) AS ClassName FROM %Dictionary.ClassDefinition WHERE (%EXACT(Super) = 'SessionAgent.Tool.Base' OR %EXACT(Super) = 'SessionAgent.Tool.Search.Base') AND Abstract = 0 AND NOT (%EXACT(Name) %STARTSWITH 'SessionAgent.Test.') ORDER BY %EXACT(Name)")
+    ; Tool.Search.Base intermediate abstract; Story 14.3 adds the
+    ; Tool.Query.Base third base. Keep this filter in lockstep with
+    ; SessionAgent.Tool.Registry's discovery filter.
+    Set tSC = tStmt.%Prepare("SELECT %EXACT(Name) AS ClassName FROM %Dictionary.ClassDefinition WHERE (%EXACT(Super) = 'SessionAgent.Tool.Base' OR %EXACT(Super) = 'SessionAgent.Tool.Search.Base' OR %EXACT(Super) = 'SessionAgent.Tool.Query.Base') AND Abstract = 0 AND NOT (%EXACT(Name) %STARTSWITH 'SessionAgent.Test.') ORDER BY %EXACT(Name)")
     If $$$ISERR(tSC) Quit tList
     Set tRs = tStmt.%Execute()
     While tRs.%Next() {
@@ -233,8 +243,70 @@ ClassMethod GetRepresentativeArgs(pToolName As %String) As %DynamicObject
         ; Returns an "ok" envelope. Both required args needed.
         Do tArgs.%Set("production_name", "SessionAgent.Sample.Production")
         Do tArgs.%Set("config_item_name", "SessionAgent.Sample.BP.OrderRouter")
+    } ElseIf pToolName = "find_sessions_using_class" {
+        ; Story 13.5 tool (representative args added in Story 14.0 —
+        ; Epic 13 retro AI-3 reconciliation). The sample production's
+        ; OrderRouter config name matches SourceConfigName/TargetConfigName
+        ; rows when scenario data exists; with no scenario data the tool
+        ; returns a success no_matches-shape envelope. Either way the
+        ; Dispatch envelope contract holds.
+        Do tArgs.%Set("class_name", "SessionAgent.Sample.BP.OrderRouter")
+        Do tArgs.%Set("limit", 5, "number")
+    } ElseIf pToolName = "get_query_knowledge" {
+        ; Story 14.1 — topic-only retrieval against the install-seeded
+        ; knowledge corpus (seeded idempotently by KnowledgeCorpusTest /
+        ; Installer). Returns an "ok" envelope with dialect articles; no
+        ; Ens fixture seeding required.
+        Do tArgs.%Set("topic", "dialect")
+        Do tArgs.%Set("max_results", 2, "number")
+    } ElseIf pToolName = "list_active_body_types" {
+        ; Story 14.2 — small census window; empty census is a success
+        ; envelope (body_types:[]), so no fixture seeding required.
+        Do tArgs.%Set("hours", 24, "number")
+    } ElseIf pToolName = "describe_message_class" {
+        ; Story 14.2 — Ens.MessageHeader is always compiled+persistent
+        ; in an interoperability namespace; returns the "ok" envelope.
+        Do tArgs.%Set("class_name", "Ens.MessageHeader")
+    } ElseIf pToolName = "discover_tables" {
+        ; Story 14.2 — fragment guaranteed to resolve (Ens.MessageHeader
+        ; always projected); bounded result set.
+        Do tArgs.%Set("name_fragment", "MessageHeader")
+        Do tArgs.%Set("max_results", 5, "number")
+    } ElseIf pToolName = "execute_readonly_sql" {
+        ; Story 14.3 — a TOP-1 SELECT against Ens.MessageHeader exercises
+        ; the full guarded pipeline (validation -> prepare -> statementType
+        ; gate -> execute -> capped fetch -> envelope). Always returns an
+        ; "ok" envelope (zero rows is still success); no fixture seeding
+        ; required.
+        Do tArgs.%Set("sql", "SELECT TOP 1 ID, SessionId FROM Ens.MessageHeader ORDER BY ID DESC")
+        Do tArgs.%Set("max_rows", 1, "number")
+    } ElseIf pToolName = "save_schema_note" {
+        ; Story 14.4 — representative save with the ztest- test-fixture
+        ; subject convention so sweeps stay clean; OnAfterOneTest deletes
+        ; every ztest-% SchemaNote row this dispatch persists.
+        Do tArgs.%Set("subject", "ztest-isv-schema-note-144")
+        Do tArgs.%Set("note", "ISV representative-args fixture note (cleaned up by OnAfterOneTest)")
+    } ElseIf pToolName = "get_schema_notes" {
+        ; Story 14.4 — synthetic fragment that matches no rows; empty
+        ; result is a success envelope, so no fixture seeding required.
+        Do tArgs.%Set("subject_fragment", "ztest-no-match-fragment-144")
+        Do tArgs.%Set("max_results", 5, "number")
     }
     Quit tArgs
+}
+
+/// <p>Story 14.4 — the <code>save_schema_note</code> representative-args
+/// dispatch in <method>TestAllToolsExerciseAgainstFixture</method>
+/// persists a real <CLASS>SessionAgent.Knowledge.SchemaNote</CLASS> row.
+/// Sweep every <code>ztest-</code>-prefixed row after each test so the
+/// suite never pollutes the namespace's schema notes (the first-turn
+/// digest reads this table on every agent's first turn).</p>
+Method OnAfterOneTest(testname As %String) As %Status
+{
+    ; Delegate to the shared status-checked sweep (Story 14.4 review fix
+    ; — a silently failed DELETE leaves ztest- rows feeding every agent's
+    ; first-turn digest; project rule §"Write Status Checking").
+    Quit ##class(SessionAgent.Test.SchemaNoteToolTest).DeleteFixtureRows()
 }
 
 /// <p>AC-4 — L1 read-only invariant. Iterate every concrete subclass of
@@ -259,8 +331,8 @@ Method TestAllToolsDeclareReadOnlyMutatesState()
     Quit
 }
 
-/// <p>AC-5 — comprehensive 13-tool exercise. Iterate the 13 registered
-/// tools, dispatch each with a representative fixture input via the
+/// <p>AC-5 — comprehensive all-tool exercise. Iterate every registered
+/// tool, dispatch each with a representative fixture input via the
 /// trust-boundary <method>SessionAgent.Tool.Registry.Dispatch</method>,
 /// and validate per dispatch:</p>
 /// <ul>
@@ -274,7 +346,7 @@ Method TestAllToolsDeclareReadOnlyMutatesState()
 /// </ul>
 /// <p>Closes Story 4.4 R-1: every tool structurally exercised, no
 /// LLM-discretion gap.</p>
-Method TestAllThirteenToolsExerciseAgainstFixture()
+Method TestAllToolsExerciseAgainstFixture()
 {
     Set tCtx = ..BuildCtx()
     Set tList = ##class(SessionAgent.Tool.Registry).ListTools()
@@ -307,7 +379,7 @@ Method TestAllThirteenToolsExerciseAgainstFixture()
 /// required fields (Story 8.3 added <code>search_by_time</code> — all
 /// inputs optional, default 24h window) MAY return a success envelope
 /// on empty args. Closes the FR37 conformance gate.</p>
-Method TestAllThirteenToolsValidationFailureReturnsEnvelope()
+Method TestAllToolsValidationFailureReturnsEnvelope()
 {
     Set tCtx = ..BuildCtx()
     Set tList = ##class(SessionAgent.Tool.Registry).ListTools()
@@ -316,8 +388,12 @@ Method TestAllThirteenToolsValidationFailureReturnsEnvelope()
     Set tDispatchCount = 0
     ; Tools whose entire input schema is optional — empty args returns
     ; a success envelope, not an isError envelope. Story 8.3 adds
-    ; search_by_time (default 24h window when no bounds supplied).
-    Set tNoRequiredArgs = $ListBuild("search_by_time")
+    ; search_by_time (default 24h window when no bounds supplied);
+    ; Story 14.2 adds list_active_body_types (default 168h census) and
+    ; discover_tables (default unfiltered 50-row listing); Story 14.4
+    ; adds get_schema_notes (default 10-row unfiltered note listing for
+    ; the active namespace).
+    Set tNoRequiredArgs = $ListBuild("search_by_time", "list_active_body_types", "discover_tables", "get_schema_notes")
     Set tNoRequiredCount = 0
     While tIter.%GetNext(.tKey, .tEntry) {
         Set tToolName = tEntry.%Get("name")
@@ -346,15 +422,16 @@ Method TestAllThirteenToolsValidationFailureReturnsEnvelope()
     Quit
 }
 
-/// <p>AC-5 — registry surfaces exactly 13 named tools. Catches off-by-one
-/// drift if a future story accidentally adds (or doesn't add) a tool.</p>
-Method TestRegistryListsExactlyThirteenTools()
+/// <p>AC-5 — registry surfaces exactly the expected named tools. Catches
+/// off-by-one drift if a future story accidentally adds (or doesn't add)
+/// a tool.</p>
+Method TestRegistryListsExpectedToolCount()
 {
     Set tList = ##class(SessionAgent.Tool.Registry).ListTools()
     Do $$$AssertEquals(tList.%Size(), ..#EXPECTEDTOOLCOUNT, "exactly " _ ..#EXPECTEDTOOLCOUNT _ " tools registered")
 
     ; Verify every expected name is present (order-independent).
-    Set tExpected = $ListBuild("session_summary", "session_timeline", "message_headers", "event_log", "rule_log", "get_message_body", "get_message_detail", "get_business_process_source", "get_business_process_instance", "list_business_process_methods", "find_related_sessions", "find_sessions_by_body", "explain_error", "search_by_time", "search_by_status", "search_by_source", "search_by_target", "search_by_message_class", "search_by_session", "search_by_super_session", "search_by_body_field", "inspect_body_candidates", "vocab_lookup", "get_queue_state", "get_rule_source", "get_class_source", "get_production_config_item")
+    Set tExpected = $ListBuild("session_summary", "session_timeline", "message_headers", "event_log", "rule_log", "get_message_body", "get_message_detail", "get_business_process_source", "get_business_process_instance", "list_business_process_methods", "find_related_sessions", "find_sessions_by_body", "explain_error", "search_by_time", "search_by_status", "search_by_source", "search_by_target", "search_by_message_class", "search_by_session", "search_by_super_session", "search_by_body_field", "inspect_body_candidates", "vocab_lookup", "get_queue_state", "get_rule_source", "get_class_source", "get_production_config_item", "find_sessions_using_class", "get_query_knowledge", "list_active_body_types", "describe_message_class", "discover_tables", "execute_readonly_sql", "save_schema_note", "get_schema_notes")
     Set tFound = ""
     Set tIter = tList.%GetIterator()
     While tIter.%GetNext(.tKey, .tEntry) {

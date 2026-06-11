@@ -120,6 +120,8 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
         ; Story 11.2 — centralized prepare-failure gate.
         If ##class(SessionAgent.Tool.Base).EnsureIsErrorOnPrepareFailure(pResult, tSCp, ..#ToolName) Quit
         Set tRsLookup = tStmtLookup.%Execute(tSessionId)
+        ; Story 14.0 — centralized execute-failure gate (cr-13-3).
+        If ##class(SessionAgent.Tool.Base).EnsureIsErrorOnExecuteFailure(pResult, tRsLookup, ..#ToolName) Quit
         Set tSuperSession = ""
         If tRsLookup.%Next() {
             Set tSuperSession = tRsLookup.%Get("super_session")
@@ -143,6 +145,8 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
         ; Story 11.2 — centralized prepare-failure gate.
         If ##class(SessionAgent.Tool.Base).EnsureIsErrorOnPrepareFailure(pResult, tSCs, ..#ToolName) Quit
         Set tRsSib = tStmtSib.%Execute(tLimit, tSuperSession, tSessionId)
+        ; Story 14.0 — centralized execute-failure gate (cr-13-3).
+        If ##class(SessionAgent.Tool.Base).EnsureIsErrorOnExecuteFailure(pResult, tRsSib, ..#ToolName) Quit
 
         ; NOTE: $ListBuild() with no args creates a list of length 1
         ; containing one $$$NULL element — NOT an empty list. Use
@@ -165,6 +169,12 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
 
         Set tRelated = []
         Set tRelatedCount = 0
+        ; Story 14.0 — execute-failure flag for the enrichment loop below.
+        ; A bare Quit inside the For body exits the LOOP (not the Try), so
+        ; the loop sites set this flag and the post-loop check Quits the
+        ; Try before the success-envelope build can clobber the error
+        ; envelope the helper shaped.
+        Set tExecFailed = 0
         Set tListLen = $ListLength(tSiblingIds)
         For tIdx = 1:1:tListLen {
             Set tSibSessionId = $ListGet(tSiblingIds, tIdx)
@@ -173,6 +183,8 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
 
             ; Earliest header — populates time_created, source, target.
             Set tRsEr = tEnrichRow.%Execute(tSibSessionId)
+            ; Story 14.0 — centralized execute-failure gate (cr-13-3).
+            If ##class(SessionAgent.Tool.Base).EnsureIsErrorOnExecuteFailure(pResult, tRsEr, ..#ToolName) Set tExecFailed = 1 Quit
             If tRsEr.%Next() {
                 Do tEntry.%Set("time_created", ##class(SessionAgent.Tool.Base).NormalizeIsoZ(tRsEr.%Get("tc")))
                 Do tEntry.%Set("source_config_name", tRsEr.%Get("src"))
@@ -189,6 +201,8 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
 
             ; Message count.
             Set tRsEc = tEnrichCount.%Execute(tSibSessionId)
+            ; Story 14.0 — centralized execute-failure gate (cr-13-3).
+            If ##class(SessionAgent.Tool.Base).EnsureIsErrorOnExecuteFailure(pResult, tRsEc, ..#ToolName) Set tExecFailed = 1 Quit
             Set tMsgCount = 0
             If tRsEc.%Next() {
                 Set tMsgCount = +tRsEc.%Get("cnt")
@@ -198,6 +212,8 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
             Do tRelated.%Push(tEntry)
             Set tRelatedCount = tRelatedCount + 1
         }
+        ; Story 14.0 — propagate a loop-interior execute failure out of the Try.
+        If tExecFailed Quit
 
         Do pResult.structuredContent.%Set("session_id", tSessionId)
         Do pResult.structuredContent.%Set("super_session_key", tSuperSession)

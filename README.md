@@ -47,14 +47,18 @@ Some HealthShare-Foundation-configured namespaces serve their pages with `/healt
 
 | Capability | Story / Epic | Operator-observable surface |
 |---|---|---|
-| Session Inspection agent (read-only Ens.* introspection) | Epic 4 + Epic 13 (17 tools total) | VisualTrace chat tab |
-| Message Search agent (11 search tools + vocabulary) | Epic 8 + Epic 13 (11 tools total) | MessageViewer chat tab |
+| Session Inspection agent (read-only Ens.* introspection) | Epic 4 + Epic 13 + Epic 14 (23 catalog tools + shared `execute_readonly_sql`) | VisualTrace chat tab |
+| Message Search agent (11 search tools + vocabulary) | Epic 8 + Epic 13 (11 tools total + the Epic 14 shared knowledge/discovery/SQL tools) | MessageViewer chat tab |
 | Search → Inspection hand-off ("from search" stripe + click-through context) | Epic 10 (Stories 10.1–10.5) | Visible stripe in inspection chat after click-through |
 | Silent vocabulary learning (per-user alias capture) | Epic 9 (Stories 9.2–9.5) | `vocab_lookup` tool surfaces saved aliases; sweep keeps the table bounded |
 | Sweep tasks (audit + chat-history retention) | Epic 7 + Story 10.6 | Mgmt Portal Task Manager (`SessionAgent.PurgeOrphanedChatHistory`, `SessionAgent.PurgeStaleSearchChatHistory`, `SessionAgent.UserVocabularyDecay`) |
 | Vendored Markdown bundle (citations + code blocks render under CDN-blocked browsers) | Story 10.7 | `<script src="markdown-bundle.min.js">` ships with the module |
 | Tool Catalog Expansion (5 new agent-introspection tools + `find_sessions_using_class`) | Epic 13 | 6 new tools across both agents; `get_rule_source`, `get_class_source`, `get_queue_state`, `get_production_config_item`, `find_sessions_using_class` |
-| FR59 cross-matrix gate (28 tools × 4 providers = 112) | Story 5.4 + 8.x + 10.9 + 13.x | `SessionAgent.Test.ToolCallRoundtripIntegrationTest` (mock + live) |
+| FR59 cross-matrix gate (35 tools × 4 providers = 140) | Story 5.4 + 8.x + 10.9 + 13.x + 14.1 + 14.2 + 14.3 + 14.4 | `SessionAgent.Test.ToolCallRoundtripIntegrationTest` (mock + live) |
+| Learned schema notes (FR63: `save_schema_note` / `get_schema_notes` + first-turn digest injection for both agents) | Story 14.4 | Agent-discovered namespace facts persist across conversations with `age_days` staleness; `SessionAgent.Knowledge.SchemaNoteDigest` rides the uncached first-user-message segment (NFR-P6-preserving) |
+| Schema-discovery tools (FR61: `list_active_body_types`, `describe_message_class`, `discover_tables`) | Story 14.2 | Both agents discover live table/column/index state instead of hallucinating names into SQL |
+| Guarded dynamic SQL (FR60: `execute_readonly_sql` + `Tool.Query.Base` pipeline + `ReadOnlySqlInvariantTest`) | Story 14.3 | Open-ended analytical SELECTs under a compiler-level read-only gate (statementType), caps, and corpus-fed SQLCODE hints |
+| Prompt methodology card + welcome-text capability update (FR64) | Story 14.5 | Both default system prompts carry the static query-methodology & dialect card; both chat-panel welcome messages advertise the analytics / schema-discovery / schema-notes capability areas |
 
 ## Try it in a clean namespace (recommended for evaluation)
 
@@ -405,9 +409,9 @@ This module embeds two AI agents directly in the surfaces operators already use:
 
 ## Tool Catalog
 
-All 28 tools are registered in `SessionAgent.Tool.Registry` and are dispatched via the read-only tool dispatch gate (`MutatesState=0` enforced on every call). Tools are organized by agent.
+All 35 tools are registered in `SessionAgent.Tool.Registry` and are dispatched via the read-only tool dispatch gate (`MutatesState=0` enforced on every call — `save_schema_note` writes only to the agent-owned `SessionAgent_Knowledge.SchemaNote` table, never to `Ens.*`, so the FR31 `Ens.*`-mutation flag stays 0, the same agent-owned-table exemption `vocab_lookup`'s save mode established; the table row itself is the durable record of each write, and every write additionally emits the `(SessionAgent, SchemaNoteWrite, explicit)` audit event with the emission outcome surfaced as `audit_emitted` in the tool envelope). Tools are organized by agent.
 
-### Session Inspection Agent (17 tools)
+### Session Inspection Agent (23 tools)
 
 These tools run on the Visual Trace screen and examine a specific Ensemble session in depth.
 
@@ -430,6 +434,12 @@ These tools run on the Visual Trace screen and examine a specific Ensemble sessi
 | `get_class_source` | Read the full ObjectScript source of any compiled class *(Epic 13)* |
 | `get_queue_state` | Return the depth and oldest-message age of a named Ensemble queue *(Epic 13)* |
 | `get_production_config_item` | Read adapter class, pool size, enabled flag, and configured settings of any named production config item *(Epic 13)* |
+| `get_query_knowledge` | Retrieve distilled IRIS-SQL/Interop query expertise from the install-seeded knowledge corpus, by topic and/or keywords *(Epic 14; exposed to both agents)* |
+| `list_active_body_types` | Windowed census of message body classes active in `Ens.MessageHeader` with per-class message counts *(Epic 14; exposed to both agents)* |
+| `describe_message_class` | Describe a persistent class's SQL projection: authoritative `schema.table` mapping, columns, indexes, extent subclasses, collection child tables vs embedded collections, and `AdditionalInfo` key census *(Epic 14; exposed to both agents)* |
+| `discover_tables` | List SQL tables/views from `INFORMATION_SCHEMA.TABLES`, optionally filtered by a name fragment; default excludes `%`-system schemas *(Epic 14; exposed to both agents)* |
+| `save_schema_note` | Persist a timestamped learned schema note (a discovered namespace fact) to the agent-owned `SessionAgent_Knowledge.SchemaNote` table; upserts by subject and refreshes the verified timestamp *(Epic 14; exposed to both agents)* |
+| `get_schema_notes` | Read the namespace's saved schema notes, most recently verified first, each with an `age_days` staleness marker; optional subject-fragment filter *(Epic 14; exposed to both agents)* |
 
 ### Message Search Agent (11 tools)
 
@@ -449,9 +459,51 @@ These tools run on the Message Viewer screen and find sessions matching natural-
 | `vocab_lookup` | Manage per-user vocabulary aliases (list, save, search modes); silent alias capture on session click-through |
 | `find_sessions_using_class` | Find sessions referencing a given class name in `SourceConfigName`, `TargetConfigName`, or `MessageBodyClassName` *(Epic 13)* |
 
+### Guarded dynamic SQL *(Epic 14 — 1 tool, exposed to both agents)*
+
+| Tool | Description |
+|---|---|
+| `execute_readonly_sql` | Run a single LLM-authored SQL `SELECT` — or `EXPLAIN SELECT` for query-plan reasoning — under a compiler-level read-only gate and return capped tabular results *(Epic 14; exposed to both agents)* |
+
+`execute_readonly_sql` answers the long tail of open-ended analytical trace questions the purpose-built tools do not cover (aggregates, custom joins, `AdditionalInfo` pivots). Every call routes through the `SessionAgent.Tool.Query.Base` guard pipeline:
+
+1. **Single-statement validation** — multi-statement input (a semicolon outside string literals) is rejected; a trailing semicolon is tolerated; `EXPLAIN SELECT` is **allowed** (Story 14.6 — plan-only: it returns the XML showplan as a single `Plan` column row and mutates nothing, empirically write-proofed), while `EXPLAIN` of a write statement (`EXPLAIN INSERT/UPDATE/DELETE`, or any non-SELECT shape after `EXPLAIN`) is rejected by a comment-aware inner-keyword check (on this IRIS build every `EXPLAIN` statement prepares with `statementType=1`, so the keyword check is the honest policy point).
+2. **`statementType` compiler gate** — after `%Prepare`, any statement whose `%Metadata.statementType` is not `1` (SELECT) or `79` (the documented EXPLAIN type — accepted defensively for builds that report it) is rejected pre-execution with an envelope naming the statement type (`INSERT`/`UPDATE`/`DELETE`/`CALL`/DDL). This is a compiler-level decision, stronger than any regex.
+3. **Caps** — row cap (default 50, hard max 200), total result character budget (32,000 chars) with an explicit `truncated` marker, and an elapsed guard (default 30 s, hard max 60 s) checked **between fetch iterations**. The guard does not preempt a single long-running statement — that is bounded only by the Web Gateway's 300-second backstop.
+4. **Hint-bearing error envelopes** — SQL prepare/execute failures append a `SQLCODE <n> / symptom -> fix` hint read live from the knowledge corpus's `diagnostic-checklist` article, steering the agent to the corrected query shape.
+
+**Documented, accepted residual risk:** a `SELECT` statement can invoke SQL-projected class methods (stored functions) that have side effects — the gate proves the outer statement is a SELECT, not that every function it references is pure. Mitigations: the `SessionAgent_ReadOnly` RBAC role on the executing context, 100% ToolCall audit (the audit row's args JSON carries the full SQL text), and the read-only prompt covenant. A restricted-privilege execution job is a possible future hardening and is explicitly out of scope for v1.
+
+The CI invariant test `SessionAgent.Test.ReadOnlySqlInvariantTest` source-scans every concrete `SessionAgent.Tool.Query.*` tool and fails any whose `Invoke` does not route through the guarded pipeline (or that calls `%Prepare`/`%Execute`/`&sql(` directly); the `SessionAgent.Test.ReadOnlySqlProofBatteryTest` battery proves INSERT/UPDATE/DELETE/CALL rejection, the `EXPLAIN SELECT` allowance (plan envelope), and EXPLAIN-of-write rejection (including write-proof row-count probes), the caps, and the hint map.
+
+### Query Knowledge corpus *(Epic 14)*
+
+The `get_query_knowledge` tool reads from an install-seeded knowledge corpus — 47 articles distilled from `docs/iris-query-guide/` into the `SessionAgent_Knowledge.Article` table across 7 topics (`methodology`, `dialect`, `message-model`, `performance`, `discovery`, `reference`, `cookbook`). The corpus teaches the agents the IRIS SQL dialect's silent-wrong-results traps (integer-vs-string filters, case folding, encoded columns, `TOP` not `LIMIT`) plus the `Ens.MessageHeader` message model and copy-adaptable query recipes, without bloating the cached system prompt.
+
+- **Seeding:** `SessionAgent.Knowledge.SeedContent.Seed()` runs automatically during `SessionAgent.Installer.Install` (after the search-vocabulary seed). Seeding is idempotent — articles upsert by unique `Slug`, so re-installs never duplicate rows.
+- **Operator verification:** the install log prints `[iris-session-agent] 47 query knowledge articles ensured` so you can confirm the corpus shipped; or probe `SELECT COUNT(*) FROM SessionAgent_Knowledge.Article`.
+
+### Learned schema notes *(Epic 14 — Story 14.4)*
+
+Where the knowledge corpus ships *static* expertise, the **learned schema notes** subsystem persists facts the agents *discover at runtime* — e.g. "order IDs live in `SessionAgent.Sample.Msg.OrderRequest.OrderId`" or "`EnsLib.HL7.SearchTable` is installed in this namespace" — so they survive across conversations instead of being re-derived every session.
+
+- **Storage:** `SessionAgent_Knowledge.SchemaNote` — keyed by the unique `(Namespace, Subject)` pair. `save_schema_note` upserts: re-saving an existing subject overwrites the note body and refreshes its UTC `VerifiedAt` timestamp. The namespace is always taken from the trust-boundary caller context, never from LLM input.
+- **Staleness semantics:** retrieval (`get_schema_notes`) returns notes most-recently-verified first, each carrying `age_days` (UTC day delta). The tool description directs the agent to re-verify facts whose `age_days` is large before relying on them — old facts decay into *hypotheses*, not truths.
+- **First-turn digest injection (both agents):** `SessionAgent.Knowledge.SchemaNoteDigest.Build` renders the namespace's top 10 most-recently-verified notes (2,000-char cap, per-line age markers) into each conversation's **first user message** via the same two-array channel as the search agent's vocabulary digest — the search agent receives *vocabulary digest + schema-notes digest* concatenated; the inspection agent receives the schema-notes digest. The digest rides the *uncached* first-user-message segment, so the Anthropic prompt-cache `system + tools` prefix stays bit-identical across turns (NFR-P6). A namespace with no notes injects nothing.
+- **Audit:** every schema-note write emits the pre-registered `(SessionAgent, SchemaNoteWrite, explicit)` audit event; the tool envelope reports `audit_emitted` so registration drift is operator-visible.
+- **Documented, accepted residual risk:** notes are shared per namespace and replayed into every conversation's first turn in that namespace — agent-authored note content is a persistent prompt-context channel. Mitigations: notes are written only through `save_schema_note` (server-side normalization + length caps), digest lines are single-line snippets (160 chars) whose subjects and bodies cannot forge the prefix-block delimiter, and all operators of a namespace already share the same data visibility. Per-user scoping or content screening is possible future hardening (tracked in `deferred-work.md`).
+
+### Query methodology card + welcome text *(Epic 14 — Story 14.5, FR64)*
+
+The fourth leg of the knowledge subsystem (corpus → discovery tools → schema notes → **prompts**): both agents' **default system prompts** end with a static *query methodology & dialect card* (`SessionAgent.Config.AgentDefaults.GetMethodologyCard`). The card directs the agent through the discover → consult-knowledge → build → execute (small TOP-N) → validate loop; mandates consulting `get_query_knowledge` and `get_schema_notes` **before** authoring SQL and saving durable discoveries via `save_schema_note`; requires **disclosing the executed SQL in every answer**; lists the cardinal IRIS dialect traps (`TOP` not `LIMIT`, integer-coded enum predicates, `%EXTERNAL` vs `%ODBCOUT` decode choice, header↔body joins on id+class, time-bounding, the `ID = SessionId` session anchor); and restates the read-only covenant.
+
+- **Deterministic by construction (NFR-P6):** the card is static text with no runtime-derived values — it rides *inside* the cached `system` segment, so the Anthropic prompt-cache prefix stays byte-identical across turns. A regression test locks `GetSystemPrompt` determinism and the card's zero-digit / no-tool-enumeration discipline.
+- **Override semantics:** a per-row `SystemPromptOverride` (Agent Configuration form) replaces the default prompt **including the card**. Operators who override the prompt and still want the methodology guidance should copy the card text into their override.
+- **Operator-visible capability advertisement:** both chat-panel welcome messages now name the new capability areas in plain English — analytics/statistics questions answered with read-only SQL (the SQL is always shown in the answer), describing unfamiliar message types, and per-namespace remembered schema notes — with example questions like *"what's the error rate by target in the last 24 hours?"*.
+
 ## Status
 
-**Currently shipped — v1.0.4 (GA).** All 13 planning + implementation epics complete. Release tags: `v1.0.0` (feature-complete, Epic 10 close), `v1.0.1` (Epic 11 patch), `v1.0.2` (Epic 12 — walkthrough hardening), `v1.0.3` (Epic 13 — Tool Catalog Expansion: 6 new tools, 28 total, 509/509 regression sweep), `v1.0.4` (README UI-label pass — operator-facing field names now match the Agent Configuration form).
+**Currently shipped — v1.0.4 (GA).** All 13 planning + implementation epics complete; **Epic 14 (Trace Intelligence — FR60–FR64: knowledge corpus, schema discovery, guarded read-only SQL, learned schema notes, prompt methodology card) is in progress on `main` and not yet release-tagged.** Release tags: `v1.0.0` (feature-complete, Epic 10 close), `v1.0.1` (Epic 11 patch), `v1.0.2` (Epic 12 — walkthrough hardening), `v1.0.3` (Epic 13 — Tool Catalog Expansion: 6 new tools, 28 total, 509/509 regression sweep), `v1.0.4` (README UI-label pass — operator-facing field names now match the Agent Configuration form).
 
 | Stage | Status | Artifact |
 |---|---|---|

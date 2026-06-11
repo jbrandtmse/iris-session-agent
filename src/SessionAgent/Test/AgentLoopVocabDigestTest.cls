@@ -281,10 +281,25 @@ Method TestSearchAgentSecondTurnDoesNotReinjectDigest()
     Quit
 }
 
-/// <p>AC-3 row 3 — inspection-agent does NOT receive digest. Invoke
-/// <method>RunTurn</method> with <code>pAgentName="session-inspection"</code>
-/// and assert the captured user-block text contains ONLY the raw
-/// <var>pUserText</var> — no digest, no delimiter.</p>
+/// <p>AC-3 row 3 — inspection-agent does NOT receive the VOCABULARY
+/// digest. Invoke <method>RunTurn</method> with
+/// <code>pAgentName="session-inspection"</code> and assert the captured
+/// user-block text carries no vocabulary-digest content and still
+/// contains the raw <var>pUserText</var>.</p>
+///
+/// <p><b>Story 14.4 amendment (justified AgentLoop-test edit).</b> The
+/// original Story 9.4 assertion also required the absence of the
+/// <code>"---"</code> delimiter — valid pre-14.4 because the inspection
+/// agent received NO first-turn injection at all. Story 14.4 (FR63 / D4)
+/// deliberately gives the inspection agent a first-turn schema-notes
+/// digest via the same two-array machinery, so the delimiter MAY now
+/// legitimately appear whenever
+/// <CLASS>SessionAgent.Knowledge.SchemaNote</CLASS> rows exist for the
+/// namespace. The durable invariant this test still locks is
+/// vocabulary-digest exclusion: the inspection agent must NEVER see the
+/// user-vocabulary digest ("## Common idioms" seed header / "## Saved
+/// aliases" user header). Schema-digest injection coverage lives in
+/// <CLASS>SessionAgent.Test.AgentLoopSchemaDigestTest</CLASS>.</p>
 Method TestInspectionAgentDoesNotReceiveDigest()
 {
     Set tSessionKey = ..#SAPREFIX _ "insp-key"
@@ -296,10 +311,10 @@ Method TestInspectionAgentDoesNotReceiveDigest()
 
     Set tCaptured = $Get(^||SessionAgentVocabDigestCapture, "")
     Do $$$AssertNotEquals(tCaptured, "", "Inspection-agent capture is non-empty")
-    ; AC-3 row 3 — must NOT contain digest header.
-    Do $$$AssertTrue(tCaptured '[ "## Common idioms", "Inspection-agent captured text does NOT contain digest header")
-    ; AC-3 row 3 — must NOT contain the "---" delimiter.
-    Do $$$AssertTrue(tCaptured '[ ($Char(10) _ $Char(10) _ "---" _ $Char(10) _ $Char(10)), "Inspection-agent captured text does NOT contain '---' delimiter")
+    ; AC-3 row 3 (Story 14.4 amended) — must NOT contain either
+    ; vocabulary-digest header (seed-fallback or user-aliases form).
+    Do $$$AssertTrue(tCaptured '[ "## Common idioms", "Inspection-agent captured text does NOT contain the seed-vocabulary digest header")
+    Do $$$AssertTrue(tCaptured '[ "## Saved aliases", "Inspection-agent captured text does NOT contain the user-vocabulary digest header")
     ; AC-3 row 3 — must contain the raw user text.
     Do $$$AssertTrue(tCaptured [ "what happened", "Inspection-agent captured text contains raw pUserText")
     Quit

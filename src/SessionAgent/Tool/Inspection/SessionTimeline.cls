@@ -122,6 +122,8 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
         } Else {
             Set tRs = tStmt.%Execute(tSessionId, tFromOdbc, tToOdbc)
         }
+        ; Story 14.0 — centralized execute-failure gate (cr-13-3).
+        If ##class(SessionAgent.Tool.Base).EnsureIsErrorOnExecuteFailure(pResult, tRs, ..#ToolName) Quit
 
         Set tEvents = []
         Set tFirstTime = ""
@@ -151,7 +153,17 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
             Set tSC2 = tStmt2.%Prepare("SELECT DATEDIFF('ms', ?, ?) AS span_ms")
             If $$$ISOK(tSC2) {
                 Set tRs2 = tStmt2.%Execute(tFirstTime, tLastTime)
-                If tRs2.%Next() {
+                ; Story 14.0 review fix — execute-failure check ADAPTED to
+                ; this statement's best-effort semantics: the span DATEDIFF
+                ; is an optional enrichment over an already-built timeline.
+                ; A runtime failure here (e.g. corrupt TimeCreated endpoint
+                ; values) skips the span computation (time_span_ms stays 0)
+                ; instead of nuking the successfully-fetched events array —
+                ; mirroring this statement's own graceful prepare handling
+                ; ($$$ISOK skip above) and the GetBusinessProcessInstance
+                ; adapted guards. Main-statement execute failures (the gate
+                ; after the first %Execute) remain fatal.
+                If $IsObject(tRs2) && (tRs2.%SQLCODE >= 0) && tRs2.%Next() {
                     Set tSpanMs = +tRs2.%Get("span_ms")
                 }
             }

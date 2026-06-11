@@ -14,10 +14,13 @@
 /// registrations on re-invocation.</p>
 ///
 /// <p>Story 1.3 registers the eleven triples that are concretely known at
-/// install time. The <code>ToolCall</code> event family is NOT registered
-/// here because the tool-name universe is not known until Epic 2 (Story
-/// 2.10) defines the tool registry; lazy registration on first emit is
-/// the deferred design choice.</p>
+/// install time; Story 14.4 adds the twelfth —
+/// <code>(SessionAgent, SchemaNoteWrite, explicit)</code> — for
+/// schema-note writes via the <code>save_schema_note</code> tool. The
+/// <code>ToolCall</code> event family is NOT registered here because the
+/// tool-name universe is not known until Epic 2 (Story 2.10) defines the
+/// tool registry; lazy registration on first emit is the deferred design
+/// choice.</p>
 Class SessionAgent.Audit.Emit Extends %RegisteredObject
 {
 
@@ -45,7 +48,10 @@ ClassMethod EnsureEvents() As %Status
     Try {
         Set $NAMESPACE = "%SYS"
 
-        ; The eleven triples Story 1.3 pre-registers. Source is always
+        ; The pre-registered triples — eleven from Story 1.3 plus the
+        ; Story 14.4 SchemaNoteWrite triple (schema-note saves via the
+        ; save_schema_note tool; Description populated per Rule 4
+        ; operator-observable-surface enumeration). Source is always
         ; "SessionAgent". Each row is $ListBuild(Type, Name, Description).
         Set tTriples = $ListBuild(
             $ListBuild("LlmCall", "openai", "SessionAgent LLM provider call: OpenAI"),
@@ -58,7 +64,8 @@ ClassMethod EnsureEvents() As %Status
             $ListBuild("VocabWrite", "seed", "SessionAgent vocabulary write: seed value"),
             $ListBuild("TaskRun", "PurgeOrphanedChatHistory", "SessionAgent scheduled task: purge orphaned chat history"),
             $ListBuild("TaskRun", "PurgeStaleSearchChat", "SessionAgent scheduled task: purge stale search chat"),
-            $ListBuild("TaskRun", "UserVocabularyDecay", "SessionAgent scheduled task: user vocabulary decay"))
+            $ListBuild("TaskRun", "UserVocabularyDecay", "SessionAgent scheduled task: user vocabulary decay"),
+            $ListBuild("SchemaNoteWrite", "explicit", "SessionAgent schema-note write: agent-saved namespace fact (save_schema_note)"))
 
         Set tPtr = 0
         While $ListNext(tTriples, tPtr, tRow) {

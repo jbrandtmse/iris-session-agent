@@ -164,6 +164,8 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
         } Else {
             Set tRs = tStmt.%Execute(tLimit, tSessionId, tMaxType, tMessageId)
         }
+        ; Story 14.0 — centralized execute-failure gate (cr-13-3).
+        If ##class(SessionAgent.Tool.Base).EnsureIsErrorOnExecuteFailure(pResult, tRs, ..#ToolName) Quit
 
         Set tEvents = []
         Set tCount = 0
@@ -206,13 +208,24 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
             } Else {
                 Set tRsCount = tStmtCount.%Execute(tSessionId, tMaxType, tMessageId)
             }
-            While tRsCount.%Next() {
-                Set tT = +tRsCount.%Get("type_int")
-                Set tN = +tRsCount.%Get("cnt")
-                If tT = 1 Set tCntAssert = tN
-                If tT = 2 Set tCntErr = tN
-                If tT = 3 Set tCntWarn = tN
-                If tT = 4 Set tCntInfo = tN
+            ; Story 14.0 review fix — execute-failure check ADAPTED to this
+            ; statement's best-effort semantics: severity counts are an
+            ; optional enrichment over the already-fetched events array. A
+            ; runtime failure here leaves the counts at 0 instead of nuking
+            ; the whole envelope — mirroring this statement's own graceful
+            ; prepare handling ($$$ISOK skip above) and the
+            ; GetBusinessProcessInstance adapted guards. Main-statement
+            ; execute failures (the gate after the first %Execute) remain
+            ; fatal.
+            If $IsObject(tRsCount) && (tRsCount.%SQLCODE >= 0) {
+                While tRsCount.%Next() {
+                    Set tT = +tRsCount.%Get("type_int")
+                    Set tN = +tRsCount.%Get("cnt")
+                    If tT = 1 Set tCntAssert = tN
+                    If tT = 2 Set tCntErr = tN
+                    If tT = 3 Set tCntWarn = tN
+                    If tT = 4 Set tCntInfo = tN
+                }
             }
         }
 

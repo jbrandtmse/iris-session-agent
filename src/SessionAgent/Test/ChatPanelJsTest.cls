@@ -476,6 +476,46 @@ Method TestWelcomeMessageAgentAware()
     Do $$$AssertTrue(..FileContents [ "Ask anything about this session", "Inspection-flavored welcome still present in else branch (Story 10.13 F-5 regression guard)")
 }
 
+/// <p><b>Story 14.5 AC-2 / AC-6 — Epic 14 welcome-text capability
+/// update (Rule 4 watch-item closure).</b> Substring-grep binding
+/// (Epic 12 AI-5): enumerate ALL expected new capability phrases,
+/// assert each present; then assert the stale before-state phrasing
+/// (the two replaced example questions) is ABSENT; then assert no
+/// tool-name enumeration leaked into the file (the Epic 4→8
+/// stale-enumeration class — capability AREAS only, never tool
+/// names/counts). The shared capability sentence appears in BOTH
+/// welcome branches (asserted twice via occurrence count).</p>
+Method TestWelcomeMessageEpic14Capabilities()
+{
+    Do $$$AssertStatusOK(..LoadFile(), "LoadFile resolved chat-panel.js at " _ ..FilePath)
+    ; New capability-area phrases — present (both branches share the sentence).
+    Do $$$AssertTrue(..FileContents [ "analytics and statistics questions with read-only SQL", "Story 14.5 AC-2: analytics/statistics capability area present")
+    Do $$$AssertTrue(..FileContents [ "I always show the SQL I ran", "Story 14.5 AC-2: SQL-disclosure reassurance present")
+    Do $$$AssertTrue(..FileContents [ "describe unfamiliar message types", "Story 14.5 AC-2: schema-discovery capability area present")
+    Do $$$AssertTrue(..FileContents [ "remember schema notes for this namespace", "Story 14.5 AC-2: per-namespace schema-notes capability area present")
+    ; The capability sentence appears in BOTH branches ($Length(s,sub)
+    ; returns occurrences+1).
+    Do $$$AssertEquals($Length(..FileContents, "I always show the SQL I ran") - 1, 2, "Story 14.5 AC-2: capability sentence present in BOTH welcome branches")
+    ; New example questions — present (one per branch).
+    Do $$$AssertTrue(..FileContents [ "what's the error rate by target in the last 24 hours?", "Story 14.5 AC-2: inspection-branch analytic example present")
+    Do $$$AssertTrue(..FileContents [ "how many messages per day went through the order router this month?", "Story 14.5 AC-2: search-branch analytic example present")
+    ; Stale before-state phrasing — the two replaced examples must be gone.
+    Do $$$AssertTrue('(..FileContents [ "find sessions matching X"), "Story 14.5 AC-2: stale inspection example 'find sessions matching X' removed")
+    Do $$$AssertTrue('(..FileContents [ "which messages had OrderRequest bodies"), "Story 14.5 AC-2: stale search example 'which messages had OrderRequest bodies' removed")
+    ; No tool-name enumeration anywhere in the JS (capability AREAS only).
+    Do $$$AssertTrue('(..FileContents [ "execute_readonly_sql"), "Story 14.5 AC-2: no execute_readonly_sql tool-name enumeration in chat-panel.js")
+    Do $$$AssertTrue('(..FileContents [ "get_query_knowledge"), "Story 14.5 AC-2: no get_query_knowledge tool-name enumeration in chat-panel.js")
+    Do $$$AssertTrue('(..FileContents [ "save_schema_note"), "Story 14.5 AC-2: no save_schema_note tool-name enumeration in chat-panel.js")
+    ; Middle-dot example separators retained in the welcome strings
+    ; (real U+00B7 per fix ebde251 — served with TranslateTable=UTF8).
+    ; Encoding-robust count: whether the stream decoded UTF-8 (U+00B7 =
+    ; $Char(183)) or read raw bytes (0xC2 0xB7 — the 0xB7 byte still
+    ; surfaces as $Char(183)), the separator contributes one $Char(183)
+    ; per occurrence. Two welcome branches x two separators each = >= 4.
+    Set tDotCount = $Length(..FileContents, $Char(183)) - 1
+    Do $$$AssertTrue(tDotCount >= 4, "Story 14.5 AC-2: U+00B7 example separators retained (found " _ tDotCount _ ", expected >= 4)")
+}
+
 /// <p>Story 12.6 (BUG-07) — renderPriorTranscript must replay
 /// preserved tool_use ↔ tool_result pairs by invoking the same
 /// renderSearchResultList helper the live path uses. Asserts the

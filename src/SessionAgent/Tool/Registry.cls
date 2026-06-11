@@ -62,13 +62,23 @@ ClassMethod ListTools() As %DynamicArray
         ; Tool.Base; concrete search tools (e.g., SearchByTime) declare
         ; their immediate Super as Tool.Search.Base, NOT Tool.Base, so the
         ; flat Super-equality filter would have missed all 6 search tools.
-        ; The OR clause closes that gap. Future intermediate abstract
-        ; bases (e.g., Tool.Vocab.Base if added in Story 8.7+) would
-        ; require a parallel OR entry — the alternative is a recursive
-        ; Super-chain walk, which is heavier and not yet warranted.
-        Set tSC = tStmt.%Prepare("SELECT %EXACT(Name) AS ClassName FROM %Dictionary.ClassDefinition WHERE (%EXACT(Super) = 'SessionAgent.Tool.Base' OR %EXACT(Super) = 'SessionAgent.Tool.Search.Base') AND Abstract = 0 AND NOT (%EXACT(Name) %STARTSWITH 'SessionAgent.Test.') ORDER BY %EXACT(Name)")
+        ; The OR clause closes that gap. Story 14.3 adds the third base
+        ; (Tool.Query.Base) for the guarded dynamic-SQL Query family.
+        ; Future intermediate abstract bases would require a parallel OR
+        ; entry — the alternative is a recursive Super-chain walk, which
+        ; is heavier and not yet warranted.
+        Set tSC = tStmt.%Prepare("SELECT %EXACT(Name) AS ClassName FROM %Dictionary.ClassDefinition WHERE (%EXACT(Super) = 'SessionAgent.Tool.Base' OR %EXACT(Super) = 'SessionAgent.Tool.Search.Base' OR %EXACT(Super) = 'SessionAgent.Tool.Query.Base') AND Abstract = 0 AND NOT (%EXACT(Name) %STARTSWITH 'SessionAgent.Test.') ORDER BY %EXACT(Name)")
         If $$$ISERR(tSC) Quit
         Set tRs = tStmt.%Execute()
+        ; Story 14.0 review fix (cr-13-3 class) — a runtime discovery-query
+        ; failure previously produced a silent zero-row scan indistinguishable
+        ; from "no tools installed". Throw into the documented empty-list
+        ; degradation below so the failure at least transits the declared
+        ; degradation path (callers' empty-array contract is preserved —
+        ; AgentLoop and the portal both require an array return).
+        If tRs.%SQLCODE < 0 {
+            $$$ThrowStatus($$$ERROR($$$GeneralError, "tool discovery query failed: SQLCODE " _ tRs.%SQLCODE _ ": " _ tRs.%Message))
+        }
         While tRs.%Next() {
             Set tClassName = tRs.%Get("ClassName")
             Set tEntry = {}
@@ -297,14 +307,24 @@ ClassMethod ResolveToolName(pToolName As %String) As %String
     Try {
         Set tStmt = ##class(%SQL.Statement).%New()
         ; Story 8.3 fix-now — also dispatch via the Tool.Search.Base
-        ; intermediate abstract. NOTE: this method does NOT filter out
+        ; intermediate abstract; Story 14.3 adds the Tool.Query.Base
+        ; third base. NOTE: this method does NOT filter out
         ; SessionAgent.Test.* fixtures (unlike ListTools, which does);
         ; ToolRegistryTest's stub-throwing-tool dispatch path depends on
         ; resolution working for fixture classes. Operators only see
         ; tools through ListTools, so the exclusion happens there.
-        Set tSC = tStmt.%Prepare("SELECT %EXACT(Name) AS ClassName FROM %Dictionary.ClassDefinition WHERE (%EXACT(Super) = 'SessionAgent.Tool.Base' OR %EXACT(Super) = 'SessionAgent.Tool.Search.Base') AND Abstract = 0")
+        Set tSC = tStmt.%Prepare("SELECT %EXACT(Name) AS ClassName FROM %Dictionary.ClassDefinition WHERE (%EXACT(Super) = 'SessionAgent.Tool.Base' OR %EXACT(Super) = 'SessionAgent.Tool.Search.Base' OR %EXACT(Super) = 'SessionAgent.Tool.Query.Base') AND Abstract = 0")
         If $$$ISERR(tSC) Quit
         Set tRs = tStmt.%Execute()
+        ; Story 14.0 review fix (cr-13-3 class) — a runtime discovery-query
+        ; failure previously yielded a silent zero-row scan → tFound="" →
+        ; Dispatch misreported a REGISTERED tool as "unknown tool". Throw
+        ; instead; the rethrowing Catch below propagates to Dispatch's
+        ; outer Catch, which emits a server-fault envelope and stamps
+        ; Audit.ToolCall.ErrorText.
+        If tRs.%SQLCODE < 0 {
+            $$$ThrowStatus($$$ERROR($$$GeneralError, "tool discovery query failed: SQLCODE " _ tRs.%SQLCODE _ ": " _ tRs.%Message))
+        }
         While tRs.%Next() {
             Set tClassName = tRs.%Get("ClassName")
             Set tCandidateName = ..GetParameterValue(tClassName, "ToolName")
@@ -315,7 +335,13 @@ ClassMethod ResolveToolName(pToolName As %String) As %String
         }
     }
     Catch ex {
-        Set tFound = ""
+        ; Story 14.0 review fix — previously swallowed to "" which Dispatch
+        ; misreports as "unknown tool: <name>" even for registered tools.
+        ; Rethrow so Dispatch's outer Catch converts the failure into a
+        ; server-fault envelope (operator sees the real cause; audit row
+        ; captures the stack). Dispatch is the only production caller and
+        ; wraps this method inside its Try (Registry.cls Step 1).
+        Throw ex
     }
     Quit tFound
 }

@@ -323,4 +323,61 @@ ClassMethod EnsureIsErrorOnPrepareFailure(pResult As %DynamicObject, pPrepareSta
     Quit 1
 }
 
+/// <p>Story 14.0 AC-2 helper (deferred-work cr-13-3 closure) — centralized
+/// <b>execute</b>-failure gate, the runtime-side sibling of
+/// <method>EnsureIsErrorOnPrepareFailure</method>. Returns <code>0</code>
+/// when <var>pRS</var> is a valid result-set object whose
+/// <property>%SQLCODE</property> is <code>&gt;= 0</code> (no mutation);
+/// otherwise mutates <var>pResult</var> to the canonical
+/// <code>{isError:1, render_strategy:"execute_error"}</code> envelope
+/// shape and returns <code>1</code>. Caller pattern is
+/// <code>If ##class(SessionAgent.Tool.Base).EnsureIsErrorOnExecuteFailure(pResult, tRS, ..#ToolName) Quit</code>
+/// placed immediately after the <code>%Execute(...)</code> assignment and
+/// BEFORE the first <code>%Next()</code>.</p>
+///
+/// <p><b>%SQLCODE semantics (per <code>irislib/%SQL/StatementResult.cls</code>
+/// lines 210–222).</b> A negative <property>%SQLCODE</property> is a
+/// runtime error; <code>0</code> is successful completion; <code>100</code>
+/// is no-more-data and is NOT an error (it is only set after
+/// <code>%Next()</code> reaches the end of data — immediately after a
+/// successful <code>%Execute</code> the value is <code>0</code>). The
+/// guard therefore treats <code>%SQLCODE &gt;= 0</code> as success.</p>
+///
+/// <p><b>Why centralize (cr-13-3).</b> Before Story 14.0 every
+/// <code>%Execute</code> call-site across the Inspection + Search tool
+/// families left <property>%SQLCODE</property> unchecked — a statement
+/// that prepared cleanly but failed at runtime (e.g., a conversion error
+/// on a bound parameter) silently yielded <code>%Next()=0</code> and the
+/// tool returned a success-shaped "no rows" envelope, masking the error
+/// from the operator and the LLM. This is the same gap-shape the Story
+/// 11.2 prepare-gate closed for <code>%Prepare</code>.</p>
+///
+/// <p><b>Mutation contract — identical to the prepare helper.</b> Caller
+/// MUST pre-initialize <var>pResult</var> to the success-shape envelope
+/// <code>{"content":[{"type":"text","text":""}], "structuredContent":{...}}</code>
+/// before invoking. The helper mutates <code>pResult.isError</code> →
+/// <code>1</code>, overwrites <code>pResult.content[0].text</code> with
+/// <code>"Tool '&lt;name&gt;' SQL execute failed: SQLCODE &lt;n&gt;: &lt;%Message&gt;"</code>,
+/// and adds <code>render_strategy="execute_error"</code> +
+/// <code>error_text</code> to <code>pResult.structuredContent</code>.
+/// Pre-existing <code>structuredContent</code> shape fields are left in
+/// place so downstream shape-presence renderers still see them.</p>
+ClassMethod EnsureIsErrorOnExecuteFailure(pResult As %DynamicObject, pRS, pToolName As %String) As %Boolean
+{
+    If $IsObject($Get(pRS)) && (pRS.%SQLCODE >= 0) Quit 0
+    ; Story 14.0 review fix — non-object pRS gets a well-formed message
+    ; (previously emitted "SQLCODE : %Execute returned a non-object
+    ; result" with an empty code slot).
+    If $IsObject($Get(pRS)) {
+        Set tErrText = "SQLCODE " _ pRS.%SQLCODE _ ": " _ pRS.%Message
+    } Else {
+        Set tErrText = "%Execute returned a non-object result"
+    }
+    Do pResult.%Set("isError", 1, "boolean")
+    Do pResult.%Get("content").%Get(0).%Set("text", "Tool '" _ pToolName _ "' SQL execute failed: " _ tErrText)
+    Do pResult.structuredContent.%Set("render_strategy", "execute_error")
+    Do pResult.structuredContent.%Set("error_text", tErrText)
+    Quit 1
+}
+
 }

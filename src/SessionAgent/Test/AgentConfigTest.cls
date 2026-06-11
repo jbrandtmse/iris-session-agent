@@ -68,8 +68,13 @@ Method OnBeforeOneTest() As %Status
 /// <p><b>AC-9 Test 1.</b> Calls
 /// <method>SessionAgent.UI.AgentConfig.LoadAgentConfig</method>("session-inspection"),
 /// parses the returned JSON, asserts <code>found=1</code> and that the
-/// returned row has the seeded shape (Provider="openai" per
-/// <CLASS>SessionAgent.Config.AgentDefaults</CLASS> OD4 default).</p>
+/// returned row has the seeded SHAPE. Story 14.2 code-review fix: the
+/// Provider assertion checks membership in the known provider set
+/// rather than the literal seed default "openai" — the row is
+/// operator-mutable live state (Zen form / SQL UPDATE can legitimately
+/// rotate the provider), and asserting the seed value made the test an
+/// ambient-state flake (pre-14.2 full-sweep runs 160/176 failed here
+/// purely on operator state).</p>
 Method TestLoadAgentConfigReturnsSeededRow()
 {
     Set tJson = ##class(SessionAgent.UI.AgentConfig).LoadAgentConfig("session-inspection")
@@ -79,7 +84,10 @@ Method TestLoadAgentConfigReturnsSeededRow()
     Do $$$AssertTrue($IsObject(tObj), "Returned JSON parses to a %DynamicObject")
     Do $$$AssertTrue('$IsObject(tObj.%Get("error")) && (tObj.%Get("error") = ""), "No error key on happy path")
     Do $$$AssertEquals(tObj.%Get("found"), 1, "found=1 — seeded session-inspection row exists")
-    Do $$$AssertEquals(tObj.%Get("Provider"), "openai", "Provider=openai (OD4 seed default)")
+    ; Provider is a known provider id (seed default "openai"; live state
+    ; is operator-mutable — assert shape, not the literal seed value).
+    Set tProvider = tObj.%Get("Provider")
+    Do $$$AssertTrue($ListFind($ListBuild("openai", "anthropic", "gemini", "openai-compatible"), tProvider) > 0, "Provider is a known provider id (got '" _ tProvider _ "'; seed default is openai, live state is operator-mutable)")
 
     ; MaxTokens is an integer-shape sanity check — exact value comes
     ; from AgentDefaults.GetSeedConfig.

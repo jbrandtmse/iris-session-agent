@@ -217,7 +217,9 @@ Method TestRecordSuccessEmitsClickthroughAudit()
 
     Do $$$AssertStatusOK(##class(SessionAgent.Search.UserVocabulary).RecordSuccess(tUser, tAlias, "", "clickthrough", "audit emit test"), "RecordSuccess OK with explicit pCreatedVia=clickthrough")
 
-    Set tFound = ..AuditRowExistsForName("clickthrough", tUser, tAlias)
+    ; Story 14.0 — kernel audit daemon flushes asynchronously (observed
+    ; ~30-60s on the 2026-06 fresh server); poll instead of single probe.
+    Set tFound = ..WaitForAuditRow("clickthrough", tUser, tAlias)
     Do $$$AssertTrue(tFound, "(SessionAgent, VocabWrite, clickthrough) audit row exists post-RecordSuccess for sa-test-92-audit-click / audit-click-alias")
     Quit
 }
@@ -233,7 +235,9 @@ Method TestRecordFailureEmitsExtractedAudit()
     Do $$$AssertStatusOK(##class(SessionAgent.Search.UserVocabulary).RecordSuccess(tUser, tAlias), "seed: RecordSuccess OK")
     Do $$$AssertStatusOK(##class(SessionAgent.Search.UserVocabulary).RecordFailure(tUser, tAlias), "RecordFailure OK on existing row")
 
-    Set tFound = ..AuditRowExistsForName("extracted", tUser, tAlias)
+    ; Story 14.0 — kernel audit daemon flushes asynchronously (observed
+    ; ~30-60s on the 2026-06 fresh server); poll instead of single probe.
+    Set tFound = ..WaitForAuditRow("extracted", tUser, tAlias)
     Do $$$AssertTrue(tFound, "(SessionAgent, VocabWrite, extracted) audit row exists post-RecordFailure for sa-test-92-audit-fail / audit-fail-alias")
     Quit
 }
@@ -281,6 +285,25 @@ Method TestVocabLookupSaveModeStillWorks()
     Do $$$AssertEquals(+tResult2.structuredContent.%Get("new_success_count"), 2, "second call new_success_count = 2")
     Do $$$AssertEquals(+tResult2.structuredContent.%Get("audit_emitted"), 1, "second call audit_emitted = 1 (triple pre-registered)")
     Quit
+}
+
+/// <p>Story 14.0 sweep fix — the kernel audit daemon flushes
+/// <code>$System.Security.Audit</code> events to the IRISAUDIT database
+/// asynchronously (observed lag ~30-60s on the 2026-06 fresh server; no
+/// public forced-flush API exists — see
+/// <method>SessionAgent.Test.SweepTaskTest.WaitForTaskRunAuditIncrease</method>
+/// for the originating empirical probe). Poll
+/// <method>AuditRowExistsForName</method> up to ~120s; exits on first
+/// match.</p>
+ClassMethod WaitForAuditRow(pName As %String, pUser As %String, pAlias As %String) As %Boolean
+{
+    Set tFound = 0
+    For tAttempt = 1:1:240 {
+        Set tFound = ..AuditRowExistsForName(pName, pUser, pAlias)
+        If tFound Quit
+        Hang 0.5
+    }
+    Quit tFound
 }
 
 /// <p>Helper — probe <code>%SYS.Audit</code> for an audit event with the

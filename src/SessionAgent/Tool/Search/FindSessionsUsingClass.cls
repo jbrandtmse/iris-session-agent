@@ -135,9 +135,11 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
 
         Set tSCSub = ..RunQuery(tClassName, tColFilter, tMatchField, tWindowHours, tLimit, .tSessions, .tCount, .tMatchedVia)
         If $$$ISERR(tSCSub) {
-            ; Use canonical Story 11.2 error envelope shape (render_strategy:"prepare_error")
-            ; so operators see a consistent error format across all search tools.
-            Do ##class(SessionAgent.Tool.Base).EnsureIsErrorOnPrepareFailure(pResult, tSCSub, ..#ToolName)
+            ; Story 14.0 review fix — classify the RunQuery failure: a
+            ; runtime %Execute failure renders as the canonical
+            ; render_strategy:"execute_error" envelope; validation/prepare
+            ; failures keep the Story 11.2 "prepare_error" shape.
+            Do ..ShapeRunQueryErrorEnvelope(pResult, tSCSub)
             Quit
         }
 
@@ -165,6 +167,14 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
                             ; Still no results — surface candidate
                             Set tCandidateClassName = tStripped
                         }
+                    } Else {
+                        ; Story 14.0 review fix — a fallback-query failure
+                        ; must surface as an error envelope, not as a
+                        ; success-shaped "No sessions found" (the discarded
+                        ; tSCSub2 was a NEW silent-masking path introduced
+                        ; by the strip-last-segment retry).
+                        Do ..ShapeRunQueryErrorEnvelope(pResult, tSCSub2)
+                        Quit
                     }
                 }
             }
@@ -205,6 +215,37 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
         Quit
     }
     Quit tSC
+}
+
+/// <p>Story 14.0 review fix — classify a <method>RunQuery</method> error
+/// <code>%Status</code> and shape the matching canonical envelope.
+/// <method>RunQuery</method> has no <code>pResult</code> in scope, so its
+/// adapted execute guard returns a <code>%Status</code> whose text carries
+/// the marker <code>"SQL execute failed for find_sessions_using_class: "</code>.
+/// When the marker is present, this method shapes the canonical
+/// <code>render_strategy="execute_error"</code> envelope (mirroring
+/// <method>SessionAgent.Tool.Base.EnsureIsErrorOnExecuteFailure</method>'s
+/// mutation contract) so runtime execute failures are NOT mislabeled
+/// <code>prepare_error</code> with contradictory "prepare failed: ...
+/// execute failed" text. Every other RunQuery error (validation,
+/// prepare) keeps the Story 11.2 prepare gate shape.</p>
+ClassMethod ShapeRunQueryErrorEnvelope(pResult As %DynamicObject, pStatus As %Status)
+{
+    Set tFullText = $System.Status.GetErrorText(pStatus)
+    Set tMarker = "SQL execute failed for find_sessions_using_class: "
+    Set tIdx = $Find(tFullText, tMarker)
+    If tIdx > 0 {
+        ; Runtime %Execute failure — canonical execute_error shape. The
+        ; tail after the marker is "SQLCODE <n>: <%Message>".
+        Set tErrText = $Extract(tFullText, tIdx, *)
+        Do pResult.%Set("isError", 1, "boolean")
+        Do pResult.%Get("content").%Get(0).%Set("text", "Tool '" _ ..#ToolName _ "' SQL execute failed: " _ tErrText)
+        Do pResult.structuredContent.%Set("render_strategy", "execute_error")
+        Do pResult.structuredContent.%Set("error_text", tErrText)
+        Quit
+    }
+    Do ##class(SessionAgent.Tool.Base).EnsureIsErrorOnPrepareFailure(pResult, pStatus, ..#ToolName)
+    Quit
 }
 
 /// <p>Execute the bounded-WHERE query for <code>pClassName</code> against
@@ -253,6 +294,16 @@ ClassMethod RunQuery(pClassName As %String, pColFilter As %String, pMatchField A
     }
     Set tArgs = tArgIdx
     Set tRs = tStmt.%Execute(tArgs...)
+    ; Story 14.0 — execute-failure check ADAPTED to this helper's %Status
+    ; error contract (no pResult in scope; the Invoke call-site converts
+    ; the returned error %Status into the canonical error envelope). See
+    ; Completion Notes (adapted-guard sites).
+    If '$IsObject($Get(tRs)) || (tRs.%SQLCODE < 0) {
+        If '$IsObject($Get(tRs)) {
+            Quit $$$ERROR($$$GeneralError, "SQL execute failed for find_sessions_using_class: %Execute returned a non-object result")
+        }
+        Quit $$$ERROR($$$GeneralError, "SQL execute failed for find_sessions_using_class: SQLCODE " _ tRs.%SQLCODE _ ": " _ tRs.%Message)
+    }
 
     While tRs.%Next() {
         ; Use positional %GetData() — %EXACT() in SELECT causes alias issues (Story 13.3 note)

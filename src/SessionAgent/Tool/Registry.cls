@@ -69,6 +69,15 @@ ClassMethod ListTools() As %DynamicArray
         Set tSC = tStmt.%Prepare("SELECT %EXACT(Name) AS ClassName FROM %Dictionary.ClassDefinition WHERE (%EXACT(Super) = 'SessionAgent.Tool.Base' OR %EXACT(Super) = 'SessionAgent.Tool.Search.Base') AND Abstract = 0 AND NOT (%EXACT(Name) %STARTSWITH 'SessionAgent.Test.') ORDER BY %EXACT(Name)")
         If $$$ISERR(tSC) Quit
         Set tRs = tStmt.%Execute()
+        ; Story 14.0 review fix (cr-13-3 class) — a runtime discovery-query
+        ; failure previously produced a silent zero-row scan indistinguishable
+        ; from "no tools installed". Throw into the documented empty-list
+        ; degradation below so the failure at least transits the declared
+        ; degradation path (callers' empty-array contract is preserved —
+        ; AgentLoop and the portal both require an array return).
+        If tRs.%SQLCODE < 0 {
+            $$$ThrowStatus($$$ERROR($$$GeneralError, "tool discovery query failed: SQLCODE " _ tRs.%SQLCODE _ ": " _ tRs.%Message))
+        }
         While tRs.%Next() {
             Set tClassName = tRs.%Get("ClassName")
             Set tEntry = {}
@@ -305,6 +314,15 @@ ClassMethod ResolveToolName(pToolName As %String) As %String
         Set tSC = tStmt.%Prepare("SELECT %EXACT(Name) AS ClassName FROM %Dictionary.ClassDefinition WHERE (%EXACT(Super) = 'SessionAgent.Tool.Base' OR %EXACT(Super) = 'SessionAgent.Tool.Search.Base') AND Abstract = 0")
         If $$$ISERR(tSC) Quit
         Set tRs = tStmt.%Execute()
+        ; Story 14.0 review fix (cr-13-3 class) — a runtime discovery-query
+        ; failure previously yielded a silent zero-row scan → tFound="" →
+        ; Dispatch misreported a REGISTERED tool as "unknown tool". Throw
+        ; instead; the rethrowing Catch below propagates to Dispatch's
+        ; outer Catch, which emits a server-fault envelope and stamps
+        ; Audit.ToolCall.ErrorText.
+        If tRs.%SQLCODE < 0 {
+            $$$ThrowStatus($$$ERROR($$$GeneralError, "tool discovery query failed: SQLCODE " _ tRs.%SQLCODE _ ": " _ tRs.%Message))
+        }
         While tRs.%Next() {
             Set tClassName = tRs.%Get("ClassName")
             Set tCandidateName = ..GetParameterValue(tClassName, "ToolName")
@@ -315,7 +333,13 @@ ClassMethod ResolveToolName(pToolName As %String) As %String
         }
     }
     Catch ex {
-        Set tFound = ""
+        ; Story 14.0 review fix — previously swallowed to "" which Dispatch
+        ; misreports as "unknown tool: <name>" even for registered tools.
+        ; Rethrow so Dispatch's outer Catch converts the failure into a
+        ; server-fault envelope (operator sees the real cause; audit row
+        ; captures the stack). Dispatch is the only production caller and
+        ; wraps this method inside its Try (Registry.cls Step 1).
+        Throw ex
     }
     Quit tFound
 }

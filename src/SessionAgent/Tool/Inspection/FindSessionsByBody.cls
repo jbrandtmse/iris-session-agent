@@ -245,6 +245,8 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
         ; prepare_error envelope per AC-2).
         If ##class(SessionAgent.Tool.Base).EnsureIsErrorOnPrepareFailure(pResult, tSCp, ..#ToolName) Quit
         Set tRsProp = tStmtProp.%Execute(tSearchClass, tPropName)
+        ; Story 14.0 — centralized execute-failure gate (cr-13-3).
+        If ##class(SessionAgent.Tool.Base).EnsureIsErrorOnExecuteFailure(pResult, tRsProp, ..#ToolName) Quit
         Set tPropId = ""
         If tRsProp.%Next() {
             Set tPropId = tRsProp.%Get("PropID")
@@ -321,6 +323,8 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
         ; with "search SQL prepare failed:" prefix; normalized per AC-2).
         If ##class(SessionAgent.Tool.Base).EnsureIsErrorOnPrepareFailure(pResult, tSCs, ..#ToolName) Quit
         Set tRs = tStmt.%Execute(tLimit, tPropId, tPropValue, tLowerOdbc)
+        ; Story 14.0 — centralized execute-failure gate (cr-13-3).
+        If ##class(SessionAgent.Tool.Base).EnsureIsErrorOnExecuteFailure(pResult, tRs, ..#ToolName) Quit
 
         ; --- Step 7: collect rows.
         Set tSessions = []

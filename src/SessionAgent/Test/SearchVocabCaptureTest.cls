@@ -249,7 +249,16 @@ Method TestRecordClickThroughEmitsClickthroughAudit()
     Do $$$AssertEquals(tResp.%Get("aliases_recorded").%Size(), 2, "two aliases recorded (precondition)")
 
     ; Probe %SYS.Audit for clickthrough rows referencing this PortalUser.
-    Set tFoundCount = ..CountClickthroughAuditRowsForUser(tUser)
+    ; Story 14.0 — kernel audit daemon flushes asynchronously (observed
+    ; ~30-60s on the 2026-06 fresh server; no public forced-flush API —
+    ; see SessionAgent.Test.SweepTaskTest.WaitForTaskRunAuditIncrease for
+    ; the originating empirical probe). Poll up to ~120s; exits early.
+    Set tFoundCount = 0
+    For tAttempt = 1:1:240 {
+        Set tFoundCount = ..CountClickthroughAuditRowsForUser(tUser)
+        If tFoundCount >= 2 Quit
+        Hang 0.5
+    }
     Do $$$AssertTrue(tFoundCount >= 2, "at least 2 (SessionAgent, VocabWrite, clickthrough) audit rows for sa-test-95-audit; got " _ tFoundCount)
     Quit
 }

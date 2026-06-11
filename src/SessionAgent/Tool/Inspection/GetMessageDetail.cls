@@ -119,6 +119,8 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
         ; normalized to canonical prepare_error envelope per AC-2).
         If ##class(SessionAgent.Tool.Base).EnsureIsErrorOnPrepareFailure(pResult, tSCprep, ..#ToolName) Quit
         Set tRsHdr = tStmtHdr.%Execute(tMessageId)
+        ; Story 14.0 — centralized execute-failure gate (cr-13-3).
+        If ##class(SessionAgent.Tool.Base).EnsureIsErrorOnExecuteFailure(pResult, tRsHdr, ..#ToolName) Quit
         Set tFound = 0
         Set tHeader = {}
         If tRsHdr.%Next() {
@@ -219,6 +221,8 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
         ; normalized to canonical prepare_error envelope per AC-2).
         If ##class(SessionAgent.Tool.Base).EnsureIsErrorOnPrepareFailure(pResult, tSCprepR, ..#ToolName) Quit
         Set tRsRule = tStmtRule.%Execute(..#RuleDecisionLimit, tMessageId)
+        ; Story 14.0 — centralized execute-failure gate (cr-13-3).
+        If ##class(SessionAgent.Tool.Base).EnsureIsErrorOnExecuteFailure(pResult, tRsRule, ..#ToolName) Quit
         While tRsRule.%Next() {
             Set tDec = {}
             Do tDec.%Set("id", +tRsRule.%Get("id"), "number")

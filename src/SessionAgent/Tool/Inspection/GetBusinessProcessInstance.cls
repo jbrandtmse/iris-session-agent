@@ -139,6 +139,8 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
         ; Story 11.2 — centralized prepare-failure gate.
         If ##class(SessionAgent.Tool.Base).EnsureIsErrorOnPrepareFailure(pResult, tSCprep, ..#ToolName) Quit
         Set tRs = tStmt.%Execute(tSessionId)
+        ; Story 14.0 — centralized execute-failure gate (cr-13-3).
+        If ##class(SessionAgent.Tool.Base).EnsureIsErrorOnExecuteFailure(pResult, tRs, ..#ToolName) Quit
 
         Set tBpFound = 0
         Set tInstanceId = ""
@@ -188,7 +190,14 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
             Set tSCctxPrep = tStmtCtx.%Prepare("SELECT TOP 5 ID AS context_id, ""%LastError"" AS last_error, ""%LastFault"" AS last_fault FROM Ens_BP.Context WHERE ""%Process"" = ?")
             If $$$ISOK(tSCctxPrep) {
                 Set tRsCtx = tStmtCtx.%Execute(tInstanceId)
-                If tRsCtx.%Next() {
+                ; Story 14.0 — execute-failure check ADAPTED to this block's
+                ; deliberate best-effort semantics: a runtime failure skips
+                ; the BPL-context augmentation (mirroring the $$$ISOK
+                ; graceful prepare handling above) instead of mutating
+                ; pResult — the success-envelope build below would clobber
+                ; an isError mutation. See Story 14.0 Completion Notes
+                ; (adapted-guard sites).
+                If $IsObject(tRsCtx) && (tRsCtx.%SQLCODE >= 0) && tRsCtx.%Next() {
                     Set tHasBplContext = 1
                     Do tCtxObj.%Set("context_id", tRsCtx.%Get("context_id"))
                     Set tLastErrorRaw = tRsCtx.%Get("last_error")
@@ -207,7 +216,9 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
             Set tSCthrPrep = tStmtThr.%Prepare("SELECT TOP 5 ID AS thread_id, ""%NextState"" AS next_state, ""%Status"" AS run_status, ""%SyncTimedOut"" AS sync_timed_out, ""%PendingTimeout"" AS pending_timeout, ""%PendingAlarmHandle"" AS pending_alarm_handle, ""%SyncName"" AS sync_name FROM Ens_BP.Thread WHERE ""%Process"" = ?")
             If $$$ISOK(tSCthrPrep) {
                 Set tRsThr = tStmtThr.%Execute(tInstanceId)
-                If tRsThr.%Next() {
+                ; Story 14.0 — execute-failure check ADAPTED to best-effort
+                ; semantics (see ctx-probe note above + Completion Notes).
+                If $IsObject(tRsThr) && (tRsThr.%SQLCODE >= 0) && tRsThr.%Next() {
                     Set tHasBplContext = 1
                     Do tThreadObj.%Set("thread_id", tRsThr.%Get("thread_id"))
                     Do tThreadObj.%Set("next_state", tRsThr.%Get("next_state"))

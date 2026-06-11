@@ -269,6 +269,8 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
         ; "PropId-lookup prepare failed:" prefix; normalized per AC-2).
         If ##class(SessionAgent.Tool.Base).EnsureIsErrorOnPrepareFailure(pResult, tSCp, ..#ToolName) Quit
         Set tRsProp = tStmtProp.%Execute(tSearchClass, tPropName)
+        ; Story 14.0 — centralized execute-failure gate (cr-13-3).
+        If ##class(SessionAgent.Tool.Base).EnsureIsErrorOnExecuteFailure(pResult, tRsProp, ..#ToolName) Quit
         Set tPropId = ""
         If tRsProp.%Next() {
             Set tPropId = tRsProp.%Get("PropID")
@@ -364,6 +366,8 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
         }
         Set tArgs = tArgIdx
         Set tRs = tStmt.%Execute(tArgs...)
+        ; Story 14.0 — centralized execute-failure gate (cr-13-3).
+        If ##class(SessionAgent.Tool.Base).EnsureIsErrorOnExecuteFailure(pResult, tRs, ..#ToolName) Quit
 
         Set tSessions = []
         Set tCount = 0

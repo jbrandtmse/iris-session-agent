@@ -103,6 +103,8 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
         }
         Set tArgs = tArgIdx
         Set tRs = tStmt.%Execute(tArgs...)
+        ; Story 14.0 — centralized execute-failure gate (cr-13-3).
+        If ##class(SessionAgent.Tool.Base).EnsureIsErrorOnExecuteFailure(pResult, tRs, ..#ToolName) Quit
 
         Set tSessions = []
         Set tCount = 0

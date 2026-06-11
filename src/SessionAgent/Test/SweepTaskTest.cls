@@ -190,7 +190,9 @@ Method TestPurgeStaleSearchChatAuditEvent()
     Set tCountBefore = ..CountTaskRunAuditRows("PurgeStaleSearchChat")
     Set tSC = ##class(SessionAgent.Task.PurgeStaleSearchChat).%New().OnTask()
     Do $$$AssertStatusOK(tSC, "OnTask returned $$$OK")
-    Set tCountAfter = ..CountTaskRunAuditRows("PurgeStaleSearchChat")
+    ; Story 14.0 — audit-daemon flush is asynchronous; bounded poll
+    ; (120s ceiling, exits on first increase — see helper doc).
+    Set tCountAfter = ..WaitForTaskRunAuditIncrease("PurgeStaleSearchChat", tCountBefore)
     Do $$$AssertTrue(tCountAfter > tCountBefore, "TaskRun/PurgeStaleSearchChat audit row count increased; before=" _ tCountBefore _ " after=" _ tCountAfter)
     Quit
 }
@@ -246,7 +248,9 @@ Method TestUserVocabularyDecayAuditEvent()
     Set tCountBefore = ..CountTaskRunAuditRows("UserVocabularyDecay")
     Set tSC = ##class(SessionAgent.Task.UserVocabularyDecay).%New().OnTask()
     Do $$$AssertStatusOK(tSC, "OnTask returned $$$OK")
-    Set tCountAfter = ..CountTaskRunAuditRows("UserVocabularyDecay")
+    ; Story 14.0 — audit-daemon flush is asynchronous; bounded poll
+    ; (120s ceiling, exits on first increase — see helper doc).
+    Set tCountAfter = ..WaitForTaskRunAuditIncrease("UserVocabularyDecay", tCountBefore)
     Do $$$AssertTrue(tCountAfter > tCountBefore, "TaskRun/UserVocabularyDecay audit row count increased; before=" _ tCountBefore _ " after=" _ tCountAfter)
     Quit
 }
@@ -364,6 +368,14 @@ ClassMethod CountTaskRunAuditRows(pName As %String) As %Integer
     Set tOrigNS = $NAMESPACE
     Try {
         Set $NAMESPACE = "%SYS"
+        ; Story 14.0 — best-effort header apply, mirroring what the
+        ; %SYS.Audit:List query does implicitly (irislib/%SYS/Audit.cls
+        ; ListExecute line 1752). It covers only records written to the
+        ; audit HEADER buffer; it does NOT flush the kernel audit daemon
+        ; (Story 14.0 probe: afterApply=before for $System.Security.Audit
+        ; events). The actual flake fix is the bounded poll in
+        ; WaitForTaskRunAuditIncrease — see its doc comment.
+        Do ##class(%SYS.Audit).ApplyAuditHeader()
         Set tStmt = ##class(%SQL.Statement).%New()
         Do tStmt.%Prepare("SELECT COUNT(*) AS Cnt FROM %SYS.Audit WHERE %EXACT(EventSource) = 'SessionAgent' AND %EXACT(EventType) = 'TaskRun' AND %EXACT(Event) = ?")
         Set tRs = tStmt.%Execute(pName)
@@ -372,6 +384,36 @@ ClassMethod CountTaskRunAuditRows(pName As %String) As %Integer
     }
     Catch ex {
         Set $NAMESPACE = tOrigNS
+    }
+    Quit tCount
+}
+
+/// <p>Story 14.0 sweep fix — the kernel audit daemon flushes
+/// <code>$System.Security.Audit</code> events to the IRISAUDIT database
+/// asynchronously, so a COUNT(*) probe issued milliseconds after
+/// <code>OnTask()</code> reads the pre-write count. Empirically verified
+/// same-process on the 2026-06 fresh server (Story 14.0 probe:
+/// <code>auditRet=1</code> with <code>afterImmediate=before</code> and
+/// <code>afterApply=before</code> —
+/// <code>%SYS.Audit:ApplyAuditHeader()</code> does not surface these
+/// rows; it only applies audit-HEADER-buffer records, per
+/// irislib/%SYS/Audit.cls). No public forced-flush API exists
+/// (Perplexity research 2026-06-10).</p>
+/// <p><b>Authoritative poll bound (Story 14.0 review fix — single
+/// statement, call sites reference here):</b> 240 × 0.5s = <b>120s
+/// ceiling</b>, exiting on the FIRST observed increase. Daemon lag was
+/// observed at ~30–60s on the 2026-06 fresh server (a 60s ceiling
+/// passed with only ~0.6s to spare), so 120s carries a 2x margin.
+/// Returns the first increased count, or the last observed count on
+/// timeout (the assertion then fails with the real numbers).</p>
+ClassMethod WaitForTaskRunAuditIncrease(pName As %String, pBefore As %Integer) As %Integer
+{
+    Set tCount = pBefore
+    ; 240 x 0.5s = 120s ceiling; exits on first increase (see doc above).
+    For tAttempt = 1:1:240 {
+        Set tCount = ..CountTaskRunAuditRows(pName)
+        If tCount > pBefore Quit
+        Hang 0.5
     }
     Quit tCount
 }

@@ -6,6 +6,8 @@ This file accumulates findings, follow-ups, and architect-decision items that ar
 
 ## Deferred from: code review of 13-3-get-production-config-item-tool (2026-05-09)
 
+**✅ CLOSED by Story 14.0 (2026-06-11).** `EnsureIsErrorOnExecuteFailure` helper shipped on `Tool.Base`; all 45 `%Execute` sites across `Tool.Inspection.*` + `Tool.Search.*` retrofitted (36 standard guards + adapted best-effort guards for the GetBusinessProcessInstance augmentation probes, SessionTimeline span, EventLog severity counts, VocabLookup post-save read-back, and FindSessionsUsingClass.RunQuery %Status contract). Registry's 2 internal discovery sites also got %SQLCODE surfacing in the 14.0 code-review pass. Tests: `ExecuteFailureGateTest` + `ExecuteFailureAdaptedSitesTest`.
+
 - **`%Execute()` SQLCODE not checked after runtime execution — project-wide inspection tool pattern.**
 
   - **Source:** Story 13.3 code review; affects `GetProductionConfigItem.cls:156` and the entire `Tool.Inspection.*` family (15+ files).
@@ -1508,5 +1510,7 @@ This file accumulates findings, follow-ups, and architect-decision items that ar
 ---
 
 ## Deferred from: code review of story-13-1-get-class-source-tool (2026-05-09)
+
+**✅ CLOSED by Story 14.0 (2026-06-11).** All three methods renamed (`TestAllToolsExerciseAgainstFixture`, `TestAllToolsValidationFailureReturnsEnvelope`, `TestRegistryListsExpectedToolCount`) + doc-comment prose updated; `grep -i "thirteen"` returns 0 hits. The sibling stale name `TestMatrixCardinalityIs52` in `ToolCallRoundtripIntegrationTest` was renamed to `TestMatrixCardinalityMatchesCatalog` in the 14.0 code-review pass.
 
 - **LOW -- Stale "ThirteenTools" wording in `InspectionSuiteVerificationTest` method names and doc comments.** [`src/SessionAgent/Test/InspectionSuiteVerificationTest.cls`] Three method names (`TestAllThirteenToolsExerciseAgainstFixture`, `TestAllThirteenToolsValidationFailureReturnsEnvelope`, `TestRegistryListsExactlyThirteenTools`) and associated prose doc comments still reference "13 tools" or "ThirteenTools" in naming. The registry now surfaces 26 tools (EXPECTEDTOOLCOUNT=26); the actual numeric assertions all use `EXPECTEDTOOLCOUNT`, not the hardcoded "13" in the method names, so no bug shape exists. Pre-existing cosmetic drift (the method names were coined when there were 13 tools, Stories 4.7-era; the drift predates Story 13.1 and was not introduced by it). Defer rationale (Rule 8 test 3 -- pure cosmetic/naming, no predicted-bug shape). Future-work: on next InspectionSuiteVerificationTest touch, rename to `TestAllToolsExerciseAgainstFixture`, `TestAllToolsValidationFailureReturnsEnvelope`, `TestRegistryListsExpectedToolCount` and update their doc-comment prose.

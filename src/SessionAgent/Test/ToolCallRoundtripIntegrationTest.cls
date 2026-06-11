@@ -105,14 +105,23 @@
 Class SessionAgent.Test.ToolCallRoundtripIntegrationTest Extends %UnitTest.TestCase
 {
 
-/// <p>Performance gate per AC-6: the full matrix MUST complete within
-/// this many seconds. Failure flips
-/// <method>TestMatrixCompletes52CombinationsUnderPerfGate</method> to
-/// failed with reason <code>"performance regression: &lt;N&gt; seconds,
-/// expected &lt;30s"</code>. Locked here as a class parameter (rather
-/// than inlined) so a regression flips a static-time assertion at the
-/// matrix layer.</p>
-Parameter MaxRoundtripSeconds As %Integer = 30;
+/// <p>Performance gate per AC-6 — <b>per-pair</b> allowance in seconds.
+/// The whole-matrix bound is derived at run time as
+/// <code>max(MINMATRIXGATESECONDS, matrixSize × MAXSECONDSPERPAIR)</code>
+/// so the gate auto-scales as the tool catalog grows instead of needing
+/// a manual re-size every epic (the 30s lock sized for 52 pairs at Epic
+/// 5 close silently went stale through Epics 8–13).</p>
+/// <p><b>Story 14.0 sizing (review fix — replaces the fixed 90s raise):</b>
+/// the 2026-06 fresh server completes the 112-pair matrix in 64–75s =
+/// 0.57–0.67 s/pair observed. 1 s/pair gives ~50–75% headroom per pair
+/// and still trips on a genuine order-of-magnitude regression. At 112
+/// pairs the derived gate is 112s; when Epic 14 grows the matrix to ~140
+/// pairs the gate scales to ~140s automatically.</p>
+Parameter MAXSECONDSPERPAIR As %Numeric = 1;
+
+/// <p>Floor for the derived whole-matrix perf gate — keeps the gate
+/// meaningful if the matrix ever shrinks to a handful of pairs.</p>
+Parameter MINMATRIXGATESECONDS As %Integer = 30;
 
 /// <p>Per-test session-key prefix. The suffix is the method name. Built
 /// once at class load to keep the tuple deterministic across test
@@ -612,7 +621,8 @@ ClassMethod ApplyConfigForProvider(pProviderName As %String)
 /// every (provider, tool) pair, install the canned 2-turn dialog, drive
 /// <method>SessionAgent.Agent.AgentLoop.RunTurn</method>, assert the
 /// dispatch round-trip succeeded. Tracks total elapsed time and asserts
-/// it is &lt; <parameter>MaxRoundtripSeconds</parameter>.</p>
+/// it is &lt; the derived gate
+/// (<code>max(MINMATRIXGATESECONDS, size x MAXSECONDSPERPAIR)</code>).</p>
 ///
 /// <p>Delegates to <method>RunMatrix</method> which is a ClassMethod so
 /// it runs in the test process's normal classmethod context rather than
@@ -636,7 +646,12 @@ Method TestMatrixCompletes52CombinationsUnderPerfGate()
 
     Do $$$AssertTrue(tSize > 0, "Matrix discovery returned at least one pair (got: " _ tSize _ ")")
     Do $$$AssertEquals(tSuccessful, tSize, "All " _ tSize _ " matrix pairs round-tripped successfully (failed: " _ tFailed _ "). Failures:" _ $Char(10) _ tFailedDetails)
-    Do $$$AssertTrue(tElapsed < ..#MaxRoundtripSeconds, "Matrix completed in " _ tElapsed _ "s (gate: " _ ..#MaxRoundtripSeconds _ "s); regression if over.")
+    ; Story 14.0 review fix — gate derived from live matrix size (per-pair
+    ; allowance × pairs, floored) so catalog growth doesn't flake the gate
+    ; and a fixed bound can't silently mask a per-pair regression.
+    Set tGate = tSize * ..#MAXSECONDSPERPAIR
+    If tGate < ..#MINMATRIXGATESECONDS Set tGate = ..#MINMATRIXGATESECONDS
+    Do $$$AssertTrue(tElapsed < tGate, "Matrix completed in " _ tElapsed _ "s (derived gate: " _ tGate _ "s = " _ tSize _ " pairs x " _ ..#MAXSECONDSPERPAIR _ "s/pair, floor " _ ..#MINMATRIXGATESECONDS _ "s); regression if over.")
 }
 
 /// <p>Run the matrix iteration. Returns a structured report
@@ -765,15 +780,22 @@ ClassMethod RunMatrix() As %DynamicObject
 /// (13 inspection + 7 search); Story 8.5 grew it to 4 × 21 = 84
 /// (13 inspection + 8 search); Story 8.6 grew it to 4 × 22 = 88
 /// (13 inspection + 9 search); Story 8.7 grows it to 4 × 23 = 92
-/// (13 inspection + 10 search — closes the Epic 8 acceptance gate).
-/// When a 5th provider or 24th tool is added, this assertion
+/// (13 inspection + 10 search — closes the Epic 8 acceptance gate);
+/// Story 14.0 reconciles it to 4 × 28 = 112 — Epic 13 shipped 5 tools
+/// (13.1 get_class_source, 13.2 get_rule_source, 13.3
+/// get_production_config_item, 13.4 get_queue_state, 13.5
+/// find_sessions_using_class) without bumping this lock (the Epic 13
+/// retro AI-3 stale-count incident shape).
+/// When a 5th provider or 29th tool is added, this assertion
 /// auto-fails so the maintainer updates the expected count +
 /// acknowledges the matrix grew. Defensive against silent shrinkage
 /// too (a regression deleting a tool).</p>
-Method TestMatrixCardinalityIs52()
+/// <p>Story 14.0 review fix — renamed from <code>TestMatrixCardinalityIs52</code>
+/// (stale since Epic 8) per the cr-13-1 stale-name closure shape.</p>
+Method TestMatrixCardinalityMatchesCatalog()
 {
     Set tMatrix = ..EnumerateMatrix()
-    Do $$$AssertEquals(tMatrix.%Size(), 92, "Matrix cardinality at Story 8.7 close = 4 providers × 23 tools (13 inspection + 10 search) = 92 pairs (got: " _ tMatrix.%Size() _ ")")
+    Do $$$AssertEquals(tMatrix.%Size(), 112, "Matrix cardinality at Story 14.0 close = 4 providers × 28 tools (17 inspection + 11 search) = 112 pairs (got: " _ tMatrix.%Size() _ ")")
 }
 
 /// <p><b>AC-5 — Dispatch policy gate.</b> Structurally verify that every

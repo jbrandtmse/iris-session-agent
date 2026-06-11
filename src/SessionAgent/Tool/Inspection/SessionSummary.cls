@@ -120,6 +120,8 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
         ; Story 11.2 — centralized prepare-failure gate.
         If ##class(SessionAgent.Tool.Base).EnsureIsErrorOnPrepareFailure(pResult, tCountSC, ..#ToolName) Quit
         Set tCountRs = tCountStmt.%Execute(tSessionId)
+        ; Story 14.0 — centralized execute-failure gate (cr-13-3).
+        If ##class(SessionAgent.Tool.Base).EnsureIsErrorOnExecuteFailure(pResult, tCountRs, ..#ToolName) Quit
         Set tRowCount = 0
         If tCountRs.%Next() {
             Set tRowCount = +tCountRs.%Get("rc")
@@ -141,6 +143,8 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
         ; Story 11.2 — centralized prepare-failure gate.
         If ##class(SessionAgent.Tool.Base).EnsureIsErrorOnPrepareFailure(pResult, tSC, ..#ToolName) Quit
         Set tRs = tStmt.%Execute(tSessionId)
+        ; Story 14.0 — centralized execute-failure gate (cr-13-3).
+        If ##class(SessionAgent.Tool.Base).EnsureIsErrorOnExecuteFailure(pResult, tRs, ..#ToolName) Quit
         Set tMsgCount = 0
         Set tErrCount = 0
         Set tDurationMs = 0
@@ -158,6 +162,8 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
         ; Story 11.2 — centralized prepare-failure gate.
         If ##class(SessionAgent.Tool.Base).EnsureIsErrorOnPrepareFailure(pResult, tSC2, ..#ToolName) Quit
         Set tRs2 = tStmt2.%Execute(tSessionId)
+        ; Story 14.0 — centralized execute-failure gate (cr-13-3).
+        If ##class(SessionAgent.Tool.Base).EnsureIsErrorOnExecuteFailure(pResult, tRs2, ..#ToolName) Quit
         Set tRootClass = ""
         If tRs2.%Next() {
             Set tRootClass = tRs2.%Get("root_class")

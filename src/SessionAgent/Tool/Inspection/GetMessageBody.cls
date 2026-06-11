@@ -169,6 +169,8 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
         ; Story 11.2 — centralized prepare-failure gate.
         If ##class(SessionAgent.Tool.Base).EnsureIsErrorOnPrepareFailure(pResult, tSCprep, ..#ToolName) Quit
         Set tRs = tStmt.%Execute(tMessageId)
+        ; Story 14.0 — centralized execute-failure gate (cr-13-3).
+        If ##class(SessionAgent.Tool.Base).EnsureIsErrorOnExecuteFailure(pResult, tRs, ..#ToolName) Quit
         Set tBodyClass = ""
         Set tBodyId = ""
         Set tFound = 0

@@ -154,6 +154,8 @@ ClassMethod Invoke(pCallerCtx As SessionAgent.Agent.CallerContext, pJsonArgs As 
             Quit
         }
         Set tRS = tStmt.%Execute(tProductionName, tConfigItemName)
+        ; Story 14.0 — centralized execute-failure gate (cr-13-3).
+        If ##class(SessionAgent.Tool.Base).EnsureIsErrorOnExecuteFailure(pResult, tRS, ..#ToolName) Quit
         If 'tRS.%Next() {
             Do pResult.structuredContent.%Set("production_name", tProductionName)
             Do pResult.structuredContent.%Set("config_item_name", tConfigItemName)

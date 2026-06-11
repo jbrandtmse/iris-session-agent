@@ -321,6 +321,48 @@ signal worth surfacing in the retro itself (meta-self-correction).
 
 *(Epic 12 AI-4 — wording tightened 2026-05-09: "or directly precede" → "in the SAME message". Originating incident: Epic 12 lead asked the retro question, user answered yes, THEN the lead emitted the 5-bullet battery — a sequencing violation the old wording permitted.)*
 
+### Post-sweep operator-state probe (Epic 14 retro AI-1)
+
+**Rule.** After ANY full test sweep (package run, per-class battery, or an
+interrupted/killed run) and BEFORE any smoke, battery, walkthrough, or
+completion claim that depends on live behavior, the lead MUST probe the live
+operator-config state against its canonical seed shape — minimally every
+`SessionAgent_Config.Agent` row (`Enabled`, `Provider`, `Model`,
+`EnvVarName`, `CredentialName`, `EndpointUrl`). Restore any drift before
+proceeding (prefer object access or the canonical-restore utility; mind the
+`$Char(0)` sentinel when SQL UPDATE is used).
+
+**Why.** Test classes correctly capture/restore live config rows in
+`OnBefore/OnAfterOneTest` — but a killed or interrupted test process never
+runs its restore. Epic 14 hit this class 4+ times: `Enabled=0` left on
+`message-search` (caught by the 14.5 browser smoke as a config-empty
+panel), `EnvVarName="PATH"` left on `session-inspection` (caught by the
+epic-end battery as a key-shape error), stale Epic 13 count locks at 14.0
+pre-state, and a mid-dev-state sweep (run 203) that read as 6 phantom
+regressions. Every incident was caught by an empirical gate; each cost an
+investigation cycle. Restores-in-teardown cannot fix this structurally —
+only a lead-side post-sweep probe can.
+
+**How to apply.** One SQL probe
+(`SELECT AgentName, Enabled, Provider, Model, EnvVarName, CredentialName,
+EndpointUrl FROM SessionAgent_Config.Agent`) compared against the
+AgentDefaults seed shape; drift → restore + note in the evidence log. The
+canonical-restore utility (`RestoreCanonicalAgentConfig()` — Epic 14 retro
+AI-1) is the preferred one-call restore once it ships in the next Story X.0.
+
+### Bullet-5 walkthroughs run browser-visible (Epic 14 retro AI-2)
+
+**Rule.** The Rule 6 bullet-5 functional walkthrough SHOULD be driven
+through the real browser via chrome-devtools MCP — visible navigation,
+typed questions, rendered answers, screenshots — rather than via
+server-side dispatch probes, whenever the epic's surface has a UI. The
+user explicitly values *watching* the agent behave; verifiability of live
+behavior was the lead-highlighted win of the Epic 14 close
+(self-correction tool-cards, the GQ-10 trap dodge, and cross-conversation
+schema-note recall were observed in the browser, not claimed from
+envelopes). Server-side dispatch remains acceptable for non-UI surfaces
+and for mechanical pre-checks (mock-matrix runs).
+
 ## Rule 7: Operator setup at sprint planning, not at retro
 
 **Rule.** During Step 1 of `/epic-cycle` (sprint planning), the lead identifies every operator-side prerequisite the epic's stories will require — API keys, SSL configurations, env-vars, credential rows, `Enabled=1` toggles, RBAC grants — and asks the user for them upfront. Captured in `_bmad-output/implementation-artifacts/epic-{N}-operator-state.md` so credentials survive cycle resumes.

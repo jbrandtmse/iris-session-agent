@@ -53,3 +53,6 @@
 2026-06-11T16:15:03Z	Story 14.6	smoke_complete	method=api result=pass iterations=1 defects_caught=0 evidence=EXPLAIN-SELECT=1planrow;EXPLAIN-DELETE=not_select model=claude-fable-5
 2026-06-11T16:23:03Z	Epic 14	epic_summary	stories=7 total_high=2 total_med=31 total_low=33 total_smoke_defects=2 rework_events=3 sweep_final=629/629/0 tools=28to35 fable_stage_count=all input_tokens_total=na output_tokens_total=~3.9M
 2026-06-11T16:23:03Z	Epic 14	battery_bullets_1to4_complete	artifacts=35tools-0emptydesc audit_triples=48-incl-SchemaNoteWrite live=openai-2-dynsql-selfcorrect-audit309-310 sweep=629/629/0 credentials=3x-resolvable defect_caught=EnvVarName-PATH-pollution-restored model=claude-fable-5
+2026-06-11T21:39:06Z	Epic 14	walkthrough_complete	method=browser scope=live+multiprovider+comprehensive gq=13/13 schema_note=pass explain=pass providers=openai+anthropic+gemini+ollama-wire defects_caught=4 fixes=1(bare-host-v1) sha=7e86495 evidence=evidence/walkthrough-*.png model=claude-fable-5
+2026-06-11T21:39:06Z	Epic 14	battery_bullet5_complete	user_scoped=all-three-additive driven_via=chrome-devtools sweep_final=630/630/0
+2026-06-11T21:48:44Z	Epic 14	retrospective_complete	path=_bmad-output/implementation-artifacts/epic-14-retro-2026-06-11.md action_items=5 rules_codified=2 readiness=production-ready model=claude-fable-5

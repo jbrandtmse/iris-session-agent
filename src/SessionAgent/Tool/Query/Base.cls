@@ -13,19 +13,26 @@
 /// literals AND outside comments are rejected (trailing semicolons
 /// tolerated; a semicolon inside a <code>/* */</code> or <code>--</code>
 /// comment does not false-reject a single SELECT); a leading
-/// <code>EXPLAIN</code> keyword is rejected, comment-aware so a
-/// <code>/* c */ EXPLAIN</code> prefix cannot smuggle it past (see
-/// empirical note below).</li>
+/// <code>EXPLAIN</code> keyword is ALLOWED only when the keyword that
+/// follows it is <code>SELECT</code> (Story 14.6 plan-reasoning
+/// allowance — any case, comment/whitespace-prefixed and
+/// comment-interleaved handled identically); <code>EXPLAIN</code> of
+/// any non-SELECT inner statement (INSERT / UPDATE / DELETE / WITH /
+/// parenthesized) is rejected — the conservative
+/// reject-inner-write default (see empirical note below).</li>
 /// <li><b><code>%Prepare</code></b> — failure routes through
 /// <method>SessionAgent.Tool.Base.EnsureIsErrorOnPrepareFailure</method>
 /// plus an appended SQLCODE/symptom <code>hint</code> drawn from the
 /// knowledge corpus's <code>diagnostic-checklist</code> article.</li>
 /// <li><b><code>statementType</code> gate</b> — the compiler-level
-/// read-only gate. <code>%Metadata.statementType '= 1</code> (1 = SELECT
+/// read-only gate. Only <code>%Metadata.statementType = 1</code> (SELECT
 /// per <code>irislib/%SQL/StatementMetadata.cls</code>; re-verified
 /// empirically on this install: SELECT=1, INSERT=2, UPDATE=3, DELETE=4,
-/// CALL=45) returns a <code>render_strategy:"not_select"</code> error
-/// envelope naming the rejected statement type.</li>
+/// CALL=45) or <code>= 79</code> (the documented EXPLAIN type — accepted
+/// defensively for builds that report it; THIS build reports 1 for
+/// EXPLAIN) passes; anything else returns a
+/// <code>render_strategy:"not_select"</code> error envelope naming the
+/// rejected statement type.</li>
 /// <li><b>Execute</b> — failure routes through
 /// <method>SessionAgent.Tool.Base.EnsureIsErrorOnExecuteFailure</method>
 /// plus the SQLCODE hint.</li>
@@ -40,12 +47,22 @@
 /// <code>elapsed_ms</code> in <code>structuredContent</code>.</li>
 /// </ol>
 ///
-/// <p><b>EXPLAIN empirical note (Task 0, 2026-06-11).</b> On this IRIS
-/// build <code>EXPLAIN SELECT ...</code> prepares with
-/// <code>statementType = 1</code>, NOT the documented 79 — the
-/// statementType gate alone cannot reject it, so stage 1 rejects the
-/// leading <code>EXPLAIN</code> keyword explicitly. Story 14.6 (stretch)
-/// owns any future EXPLAIN allowance.</p>
+/// <p><b>EXPLAIN empirical note (Story 14.3 Task 0 + Story 14.6 Task 0,
+/// 2026-06-11).</b> On this IRIS build EVERY <code>EXPLAIN ...</code>
+/// statement prepares with <code>statementType = 1</code>, NOT the
+/// documented 79 — the statementType gate cannot distinguish EXPLAIN
+/// from SELECT, so stage 1 owns the EXPLAIN policy. Story 14.6 probes:
+/// <code>EXPLAIN SELECT</code> executes plan-only (one row, one
+/// <code>Plan</code> column of XML showplan); <code>EXPLAIN INSERT</code>
+/// prepares but FAILS at execute (SQLCODE -481) and writes nothing;
+/// <code>EXPLAIN DELETE</code> against a MATCHING row executes, returns
+/// a plan row, and the target row SURVIVES (plan-only proven). Policy:
+/// <code>EXPLAIN SELECT</code> is allowed; EXPLAIN of any non-SELECT
+/// inner statement is rejected at stage 1 by inner keyword — the
+/// conservative reject-inner-write default, because plan-only semantics
+/// are a per-build empirical premise (the 1-vs-79 drift proves builds
+/// vary) and the -481 execute failure makes the allowed path useless
+/// for writes anyway.</p>
 ///
 /// <p><b>Elapsed-guard semantics — stated honestly.</b> In-process
 /// dynamic SQL cannot be preempted mid-statement. The guard fires
@@ -153,9 +170,13 @@ ClassMethod RunGuardedSelect(pSql As %String, pMaxRows As %Integer = 0, Output p
             Quit
         }
 
-        ; ---- Stage 3: statementType compiler gate (the read-only gate). ----
+        ; ---- Stage 3: statementType compiler gate (the read-only gate).
+        ;      1 = SELECT; 79 = documented EXPLAIN type, accepted
+        ;      defensively (Story 14.6 — this build reports 1 for
+        ;      EXPLAIN, but a build that reports 79 must not reject the
+        ;      stage-1-approved EXPLAIN SELECT). ----
         Set tType = tStmt.%Metadata.statementType
-        If tType '= 1 {
+        If (tType '= 1) && (tType '= 79) {
             Set tTypeName = ..StatementTypeName(tType)
             Do pResult.%Set("isError", 1, "boolean")
             Set pResult.content.%Get(0).text = "Tool '" _ ..#ToolName _ "' rejected non-SELECT statement: " _ tTypeName _ " (statementType=" _ tType _ "). Only a single SELECT is allowed."
@@ -248,12 +269,17 @@ ClassMethod RunGuardedSelect(pSql As %String, pMaxRows As %Integer = 0, Output p
 /// <var>pError</var> to a non-empty message on rejection:</p>
 /// <ul>
 /// <li>Empty/whitespace-only input.</li>
-/// <li>Leading <code>EXPLAIN</code> keyword (Task 0: EXPLAIN prepares
-/// as statementType=1 on this build, so the keyword check is the
-/// honest rejection point). The leading-token scan is COMMENT-AWARE —
-/// a block- or line-comment prefix (<code>/* c */ EXPLAIN ...</code>,
-/// <code>-- c\nEXPLAIN ...</code>) does NOT smuggle EXPLAIN past the
-/// keyword check (Story 14.3 review fix cr-14-3-A).</li>
+/// <li>Leading <code>EXPLAIN</code> keyword followed by anything other
+/// than <code>SELECT</code> (Story 14.6 allowance: <code>EXPLAIN
+/// SELECT ...</code> passes — plan-only, write-proofed; <code>EXPLAIN
+/// INSERT/UPDATE/DELETE/WITH/(...)</code> is rejected — the
+/// conservative reject-inner-write default; EXPLAIN prepares as
+/// statementType=1 on this build, so this keyword check is the honest
+/// policy point). The token scan is COMMENT-AWARE for BOTH tokens — a
+/// block- or line-comment prefix (<code>/* c */ EXPLAIN ...</code>,
+/// <code>-- c\nEXPLAIN ...</code>) or an interleaved comment
+/// (<code>EXPLAIN /* c */ INSERT</code>) cannot smuggle a shape past
+/// the check (Story 14.3 review fix cr-14-3-A, extended by 14.6).</li>
 /// <li>A semicolon outside string literals AND outside comments that is
 /// not trailing — multi-statement input. Semicolons INSIDE
 /// <code>'...'</code> literals (with <code>''</code> escape-doubling
@@ -287,18 +313,22 @@ ClassMethod ValidateSingleStatement(pSql As %String, Output pError As %String, O
     }
     ; --- Comment-aware single-pass scan. Tracks string-literal, block-
     ;     comment (/* */) and line-comment (--) state. Captures the first
-    ;     significant SQL token (for the EXPLAIN keyword check, so a
-    ;     comment prefix cannot hide it) and flags a bare semicolon (a
-    ;     statement separator) only when it sits outside all three states
-    ;     (so a comment carrying a ';' does not false-reject a single
-    ;     SELECT). ---
+    ;     TWO significant SQL keywords (for the EXPLAIN allowance check —
+    ;     Story 14.6: `EXPLAIN SELECT` passes, `EXPLAIN <anything else>`
+    ;     is rejected; comments are transparent BETWEEN tokens so neither
+    ;     a comment prefix nor an interleaved comment can hide a shape)
+    ;     and flags a bare semicolon (a statement separator) only when it
+    ;     sits outside all three states (so a comment carrying a ';' does
+    ;     not false-reject a single SELECT). ---
     Set tInString = 0
     Set tInBlock = 0
     Set tInLine = 0
     Set tLen = $Length(tSql)
     Set tPos = 1
-    Set tFirstToken = ""
-    Set tTokenDone = 0
+    Set tTok1 = ""
+    Set tTok2 = ""
+    Set tCur = ""
+    Set tCaptureDone = 0
     While tPos <= tLen {
         Set tChar = $Extract(tSql, tPos)
         Set tNext = $Extract(tSql, tPos + 1)
@@ -329,25 +359,35 @@ ClassMethod ValidateSingleStatement(pSql As %String, Output pError As %String, O
             Continue
         }
         ; --- outside string + comments ---
-        ; A comment ends an IN-PROGRESS token, but a LEADING comment
-        ; (before any token) is transparent — skip it and keep looking
-        ; for the first keyword after it, so `/* c */ EXPLAIN ...` and
-        ; `-- c\nEXPLAIN ...` are still caught by the EXPLAIN check.
+        ; A comment ends an IN-PROGRESS token but is otherwise
+        ; TRANSPARENT — the scan keeps looking for the next keyword, so
+        ; `/* c */ EXPLAIN ...`, `-- c\nEXPLAIN ...` AND
+        ; `EXPLAIN /* c */ INSERT` are all seen by the keyword checks.
         If (tChar = "/") && (tNext = "*") {
             Set tInBlock = 1
-            If tFirstToken '= "" Set tTokenDone = 1
+            If (tCur '= "") && ('tCaptureDone) {
+                If tTok1 = "" { Set tTok1 = tCur } Else { Set tTok2 = tCur  Set tCaptureDone = 1 }
+                Set tCur = ""
+            }
             Set tPos = tPos + 2
             Continue
         }
         If (tChar = "-") && (tNext = "-") {
             Set tInLine = 1
-            If tFirstToken '= "" Set tTokenDone = 1
+            If (tCur '= "") && ('tCaptureDone) {
+                If tTok1 = "" { Set tTok1 = tCur } Else { Set tTok2 = tCur  Set tCaptureDone = 1 }
+                Set tCur = ""
+            }
             Set tPos = tPos + 2
             Continue
         }
         If tChar = "'" {
             Set tInString = 1
-            Set tTokenDone = 1
+            If (tCur '= "") && ('tCaptureDone) {
+                If tTok1 = "" { Set tTok1 = tCur } Else { Set tTok2 = tCur  Set tCaptureDone = 1 }
+                Set tCur = ""
+            }
+            Set tCaptureDone = 1
             Set tPos = tPos + 1
             Continue
         }
@@ -356,26 +396,46 @@ ClassMethod ValidateSingleStatement(pSql As %String, Output pError As %String, O
             Set pStrategy = "multi_statement"
             Quit
         }
-        ; First significant token capture (alphabetic run) — for the
-        ; EXPLAIN keyword check. Whitespace before the token is skipped;
+        ; Keyword capture (alphabetic runs) — up to two tokens for the
+        ; EXPLAIN allowance check. Whitespace between tokens is skipped;
         ; a non-alpha significant char (e.g. '(' for a parenthesized
-        ; SELECT) ends the attempt — the statementType gate handles those.
-        If 'tTokenDone {
+        ; SELECT) ends the capture — the statementType gate (and, for
+        ; EXPLAIN, the SELECT-only inner-keyword rule) handles those.
+        If 'tCaptureDone {
             If tChar?1A {
-                Set tFirstToken = tFirstToken _ tChar
-            } ElseIf tFirstToken '= "" {
-                Set tTokenDone = 1
-            } ElseIf $ZStrip(tChar, "*WC") '= "" {
-                Set tTokenDone = 1
+                Set tCur = tCur _ tChar
+            } ElseIf $ZStrip(tChar, "*WC") = "" {
+                ; whitespace — completes an in-progress token.
+                If tCur '= "" {
+                    If tTok1 = "" { Set tTok1 = tCur } Else { Set tTok2 = tCur  Set tCaptureDone = 1 }
+                    Set tCur = ""
+                }
+            } Else {
+                ; significant non-alpha — completes the token AND ends capture.
+                If tCur '= "" {
+                    If tTok1 = "" { Set tTok1 = tCur } Else { Set tTok2 = tCur }
+                    Set tCur = ""
+                }
+                Set tCaptureDone = 1
             }
         }
         Set tPos = tPos + 1
     }
     If pError '= "" Quit ""
-    If $ZConvert(tFirstToken, "U") = "EXPLAIN" {
-        Set pError = "EXPLAIN is not allowed; only a single SELECT statement is accepted"
-        Set pStrategy = "not_select"
-        Quit ""
+    ; End-of-input completes a trailing in-progress token.
+    If (tCur '= "") && ('tCaptureDone) {
+        If tTok1 = "" { Set tTok1 = tCur } Else { Set tTok2 = tCur }
+    }
+    ; --- Story 14.6 EXPLAIN allowance: EXPLAIN SELECT passes; EXPLAIN of
+    ;     any other inner shape (INSERT/UPDATE/DELETE/WITH/parenthesized)
+    ;     is rejected — the conservative reject-inner-write default
+    ;     (plan-only semantics are a per-build premise; see class doc). ---
+    If $ZConvert(tTok1, "U") = "EXPLAIN" {
+        If $ZConvert(tTok2, "U") '= "SELECT" {
+            Set pError = "EXPLAIN is allowed only for a single SELECT statement (EXPLAIN SELECT ...); EXPLAIN of INSERT/UPDATE/DELETE or any other non-SELECT shape is rejected"
+            Set pStrategy = "not_select"
+            Quit ""
+        }
     }
     Quit tSql
 }

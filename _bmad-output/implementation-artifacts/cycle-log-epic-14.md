@@ -44,3 +44,10 @@
 2026-06-11T14:48:43Z	Story 14.5	qa_complete	model=claude-fable-5 tests_added=3 first_run_failures=0 clarifications=0 closing_sections_present=true sweep=624/624/0 output_tokens=171752
 2026-06-11T15:11:07Z	Story 14.5	cr_complete	model=claude-fable-5 resolved=7 deferred=1 dismissed=9 high=1 med=3 low=3 clarifications=0 closing_sections_present=true sweep=624/624/0 output_tokens=205021
 2026-06-11T15:16:54Z	Story 14.5	smoke_complete	method=browser result=pass iterations=2 defects_caught=1 evidence=_bmad-output/implementation-artifacts/evidence/smoke-14-5-welcome-rendered.png+GetSystemPrompt-card-verified notes=message-search-Enabled=0-ambient-test-pollution-restored model=claude-fable-5
+2026-06-11T15:17:39Z	Story 14.5	committed	sha=e492e8c submodules=
+2026-06-11T15:19:16Z	Story 14.6	story_created	path=_bmad-output/implementation-artifacts/14-6-explain-plan-reasoning-support-stretch.md spec_lines=77 model=claude-fable-5 notes=stretch-gate-condition-met-14.0-14.5-clean
+2026-06-11T15:45:48Z	Story 14.6	dev_complete	model=claude-fable-5 files=10 tests_added=2 sweep=626/626/0 clarifications=0 closing_sections_present=true output_tokens=281074
+2026-06-11T15:45:48Z	Story 14.6	adr_verifications_complete	result=none_required model=claude-fable-5
+2026-06-11T15:56:32Z	Story 14.6	qa_complete	model=claude-fable-5 tests_added=3 first_run_failures=0 clarifications=0 closing_sections_present=true sweep=629/629/0 output_tokens=180826
+2026-06-11T16:14:25Z	Story 14.6	cr_complete	model=claude-fable-5 resolved=1 deferred=0 dismissed=2 high=0 med=1 low=0 clarifications=0 closing_sections_present=true sweep=629/629/0 output_tokens=220887
+2026-06-11T16:15:03Z	Story 14.6	smoke_complete	method=api result=pass iterations=1 defects_caught=0 evidence=EXPLAIN-SELECT=1planrow;EXPLAIN-DELETE=not_select model=claude-fable-5

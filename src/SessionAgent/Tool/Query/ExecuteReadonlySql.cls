@@ -45,7 +45,7 @@ Class SessionAgent.Tool.Query.ExecuteReadonlySql Extends SessionAgent.Tool.Query
 
 Parameter ToolName As %String = "execute_readonly_sql";
 
-Parameter Description As %String = "Run a single read-only SQL SELECT statement against this namespace and return capped tabular results. Use for open-ended analytical questions the purpose-built tools do not cover (aggregates, custom joins, AdditionalInfo pivots). Consult get_query_knowledge BEFORE authoring SQL - the IRIS dialect has silent traps. Non-SELECT statements (INSERT/UPDATE/DELETE/CALL/DDL) are rejected by a compiler-level gate; results are row-capped and time-guarded.";
+Parameter Description As %String = "Run a single read-only SQL SELECT statement against this namespace and return capped tabular results. Use for open-ended analytical questions the purpose-built tools do not cover (aggregates, custom joins, AdditionalInfo pivots). Consult get_query_knowledge BEFORE authoring SQL - the IRIS dialect has silent traps. EXPLAIN SELECT is also accepted for query-plan reasoning on slow queries (plan-only; EXPLAIN of a write statement is rejected). Non-SELECT statements (INSERT/UPDATE/DELETE/CALL/DDL) are rejected by a compiler-level gate; results are row-capped and time-guarded.";
 
 Parameter MutatesState As %Boolean = 0;
 
@@ -60,7 +60,7 @@ ClassMethod GetInputSchema() As %DynamicObject
         "properties": {
             "sql": {
                 "type": "string",
-                "description": "A single SQL SELECT statement. Always include a time-window predicate and TOP N on exploratory queries. INSERT/UPDATE/DELETE/CALL are rejected."
+                "description": "A single SQL SELECT statement, or EXPLAIN SELECT for a query plan. Always include a time-window predicate and TOP N on exploratory queries. INSERT/UPDATE/DELETE/CALL are rejected, including under EXPLAIN."
             },
             "max_rows": {
                 "type": "integer",

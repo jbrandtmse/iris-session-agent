@@ -189,5 +189,5 @@ development_status:
   14-3-execute-readonly-sql-tool-query-base-invariant-test: done
   14-4-learned-schema-notes-digest-injection: done
   14-5-prompt-methodology-card-welcome-text-golden-question-eval: done
-  14-6-explain-plan-reasoning-support-stretch: backlog
+  14-6-explain-plan-reasoning-support-stretch: done
   epic-14-retrospective: optional

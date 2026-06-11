@@ -463,18 +463,18 @@ These tools run on the Message Viewer screen and find sessions matching natural-
 
 | Tool | Description |
 |---|---|
-| `execute_readonly_sql` | Run a single LLM-authored SQL `SELECT` under a compiler-level read-only gate and return capped tabular results *(Epic 14; exposed to both agents)* |
+| `execute_readonly_sql` | Run a single LLM-authored SQL `SELECT` — or `EXPLAIN SELECT` for query-plan reasoning — under a compiler-level read-only gate and return capped tabular results *(Epic 14; exposed to both agents)* |
 
 `execute_readonly_sql` answers the long tail of open-ended analytical trace questions the purpose-built tools do not cover (aggregates, custom joins, `AdditionalInfo` pivots). Every call routes through the `SessionAgent.Tool.Query.Base` guard pipeline:
 
-1. **Single-statement validation** — multi-statement input (a semicolon outside string literals) is rejected; a trailing semicolon is tolerated; `EXPLAIN` is rejected by keyword (on this IRIS build `EXPLAIN SELECT` prepares with `statementType=1`, so the keyword check is the honest rejection point).
-2. **`statementType` compiler gate** — after `%Prepare`, any statement whose `%Metadata.statementType` is not `1` (SELECT) is rejected pre-execution with an envelope naming the statement type (`INSERT`/`UPDATE`/`DELETE`/`CALL`/DDL). This is a compiler-level decision, stronger than any regex.
+1. **Single-statement validation** — multi-statement input (a semicolon outside string literals) is rejected; a trailing semicolon is tolerated; `EXPLAIN SELECT` is **allowed** (Story 14.6 — plan-only: it returns the XML showplan as a single `Plan` column row and mutates nothing, empirically write-proofed), while `EXPLAIN` of a write statement (`EXPLAIN INSERT/UPDATE/DELETE`, or any non-SELECT shape after `EXPLAIN`) is rejected by a comment-aware inner-keyword check (on this IRIS build every `EXPLAIN` statement prepares with `statementType=1`, so the keyword check is the honest policy point).
+2. **`statementType` compiler gate** — after `%Prepare`, any statement whose `%Metadata.statementType` is not `1` (SELECT) or `79` (the documented EXPLAIN type — accepted defensively for builds that report it) is rejected pre-execution with an envelope naming the statement type (`INSERT`/`UPDATE`/`DELETE`/`CALL`/DDL). This is a compiler-level decision, stronger than any regex.
 3. **Caps** — row cap (default 50, hard max 200), total result character budget (32,000 chars) with an explicit `truncated` marker, and an elapsed guard (default 30 s, hard max 60 s) checked **between fetch iterations**. The guard does not preempt a single long-running statement — that is bounded only by the Web Gateway's 300-second backstop.
 4. **Hint-bearing error envelopes** — SQL prepare/execute failures append a `SQLCODE <n> / symptom -> fix` hint read live from the knowledge corpus's `diagnostic-checklist` article, steering the agent to the corrected query shape.
 
 **Documented, accepted residual risk:** a `SELECT` statement can invoke SQL-projected class methods (stored functions) that have side effects — the gate proves the outer statement is a SELECT, not that every function it references is pure. Mitigations: the `SessionAgent_ReadOnly` RBAC role on the executing context, 100% ToolCall audit (the audit row's args JSON carries the full SQL text), and the read-only prompt covenant. A restricted-privilege execution job is a possible future hardening and is explicitly out of scope for v1.
 
-The CI invariant test `SessionAgent.Test.ReadOnlySqlInvariantTest` source-scans every concrete `SessionAgent.Tool.Query.*` tool and fails any whose `Invoke` does not route through the guarded pipeline (or that calls `%Prepare`/`%Execute`/`&sql(` directly); the `SessionAgent.Test.ReadOnlySqlProofBatteryTest` battery proves INSERT/UPDATE/DELETE/CALL/EXPLAIN rejection (including a write-proof row-count probe), the caps, and the hint map.
+The CI invariant test `SessionAgent.Test.ReadOnlySqlInvariantTest` source-scans every concrete `SessionAgent.Tool.Query.*` tool and fails any whose `Invoke` does not route through the guarded pipeline (or that calls `%Prepare`/`%Execute`/`&sql(` directly); the `SessionAgent.Test.ReadOnlySqlProofBatteryTest` battery proves INSERT/UPDATE/DELETE/CALL rejection, the `EXPLAIN SELECT` allowance (plan envelope), and EXPLAIN-of-write rejection (including write-proof row-count probes), the caps, and the hint map.
 
 ### Query Knowledge corpus *(Epic 14)*
 

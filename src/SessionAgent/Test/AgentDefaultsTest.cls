@@ -123,6 +123,9 @@ Method TestMethodologyCardStaticContent()
     Do $$$AssertTrue(tCard [ "time-bound exploratory queries", "trap: always time-bound (AC-1b)")
     Do $$$AssertTrue(tCard [ "TOP-N preview", "trap: TOP-N preview habit (AC-1b)")
     Do $$$AssertTrue(tCard [ "ID equals its SessionId", "trap: ID = SessionId session anchor (AC-1b)")
+    ; Story 14.6 AC-2b — the digit-free EXPLAIN plan-reasoning line.
+    Do $$$AssertTrue(tCard [ "run EXPLAIN on the SELECT", "14.6: EXPLAIN plan-reasoning line present")
+    Do $$$AssertTrue(tCard [ "topic=performance", "14.6: EXPLAIN line points at the performance topic")
     ; (c) static-content discipline: ZERO digit characters — locks
     ; "no digits that change run-to-run, no tool-count claims".
     Do $$$AssertEquals($Translate(tCard, "0123456789", ""), tCard, "card contains NO digit characters (AC-1 static-content lock)")

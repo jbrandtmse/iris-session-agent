@@ -340,6 +340,39 @@ Method TestKeywordSpecialCharactersRobust()
     Quit
 }
 
+/// <p><b>Story 14.6 AC-2 QA GAP — plan-reading guidance regression
+/// lock.</b> Retrieves the amended <code>cost-vs-runtime</code> article
+/// through the REAL retrieval path (Registry dispatch e2e; the corpus is
+/// re-seeded by <method>OnBeforeOneTest</method>, so the lock covers the
+/// SeedContent XData → Seed → retrieval round trip). The plan-READING
+/// markers the 14.6 amendment added must survive any future body edit:
+/// the EXPLAIN result shape (one Plan column of XML
+/// <code>&lt;plans&gt;</code>), the access-path markers ('Read extent
+/// bitmap' / 'Read master map'), the temp-file no-short-circuit cue, and
+/// the SELECT-only allowance statement. <code>cost-vs-runtime</code>
+/// must rank FIRST for the plan-reading query (it is the only
+/// performance article keyworded 'showplan' + 'read a plan' — probed
+/// live 2026-06-11).</p>
+Method TestPerformancePlanReadingGuidanceRetrievable()
+{
+    Set tArgs = {"topic":"performance", "keywords":"read a plan access path showplan", "max_results":3}
+    Set tResult = ""
+    Set tSC = ##class(SessionAgent.Tool.Registry).Dispatch("get_query_knowledge", ..BuildCtx(), tArgs, .tResult)
+    Do $$$AssertStatusOK(tSC, "Registry.Dispatch returns $$$OK")
+    Do $$$AssertEquals(+tResult.%Get("isError"), 0, "no error envelope")
+    Do $$$AssertEquals(tResult.structuredContent.%Get("render_strategy"), "ok", "render_strategy='ok'")
+    Do $$$AssertTrue(tResult.structuredContent.%Get("article_count") >= 1, "at least one performance article returned")
+    Set tFirst = tResult.structuredContent.articles.%Get(0)
+    Do $$$AssertEquals(tFirst.%Get("slug"), "cost-vs-runtime", "cost-vs-runtime ranks first for the plan-reading query")
+    Set tBody = tFirst.%Get("body")
+    Do $$$AssertTrue(tBody [ "<plans>", "body teaches the EXPLAIN result shape (XML <plans> document)")
+    Do $$$AssertTrue(tBody [ "Read extent bitmap", "body names the 'Read extent bitmap' access-path marker")
+    Do $$$AssertTrue(tBody [ "Read master map", "body names the 'Read master map' cost-floor marker")
+    Do $$$AssertTrue(tBody [ "temp file", "body carries the temp-file no-short-circuit cue")
+    Do $$$AssertTrue(tBody [ "only EXPLAIN SELECT is accepted", "body states the SELECT-only EXPLAIN allowance")
+    Quit
+}
+
 /// <p><b>Story 14.5 AC-4 QA gap coverage —
 /// <CLASS>SessionAgent.Test.GoldenQuestionDriver</CLASS> smoke.</b> The
 /// driver gates the epic-end Rule 6 battery (it is the mechanical

@@ -3,7 +3,8 @@
 /// <CLASS>SessionAgent.Tool.Query.Base</CLASS>. This is the SECURITY story's
 /// gap layer: the dev battery
 /// (<CLASS>SessionAgent.Test.ReadOnlySqlProofBatteryTest</CLASS>) proves the
-/// bare INSERT/UPDATE/DELETE/CALL/EXPLAIN cases; this class proves the
+/// bare INSERT/UPDATE/DELETE/CALL cases plus the Story 14.6 EXPLAIN
+/// SELECT allowance and EXPLAIN-of-write rejection; this class proves the
 /// statementType compiler gate (L2) holds against the adversarial INPUT
 /// shapes an LLM (or a prompt-injected operator request) can emit to try to
 /// smuggle a write past it — comment prefixes, case variation, leading
@@ -153,7 +154,7 @@ Method TestLeadingWhitespaceControlChars()
 
 /// <p>GAP — DDL / DCL leading keywords (DROP, CREATE, TRUNCATE, GRANT,
 /// TUNE) are each rejected pre-execution by the statementType gate, even
-/// though only INSERT/UPDATE/DELETE/CALL/EXPLAIN were in the dev battery.
+/// though only INSERT/UPDATE/DELETE/CALL were in the dev battery.
 /// Proves the gate is a deny-by-default allow-list (only type 1 passes),
 /// not a deny-list of known-bad keywords. Write-proof: the target table
 /// survives the DROP attempt.</p>
@@ -263,30 +264,117 @@ Method TestVeryLongSqlInputHandled()
     Quit
 }
 
-/// <p>GAP / read-only-invariant lock — comment-prefixed EXPLAIN
-/// (<code>/* c */ EXPLAIN SELECT ...</code>) bypasses the stage-1
-/// leading-keyword check (the first token is the comment, not EXPLAIN)
-/// and IRIS compiles it as statementType=1, so it executes and returns
-/// a query plan. This is NOT a read-only violation — EXPLAIN produces a
-/// plan, mutates nothing — but it DOES leak past the EXPLAIN-rejection
-/// nicety. This test locks the SECURITY-meaningful invariant: regardless
-/// of whether the keyword check catches it, the dispatch mutates NO
-/// state. (Bare-keyword <code>EXPLAIN</code>, lower/upper, IS still
-/// rejected — covered in the dev battery; see the test-summary finding
-/// for the comment-prefix gap.)</p>
+/// <p>GAP / read-only-invariant lock — EXPLAIN SELECT in any spelling
+/// (comment-prefixed or bare) mutates NO state. Story 14.6 flipped the
+/// allowance: both shapes now return the plan ok-envelope (single
+/// <code>Plan</code> column) instead of being rejected — and the
+/// security-meaningful invariant this test has always locked (the
+/// dispatch mutates NOTHING) holds unchanged. The test was designed to
+/// survive exactly this flip (see the pre-14.6 doc-comment history).</p>
 Method TestCommentPrefixedExplainStaysReadOnly()
 {
     Do $$$AssertEquals(..SentinelCount(), 0, "pre: sentinel absent")
     ; This path is read-only whether accepted (plan) or rejected — assert
-    ; only the security-meaningful truth (no mutation), so the test holds
-    ; under either a future keyword-check fix or the 14.6 EXPLAIN allowance.
+    ; the security-meaningful truth (no mutation) PLUS the 14.6 allowance.
     Set tResult = ..RunTool("/* peek */ EXPLAIN SELECT TOP 1 ID FROM Ens.MessageHeader")
     Do $$$AssertTrue($IsObject(tResult), "EXPLAIN-comment dispatch returns an envelope (no crash)")
+    Do $$$AssertEquals(+tResult.%Get("isError"), 0, "comment-prefixed EXPLAIN SELECT allowed (14.6)")
+    Do $$$AssertEquals(tResult.structuredContent.%Get("render_strategy"), "ok", "comment-prefixed EXPLAIN render_strategy='ok'")
     Do $$$AssertEquals(..SentinelCount(), 0, "WRITE-PROOF: comment-prefixed EXPLAIN mutated nothing")
-    ; Bare EXPLAIN keyword (no comment prefix) remains rejected at validation.
+    ; Bare EXPLAIN SELECT — allowed since 14.6, returns the plan envelope.
     Set tBare = ..RunTool("EXPLAIN SELECT TOP 1 ID FROM Ens.MessageHeader")
-    Do $$$AssertEquals(+tBare.%Get("isError"), 1, "bare EXPLAIN still rejected")
-    Do $$$AssertEquals(tBare.structuredContent.%Get("render_strategy"), "not_select", "bare EXPLAIN render_strategy='not_select'")
+    Do $$$AssertEquals(+tBare.%Get("isError"), 0, "bare EXPLAIN SELECT allowed (14.6)")
+    Do $$$AssertEquals(tBare.structuredContent.columns.%Get(0), "Plan", "bare EXPLAIN returns the Plan column")
+    Do $$$AssertEquals(..SentinelCount(), 0, "WRITE-PROOF: bare EXPLAIN SELECT mutated nothing")
+    Quit
+}
+
+/// <p>Story 14.6 GAP — EXPLAIN of a WRITE statement is rejected by the
+/// comment-aware inner-keyword check in every smuggling shape: bare,
+/// comment-interleaved (<code>EXPLAIN /* c */ INSERT</code>),
+/// comment-prefixed (<code>/* c */ EXPLAIN INSERT</code>), mixed-case,
+/// and the CTE shape (<code>EXPLAIN WITH ... INSERT</code> — inner WITH
+/// is rejected outright, the conservative reject-inner-write default).
+/// Write-proof: the sentinel row never lands.</p>
+Method TestExplainOfWriteRejectedAllShapes()
+{
+    Do $$$AssertEquals(..SentinelCount(), 0, "pre: sentinel absent")
+
+    Set tIns = "INSERT INTO Ens_Util.Log (ConfigName) VALUES ('" _ ..#SENTINEL _ "')"
+    Set tResult = ..RunTool("EXPLAIN " _ tIns)
+    Do ..AssertNotSelect(tResult, "EXPLAIN INSERT")
+
+    Set tResult = ..RunTool("EXPLAIN /* harmless */ " _ tIns)
+    Do ..AssertNotSelect(tResult, "EXPLAIN /*c*/ INSERT (comment-interleaved)")
+
+    Set tResult = ..RunTool("/* harmless */ EXPLAIN " _ tIns)
+    Do ..AssertNotSelect(tResult, "/*c*/ EXPLAIN INSERT (comment-prefixed)")
+
+    Set tResult = ..RunTool("eXpLaIn " _ tIns)
+    Do ..AssertNotSelect(tResult, "mixed-case EXPLAIN INSERT")
+
+    Set tResult = ..RunTool("EXPLAIN WITH t AS (SELECT 1 AS X) INSERT INTO Ens_Util.Log (ConfigName) SELECT '" _ ..#SENTINEL _ "' FROM t")
+    Do ..AssertNotSelect(tResult, "EXPLAIN WITH-wrapped INSERT (inner WITH rejected)")
+
+    Set tResult = ..RunTool("EXPLAIN UPDATE Ens.MessageHeader SET Status = 1 WHERE ID = -1")
+    Do ..AssertNotSelect(tResult, "EXPLAIN UPDATE")
+
+    Set tResult = ..RunTool("explain delete from Ens.MessageHeader where ID = -1")
+    Do ..AssertNotSelect(tResult, "lowercase explain delete")
+
+    Do $$$AssertEquals(..SentinelCount(), 0, "WRITE-PROOF: no EXPLAIN-of-write shape ever wrote the sentinel")
+    Quit
+}
+
+/// <p>Story 14.6 QA GAP — EXPLAIN edge shapes beyond the dev battery's
+/// write-keyword matrix, each probed live on HSCUSTOM 2026-06-11 before
+/// locking: nested <code>EXPLAIN EXPLAIN SELECT</code> (second effective
+/// keyword is EXPLAIN, not SELECT — rejected), <code>EXPLAIN CALL</code>
+/// (procedure invocation under EXPLAIN — rejected), parenthesized
+/// <code>EXPLAIN (SELECT ...)</code> (token capture ends at '(' with no
+/// second keyword — rejected), and <code>EXPLAIN WITH ... SELECT</code>
+/// (a READ-ONLY inner shape the conservative reject-inner-write default
+/// still rejects — this lock documents the rejection as intentional
+/// policy, not an oversight); plus the semicolon interactions: a
+/// trailing semicolon after EXPLAIN SELECT is tolerated (plan
+/// ok-envelope), and a multi-statement tail after EXPLAIN SELECT is
+/// rejected by the semicolon scan BEFORE the EXPLAIN allowance can apply
+/// (<code>multi_statement</code>, not <code>not_select</code>) — with a
+/// sentinel write-proof that the tail INSERT never ran.</p>
+Method TestExplainEdgeShapes()
+{
+    Do $$$AssertEquals(..SentinelCount(), 0, "pre: sentinel absent")
+
+    ; Nested EXPLAIN — second effective keyword is EXPLAIN, not SELECT.
+    Set tResult = ..RunTool("EXPLAIN EXPLAIN SELECT TOP 1 ID FROM Ens.MessageHeader")
+    Do ..AssertNotSelect(tResult, "nested EXPLAIN EXPLAIN SELECT")
+
+    ; EXPLAIN CALL — procedure invocation under EXPLAIN is rejected.
+    Set tResult = ..RunTool("EXPLAIN CALL Ens.MessageHeader_Extent()")
+    Do ..AssertNotSelect(tResult, "EXPLAIN CALL")
+
+    ; Parenthesized inner SELECT — capture ends at '(' (no second keyword).
+    Set tResult = ..RunTool("EXPLAIN (SELECT TOP 1 ID FROM Ens.MessageHeader)")
+    Do ..AssertNotSelect(tResult, "EXPLAIN (SELECT ...) parenthesized")
+
+    ; EXPLAIN WITH ... SELECT — read-only inner shape, still rejected by
+    ; the conservative inner-keyword policy (intentional policy lock).
+    Set tResult = ..RunTool("EXPLAIN WITH t AS (SELECT TOP 3 ID FROM Ens.MessageHeader) SELECT * FROM t")
+    Do ..AssertNotSelect(tResult, "EXPLAIN WITH-wrapped SELECT (conservative policy lock)")
+
+    ; Trailing semicolon after EXPLAIN SELECT — tolerated (stripped pre-scan).
+    Set tResult = ..RunTool("EXPLAIN SELECT TOP 1 ID FROM Ens.MessageHeader;")
+    Do $$$AssertEquals(+tResult.%Get("isError"), 0, "EXPLAIN SELECT with trailing semicolon succeeds")
+    Do $$$AssertEquals(tResult.structuredContent.%Get("render_strategy"), "ok", "trailing-semicolon EXPLAIN render_strategy='ok'")
+    Do $$$AssertEquals(tResult.structuredContent.columns.%Get(0), "Plan", "trailing-semicolon EXPLAIN returns the Plan column")
+
+    ; Multi-statement tail after EXPLAIN SELECT — the semicolon scan fires
+    ; FIRST (multi_statement, not not_select); the tail INSERT never runs.
+    Set tResult = ..RunTool("EXPLAIN SELECT TOP 1 ID FROM Ens.MessageHeader; INSERT INTO Ens_Util.Log (ConfigName) VALUES ('" _ ..#SENTINEL _ "')")
+    Do $$$AssertEquals(+tResult.%Get("isError"), 1, "EXPLAIN + statement tail: isError=1")
+    Do $$$AssertEquals(tResult.structuredContent.%Get("render_strategy"), "multi_statement", "EXPLAIN + tail rejected as multi_statement")
+
+    Do $$$AssertEquals(..SentinelCount(), 0, "WRITE-PROOF: no EXPLAIN edge shape ever wrote the sentinel")
     Quit
 }
 

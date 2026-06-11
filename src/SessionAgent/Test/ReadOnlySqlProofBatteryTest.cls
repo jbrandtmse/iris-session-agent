@@ -1,12 +1,15 @@
 /// <p>Story 14.3 AC-6 — the read-only PROOF battery for
 /// <CLASS>SessionAgent.Tool.Query.ExecuteReadonlySql</CLASS> /
 /// <CLASS>SessionAgent.Tool.Query.Base</CLASS>. Asserts every mutation
-/// shape (INSERT / UPDATE / DELETE / CALL / EXPLAIN) is rejected
-/// PRE-execution (statementType gate or validation), with a SQL probe
-/// proving no row was written for the INSERT attempt; plus row cap,
-/// char budget + truncated marker, elapsed_ms presence, ODBC timestamp
-/// rendering, the seeded −29 hint, multi-statement rejection, and the
-/// empty-result ok-envelope.</p>
+/// shape (INSERT / UPDATE / DELETE / CALL) is rejected PRE-execution
+/// (statementType gate or validation), with a SQL probe proving no row
+/// was written for the INSERT attempt; plus row cap, char budget +
+/// truncated marker, elapsed_ms presence, ODBC timestamp rendering, the
+/// seeded −29 hint, multi-statement rejection, and the empty-result
+/// ok-envelope. <b>Story 14.6 flips the EXPLAIN expectation:</b>
+/// <code>EXPLAIN SELECT</code> (any case, comment-prefixed) is ALLOWED
+/// and returns plan rows; EXPLAIN of a write statement remains rejected
+/// by inner keyword with a write-proof.</p>
 ///
 /// <p>Split from <CLASS>SessionAgent.Test.ReadOnlySqlInvariantTest</CLASS>
 /// per the ~500-line test-class cap (battery vs invariant).</p>
@@ -83,20 +86,80 @@ Method TestUpdateAndDeleteRejected()
 }
 
 /// <p>AC-6 — CALL rejected pre-execution (statementType 45 per the
-/// Task 0 empirical table) and EXPLAIN rejected at validation (Task 0:
-/// EXPLAIN prepares as statementType=1 on this build, so the leading
-/// keyword is the honest rejection point).</p>
-Method TestCallAndExplainRejected()
+/// Task 0 empirical table). Story 14.6: EXPLAIN of a WRITE statement is
+/// rejected at validation by inner keyword (the conservative
+/// reject-inner-write decision lock — EXPLAIN INSERT execute-fails with
+/// SQLCODE -481 on this build and writes nothing, but the keyword
+/// rejection is the build-portable policy), with a sentinel write-proof.</p>
+Method TestCallAndExplainOfWriteRejected()
 {
     Set tResult = ..RunTool("CALL Ens.MessageHeader_Extent()")
     Do $$$AssertEquals(+tResult.%Get("isError"), 1, "CALL returns isError=1")
     Do $$$AssertEquals(tResult.structuredContent.%Get("render_strategy"), "not_select", "CALL render_strategy='not_select'")
     Do $$$AssertEquals(tResult.structuredContent.%Get("rejected_statement_type"), "CALL", "rejected type named CALL")
 
-    Set tResult = ..RunTool("EXPLAIN SELECT TOP 1 ID FROM Ens.MessageHeader")
-    Do $$$AssertEquals(+tResult.%Get("isError"), 1, "EXPLAIN returns isError=1")
-    Do $$$AssertEquals(tResult.structuredContent.%Get("render_strategy"), "not_select", "EXPLAIN render_strategy='not_select'")
+    ; Story 14.6 decision lock — EXPLAIN of a write is rejected by inner keyword.
+    Set tSentinel = "battery146-explain-write-never"
+    Set tCount = -1
+    &sql(SELECT COUNT(*) INTO :tCount FROM Ens_Util.Log WHERE ConfigName = :tSentinel)
+    Do $$$AssertEquals(tCount, 0, "pre: EXPLAIN-write sentinel absent")
+    Set tResult = ..RunTool("EXPLAIN INSERT INTO Ens_Util.Log (ConfigName) VALUES ('" _ tSentinel _ "')")
+    Do $$$AssertEquals(+tResult.%Get("isError"), 1, "EXPLAIN INSERT returns isError=1")
+    Do $$$AssertEquals(tResult.structuredContent.%Get("render_strategy"), "not_select", "EXPLAIN INSERT render_strategy='not_select'")
     Do $$$AssertTrue(tResult.content.%Get(0).text [ "EXPLAIN", "operator-text names EXPLAIN")
+    Set tResult = ..RunTool("EXPLAIN UPDATE Ens.MessageHeader SET Status = 1 WHERE ID = -1")
+    Do $$$AssertEquals(+tResult.%Get("isError"), 1, "EXPLAIN UPDATE returns isError=1")
+    Set tResult = ..RunTool("EXPLAIN DELETE FROM Ens.MessageHeader WHERE ID = -1")
+    Do $$$AssertEquals(+tResult.%Get("isError"), 1, "EXPLAIN DELETE returns isError=1")
+    &sql(SELECT COUNT(*) INTO :tCount FROM Ens_Util.Log WHERE ConfigName = :tSentinel)
+    Do $$$AssertEquals(tCount, 0, "WRITE-PROOF: EXPLAIN INSERT wrote nothing")
+    Quit
+}
+
+/// <p>Story 14.6 AC-1/AC-3 — <code>EXPLAIN SELECT</code> is ALLOWED in
+/// all spellings (bare, lowercase, comment-prefixed) and returns the
+/// plan-rows ok-envelope: <code>columns=["Plan"]</code>, at least one
+/// row, no truncation on a simple plan, <code>elapsed_ms</code> present.
+/// Write-proof piggybacks on the EXPLAIN-of-write sentinel test above;
+/// the envelope shape rides the same <method>RunGuardedSelect</method>
+/// pipeline (row cap + char budget apply to plan output unchanged).</p>
+Method TestExplainSelectAllowedAllForms()
+{
+    Set tResult = ..RunTool("EXPLAIN SELECT TOP 5 ID FROM Ens.MessageHeader")
+    Do $$$AssertEquals(+tResult.%Get("isError"), 0, "bare EXPLAIN SELECT succeeds")
+    Do $$$AssertEquals(tResult.structuredContent.%Get("render_strategy"), "ok", "bare EXPLAIN render_strategy='ok'")
+    Do $$$AssertEquals(tResult.structuredContent.columns.%Size(), 1, "single plan column")
+    Do $$$AssertEquals(tResult.structuredContent.columns.%Get(0), "Plan", "column named 'Plan'")
+    Do $$$AssertTrue(+tResult.structuredContent.%Get("row_count") >= 1, "at least one plan row")
+    Do $$$AssertTrue(tResult.structuredContent.rows.%Get(0).%Get(0) [ "<plans>", "plan cell carries the XML showplan")
+    Do $$$AssertEquals(+tResult.structuredContent.%Get("truncated"), 0, "simple plan not truncated")
+    Do $$$AssertTrue(tResult.structuredContent.%IsDefined("elapsed_ms"), "elapsed_ms present on plan envelope")
+
+    Set tResult = ..RunTool("explain select top 5 id from Ens.MessageHeader")
+    Do $$$AssertEquals(+tResult.%Get("isError"), 0, "lowercase explain select succeeds")
+    Do $$$AssertEquals(tResult.structuredContent.%Get("render_strategy"), "ok", "lowercase render_strategy='ok'")
+    Do $$$AssertEquals(tResult.structuredContent.columns.%Get(0), "Plan", "lowercase: column named 'Plan'")
+
+    Set tResult = ..RunTool("/* slow query */ EXPLAIN SELECT TOP 5 ID FROM Ens.MessageHeader")
+    Do $$$AssertEquals(+tResult.%Get("isError"), 0, "comment-prefixed EXPLAIN SELECT succeeds")
+    Do $$$AssertEquals(tResult.structuredContent.%Get("render_strategy"), "ok", "comment-prefixed render_strategy='ok'")
+    Do $$$AssertEquals(tResult.structuredContent.columns.%Get(0), "Plan", "comment-prefixed: column named 'Plan'")
+
+    ; cr-14-6-A — Registry.Dispatch e2e lock (skill Rule 3): the AC-1
+    ; live-dispatch claim must survive as a regression test, not just
+    ; session evidence. Dispatch adds registry lookup, the MutatesState
+    ; policy gate, and ToolCall audit emission (the plan-XML envelope
+    ; rides the persisted ResultJson) on top of Invoke — a future
+    ; Registry-layer change must not break EXPLAIN silently.
+    Set tArgs = {}
+    Do tArgs.%Set("sql", "EXPLAIN SELECT TOP 5 ID FROM Ens.MessageHeader")
+    Set tResult = ""
+    Set tSC = ##class(SessionAgent.Tool.Registry).Dispatch("execute_readonly_sql", ..BuildCtx(), tArgs, .tResult)
+    Do $$$AssertStatusOK(tSC, "Registry.Dispatch EXPLAIN SELECT returns $$$OK")
+    Do $$$AssertEquals(+tResult.%Get("isError"), 0, "Registry.Dispatch EXPLAIN SELECT succeeds e2e")
+    Do $$$AssertEquals(tResult.structuredContent.%Get("render_strategy"), "ok", "Registry.Dispatch: render_strategy='ok'")
+    Do $$$AssertEquals(tResult.structuredContent.columns.%Get(0), "Plan", "Registry.Dispatch: column named 'Plan'")
+    Do $$$AssertTrue(tResult.structuredContent.rows.%Get(0).%Get(0) [ "<plans>", "Registry.Dispatch: plan cell carries the XML showplan")
     Quit
 }
 
@@ -157,6 +220,33 @@ Method TestCharBudgetTruncation()
     Do $$$AssertEquals(tResult.structuredContent.%Get("truncate_reason"), "char_budget", "truncate_reason='char_budget'")
     Set tRowCount = +tResult.structuredContent.%Get("row_count")
     Do $$$AssertTrue((tRowCount > 0) && (tRowCount < 17), "row_count stops under the 32000-char budget (2000 chars/row; got " _ tRowCount _ ")")
+    Quit
+}
+
+/// <p>Story 14.6 QA GAP — char-budget behavior when a SINGLE cell
+/// exceeds the entire 32000-char budget (the shape an oversized EXPLAIN
+/// plan would produce: one row, one wide Plan column). The over-budget
+/// row is never pushed: <code>row_count=0</code>, empty
+/// <code>rows</code>, <code>truncated=true</code> with
+/// <code>char_budget</code> reason, on a SUCCESS envelope (isError=0) —
+/// the operator sees the truncation marker, not a crash or a silently
+/// empty result. Probed live 2026-06-11. NOTE: a real &gt;32 KB EXPLAIN
+/// plan needs a ~45-branch multi-join UNION whose multi-second
+/// <code>%Prepare</code> risks tripping the elapsed guard and would tax
+/// every regression run — this synthetic single-wide-cell form locks
+/// the IDENTICAL stage-5 fetch-loop path (statement-agnostic; EXPLAIN
+/// plan output rides it unchanged, verified by the live multi-join
+/// EXPLAIN probe captured in the test-summary doc).</p>
+Method TestOversizedSingleCellCharBudget()
+{
+    Set tResult = ..RunTool("SELECT TOP 1 {fn REPEAT('x', 33000)} AS Wide FROM Ens.MessageHeader")
+    Do $$$AssertEquals(+tResult.%Get("isError"), 0, "oversized single cell returns a SUCCESS envelope")
+    Do $$$AssertEquals(tResult.structuredContent.%Get("render_strategy"), "ok", "render_strategy='ok'")
+    Do $$$AssertEquals(+tResult.structuredContent.%Get("row_count"), 0, "the over-budget row is never pushed (row_count=0)")
+    Do $$$AssertEquals(tResult.structuredContent.rows.%Size(), 0, "rows array empty")
+    Do $$$AssertEquals(+tResult.structuredContent.%Get("truncated"), 1, "truncated marker set")
+    Do $$$AssertEquals(tResult.structuredContent.%Get("truncate_reason"), "char_budget", "truncate_reason='char_budget'")
+    Do $$$AssertTrue(tResult.content.%Get(0).text [ "truncated", "operator text flags the truncation")
     Quit
 }
 

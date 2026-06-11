@@ -85,7 +85,10 @@ ClassMethod GetSystemPrompt(pAgentName As %String) As %String
 /// are contract references, not a capability list. The dialect-trap
 /// list is a genuinely-static taxonomy (allowed). The card carries no
 /// digit characters so determinism tests can assert no run-to-run
-/// numeric drift.</p>
+/// numeric drift. Story 14.6 adds the (digit-free) EXPLAIN
+/// plan-reasoning line — run EXPLAIN on the SELECT + consult
+/// <code>get_query_knowledge</code> topic=performance for slow-query
+/// questions.</p>
 ///
 /// <p><b>Override semantics:</b> the card is appended to the DEFAULT
 /// prompts by <method>GetSystemPrompt</method>; a per-row
@@ -114,6 +117,8 @@ ClassMethod GetMethodologyCard() As %String
         "ALWAYS time-bound exploratory queries — trace tables are huge. " _
         "Preview with a small TOP-N before removing the cap. " _
         "A session's anchor is the header row whose ID equals its SessionId. " _
+        "For slow-query questions, run EXPLAIN on the SELECT and consult get_query_knowledge " _
+        "topic=performance before suggesting hints; only EXPLAIN of a SELECT is accepted. " _
         "Read-only covenant: you may only ever SELECT — never write, update, delete, or alter anything."
 }
 

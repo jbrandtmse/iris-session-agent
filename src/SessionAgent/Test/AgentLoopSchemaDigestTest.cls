@@ -26,6 +26,18 @@ Property OrigInspEnabled As %Boolean;
 
 Property OrigInspProvider As %String;
 
+/// Story 14.5 review fix (HIGH) — the two Story 14.5 tests mutate
+/// SystemPromptOverride on the live Config.Agent rows; an exception or
+/// early Quit mid-test would otherwise leave the operator's row
+/// polluted ("ztest-145 ..." or $Char(0)). Snapshot/restore in
+/// OnBeforeOneTest/OnAfterOneTest, matching the Enabled/Provider
+/// pattern above. MAXLEN="" — overrides are full prompt strings
+/// (Epic 5 Bug-2 MAXLEN-overflow lesson).
+Property OrigSearchOverride As %String(MAXLEN = "");
+
+/// See <property>OrigSearchOverride</property>.
+Property OrigInspOverride As %String(MAXLEN = "");
+
 Method %OnNew(initvalue As %String = "") As %Status
 {
     Set tSC = ##super(initvalue)
@@ -34,6 +46,8 @@ Method %OnNew(initvalue As %String = "") As %Status
     Set ..OrigSearchProvider = ""
     Set ..OrigInspEnabled = 0
     Set ..OrigInspProvider = ""
+    Set ..OrigSearchOverride = ""
+    Set ..OrigInspOverride = ""
     Quit $$$OK
 }
 
@@ -45,6 +59,7 @@ Method OnBeforeOneTest(testname As %String) As %Status
     If $IsObject(tCfg) {
         Set ..OrigSearchEnabled = tCfg.Enabled
         Set ..OrigSearchProvider = tCfg.Provider
+        Set ..OrigSearchOverride = tCfg.SystemPromptOverride
         Set tCfg.Enabled = 1
         Set tCfg.Provider = "openai"
         Do tCfg.%Save()
@@ -53,6 +68,7 @@ Method OnBeforeOneTest(testname As %String) As %Status
     If $IsObject(tCfgI) {
         Set ..OrigInspEnabled = tCfgI.Enabled
         Set ..OrigInspProvider = tCfgI.Provider
+        Set ..OrigInspOverride = tCfgI.SystemPromptOverride
         Set tCfgI.Enabled = 1
         Set tCfgI.Provider = "openai"
         Do tCfgI.%Save()
@@ -73,12 +89,14 @@ Method OnAfterOneTest(testname As %String) As %Status
     If $IsObject(tCfg) {
         Set tCfg.Enabled = ..OrigSearchEnabled
         Set tCfg.Provider = ..OrigSearchProvider
+        Set tCfg.SystemPromptOverride = ..OrigSearchOverride
         Do tCfg.%Save()
     }
     Set tCfgI = ##class(SessionAgent.Config.Agent).AgentNameIdxOpen("session-inspection")
     If $IsObject(tCfgI) {
         Set tCfgI.Enabled = ..OrigInspEnabled
         Set tCfgI.Provider = ..OrigInspProvider
+        Set tCfgI.SystemPromptOverride = ..OrigInspOverride
         Do tCfgI.%Save()
     }
 
@@ -337,6 +355,140 @@ Method TestAnthropicCachedPrefixUnchangedInspectionAgent()
     Do $$$AssertEquals(tSystem1, tSystem2, "system prompt byte-identical across turns (NFR-P6 cached-prefix invariant, inspection agent)")
     Do $$$AssertEquals($Length(tTools1), $Length(tTools2), "tools JSON length identical across turns")
     Do $$$AssertEquals(tTools1, tTools2, "tools JSON byte-identical across turns (NFR-P6 cached-prefix invariant, inspection agent)")
+    Quit
+}
+
+/// <p><b>Story 14.5 AC-1 / AC-6 — SystemPromptOverride replacement
+/// semantics.</b> (1) A non-empty per-row override REPLACES the default
+/// prompt INCLUDING the Story 14.5 methodology card (the card is part
+/// of the default prompt, not a separate channel). (2) A
+/// <code>$Char(0)</code> sentinel in the column (the IRIS legacy
+/// SQL-UPDATE-cleared-%String shape) is normalized to <code>""</code>
+/// at the AgentLoop read site (AgentLoop Step 6 guard, Story 6.0) so
+/// the default prompt WITH the card is used and no NUL byte leaks to
+/// the provider. Captures the provider-bound system prompt via
+/// <CLASS>SessionAgent.Test.VocabDigestCaptureMock</CLASS>.</p>
+Method TestSystemPromptOverrideReplacesDefaultIncludingCard()
+{
+    Set tCfgI = ##class(SessionAgent.Config.Agent).AgentNameIdxOpen("session-inspection")
+    Do $$$AssertTrue($IsObject(tCfgI), "session-inspection Config.Agent row exists")
+    If '$IsObject(tCfgI) Quit
+    Set tOrigOverride = tCfgI.SystemPromptOverride
+
+    Set tCard = ##class(SessionAgent.Config.AgentDefaults).GetMethodologyCard()
+    Do $$$AssertNotEquals(tCard, "", "methodology card non-empty (precondition)")
+
+    ; ---- Case 1: non-empty override replaces default INCLUDING card.
+    ; (Exception-path safety: OnBeforeOneTest/OnAfterOneTest snapshot and
+    ; restore SystemPromptOverride — Story 14.5 review fix.)
+    Set tCfgI.SystemPromptOverride = "ztest-145 custom operator override prompt."
+    Do $$$AssertStatusOK(tCfgI.%Save(), "Case-1 override %Save succeeded (premise guard)")
+    Do ##class(SessionAgent.Test.AgentLoopVocabDigestTest).InstallCaptureMock("override ack.")
+    Kill ^||SessionAgentVocabDigestCaptureSystem
+    Set tResult = ##class(SessionAgent.Agent.AgentLoop).RunTurn("session-inspection", ..#SAPREFIX _ "ovr-a", ..#SAPREFIX _ "user-ovr", "hello")
+    Do $$$AssertTrue($IsObject(tResult), "RunTurn returns TurnResult (override case)")
+    Set tSystem = $Get(^||SessionAgentVocabDigestCaptureSystem, "")
+    Do $$$AssertTrue(tSystem [ "ztest-145 custom operator override prompt.", "override text reaches the provider-bound system prompt (AC-1 override semantics)")
+    Do $$$AssertTrue('(tSystem [ tCard), "override REPLACES the default INCLUDING the methodology card (AC-1)")
+
+    ; ---- Case 2: $Char(0) sentinel normalizes to "" -> default WITH card.
+    Set tCfgI2 = ##class(SessionAgent.Config.Agent).AgentNameIdxOpen("session-inspection")
+    Set tCfgI2.SystemPromptOverride = $Char(0)
+    Do $$$AssertStatusOK(tCfgI2.%Save(), "Case-2 $Char(0) sentinel %Save succeeded (premise guard)")
+    Do ##class(SessionAgent.Test.AgentLoopVocabDigestTest).InstallCaptureMock("sentinel ack.")
+    Kill ^||SessionAgentVocabDigestCaptureSystem
+    Set tResult2 = ##class(SessionAgent.Agent.AgentLoop).RunTurn("session-inspection", ..#SAPREFIX _ "ovr-b", ..#SAPREFIX _ "user-ovr", "hello again")
+    Do $$$AssertTrue($IsObject(tResult2), "RunTurn returns TurnResult (sentinel case)")
+    Set tSystem2 = $Get(^||SessionAgentVocabDigestCaptureSystem, "")
+    Do $$$AssertTrue(tSystem2 [ tCard, "$Char(0) sentinel normalized to empty -> default prompt WITH card used (AC-6 $Char(0) lock)")
+    Do $$$AssertTrue('(tSystem2 [ $Char(0)), "no NUL byte leaks into the provider-bound system prompt (AC-6)")
+
+    ; ---- Restore the original override value (OnAfterOneTest also
+    ; restores — this keeps the straight-line path self-contained).
+    Set tCfgI3 = ##class(SessionAgent.Config.Agent).AgentNameIdxOpen("session-inspection")
+    Set tCfgI3.SystemPromptOverride = tOrigOverride
+    Do $$$AssertStatusOK(tCfgI3.%Save(), "override restore %Save succeeded")
+    Quit
+}
+
+/// <p><b>Story 14.5 QA gap coverage — cache-channel separation + the
+/// provider-bound methodology card for BOTH agents.</b> With a schema
+/// note present (digest actually injected on turn 1) and no per-row
+/// override, asserts at AgentLoop runtime for EACH agent: (1) the
+/// methodology card rides the provider-bound SYSTEM segment (the AC-1
+/// card reaches the wire, not just the AgentDefaults unit surface —
+/// closes the message-search runtime gap); (2) the schema-notes /
+/// vocabulary digests do NOT ride the SYSTEM segment (NFR-P6: a digest
+/// wrongly riding the cached system prefix would be byte-identical
+/// across turns and slip past the turn-stability tests above); (3) the
+/// card does NOT leak into the USER block (the digest channel). Captures
+/// via <CLASS>SessionAgent.Test.VocabDigestCaptureMock</CLASS>.</p>
+Method TestMethodologyCardRidesSystemSegmentBothAgents()
+{
+    Set tCard = ##class(SessionAgent.Config.AgentDefaults).GetMethodologyCard()
+    Do $$$AssertNotEquals(tCard, "", "methodology card non-empty (precondition)")
+
+    ; Clear any operator override on both rows for the duration so the
+    ; DEFAULT prompt (with card) is the one bound; restore at the end.
+    ; Story 14.5 review fix (HIGH): open + validate BOTH rows BEFORE
+    ; mutating either — the old order mutated the inspection row, then
+    ; early-Quit on a missing message-search row left it un-restored.
+    ; (OnBeforeOneTest/OnAfterOneTest also snapshot/restore for the
+    ; exception path.)
+    Set tCfgI = ##class(SessionAgent.Config.Agent).AgentNameIdxOpen("session-inspection")
+    Do $$$AssertTrue($IsObject(tCfgI), "session-inspection Config.Agent row exists")
+    Set tCfgS = ##class(SessionAgent.Config.Agent).AgentNameIdxOpen("message-search")
+    Do $$$AssertTrue($IsObject(tCfgS), "message-search Config.Agent row exists")
+    If ('$IsObject(tCfgI)) || ('$IsObject(tCfgS)) Quit
+    Set tOrigOvrI = tCfgI.SystemPromptOverride
+    Set tCfgI.SystemPromptOverride = ""
+    Do $$$AssertStatusOK(tCfgI.%Save(), "inspection override cleared for card-channel test (premise guard)")
+    Set tOrigOvrS = tCfgS.SystemPromptOverride
+    Set tCfgS.SystemPromptOverride = ""
+    Do $$$AssertStatusOK(tCfgS.%Save(), "search override cleared for card-channel test (premise guard)")
+
+    ; Seed a note so the schema digest actually injects on turn 1.
+    Do $$$AssertStatusOK(##class(SessionAgent.Test.GetSchemaNotesTest).SeedNote("ztest-al-card-chan", "card channel fixture fact"), "fixture note seeded")
+
+    ; ---- Inspection agent first turn.
+    Do ##class(SessionAgent.Test.AgentLoopVocabDigestTest).InstallCaptureMock("card chan insp ack.")
+    Kill ^||SessionAgentVocabDigestCapture
+    Kill ^||SessionAgentVocabDigestCaptureSystem
+    Set tResultI = ##class(SessionAgent.Agent.AgentLoop).RunTurn("session-inspection", ..#SAPREFIX _ "card-insp", ..#SAPREFIX _ "user-card-i", "what failed today")
+    Do $$$AssertTrue($IsObject(tResultI), "inspection RunTurn returns TurnResult")
+    Set tUserI = $Get(^||SessionAgentVocabDigestCapture, "")
+    Set tSystemI = $Get(^||SessionAgentVocabDigestCaptureSystem, "")
+    Do $$$AssertTrue(tSystemI [ tCard, "inspection provider-bound SYSTEM segment carries the methodology card (AC-1/AC-3 runtime)")
+    Do $$$AssertTrue('(tSystemI [ "## Learned schema notes"), "schema digest does NOT ride the inspection SYSTEM segment (NFR-P6 cache-channel separation)")
+    Do $$$AssertTrue(tUserI [ "## Learned schema notes", "schema digest rides the inspection USER block (sanity)")
+    Do $$$AssertTrue('(tUserI [ tCard), "methodology card does NOT leak into the inspection USER block (cache-channel separation)")
+
+    ; ---- Search agent first turn.
+    Do ##class(SessionAgent.Test.AgentLoopVocabDigestTest).InstallCaptureMock("card chan search ack.")
+    Kill ^||SessionAgentVocabDigestCapture
+    Kill ^||SessionAgentVocabDigestCaptureSystem
+    Set tResultS = ##class(SessionAgent.Agent.AgentLoop).RunTurn("message-search", ..#SAPREFIX _ "card-search", ..#SAPREFIX _ "user-card-s", "find failed admits")
+    Do $$$AssertTrue($IsObject(tResultS), "search RunTurn returns TurnResult")
+    Set tUserS = $Get(^||SessionAgentVocabDigestCapture, "")
+    Set tSystemS = $Get(^||SessionAgentVocabDigestCaptureSystem, "")
+    Do $$$AssertTrue(tSystemS [ tCard, "search provider-bound SYSTEM segment carries the methodology card (AC-1 runtime — closes the message-search gap)")
+    ; Story 14.5 review fix (vacuous-pass guard): positively assert the
+    ; digest actually rode the search USER block — otherwise the three
+    ; negative channel-separation assertions below pass trivially when
+    ; no digest is injected at all.
+    Do $$$AssertTrue(tUserS [ "## Learned schema notes", "schema digest rides the search USER block (positive control)")
+    Do $$$AssertTrue('(tSystemS [ "## Learned schema notes"), "schema digest does NOT ride the search SYSTEM segment (NFR-P6)")
+    Do $$$AssertTrue('(tSystemS [ "## Common idioms"), "vocabulary digest does NOT ride the search SYSTEM segment (NFR-P6)")
+    Do $$$AssertTrue('(tUserS [ tCard), "methodology card does NOT leak into the search USER block (cache-channel separation)")
+
+    ; ---- Restore both rows' original override values (OnAfterOneTest
+    ; also restores — this keeps the straight-line path self-contained).
+    Set tCfgI2 = ##class(SessionAgent.Config.Agent).AgentNameIdxOpen("session-inspection")
+    Set tCfgI2.SystemPromptOverride = tOrigOvrI
+    Do $$$AssertStatusOK(tCfgI2.%Save(), "inspection override restore %Save succeeded")
+    Set tCfgS2 = ##class(SessionAgent.Config.Agent).AgentNameIdxOpen("message-search")
+    Set tCfgS2.SystemPromptOverride = tOrigOvrS
+    Do $$$AssertStatusOK(tCfgS2.%Save(), "search override restore %Save succeeded")
     Quit
 }
 

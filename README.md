@@ -47,8 +47,8 @@ Some HealthShare-Foundation-configured namespaces serve their pages with `/healt
 
 | Capability | Story / Epic | Operator-observable surface |
 |---|---|---|
-| Session Inspection agent (read-only Ens.* introspection) | Epic 4 + Epic 13 + Epic 14 (21 tools total) | VisualTrace chat tab |
-| Message Search agent (11 search tools + vocabulary) | Epic 8 + Epic 13 (11 tools total) | MessageViewer chat tab |
+| Session Inspection agent (read-only Ens.* introspection) | Epic 4 + Epic 13 + Epic 14 (23 catalog tools + shared `execute_readonly_sql`) | VisualTrace chat tab |
+| Message Search agent (11 search tools + vocabulary) | Epic 8 + Epic 13 (11 tools total + the Epic 14 shared knowledge/discovery/SQL tools) | MessageViewer chat tab |
 | Search → Inspection hand-off ("from search" stripe + click-through context) | Epic 10 (Stories 10.1–10.5) | Visible stripe in inspection chat after click-through |
 | Silent vocabulary learning (per-user alias capture) | Epic 9 (Stories 9.2–9.5) | `vocab_lookup` tool surfaces saved aliases; sweep keeps the table bounded |
 | Sweep tasks (audit + chat-history retention) | Epic 7 + Story 10.6 | Mgmt Portal Task Manager (`SessionAgent.PurgeOrphanedChatHistory`, `SessionAgent.PurgeStaleSearchChatHistory`, `SessionAgent.UserVocabularyDecay`) |
@@ -58,6 +58,7 @@ Some HealthShare-Foundation-configured namespaces serve their pages with `/healt
 | Learned schema notes (FR63: `save_schema_note` / `get_schema_notes` + first-turn digest injection for both agents) | Story 14.4 | Agent-discovered namespace facts persist across conversations with `age_days` staleness; `SessionAgent.Knowledge.SchemaNoteDigest` rides the uncached first-user-message segment (NFR-P6-preserving) |
 | Schema-discovery tools (FR61: `list_active_body_types`, `describe_message_class`, `discover_tables`) | Story 14.2 | Both agents discover live table/column/index state instead of hallucinating names into SQL |
 | Guarded dynamic SQL (FR60: `execute_readonly_sql` + `Tool.Query.Base` pipeline + `ReadOnlySqlInvariantTest`) | Story 14.3 | Open-ended analytical SELECTs under a compiler-level read-only gate (statementType), caps, and corpus-fed SQLCODE hints |
+| Prompt methodology card + welcome-text capability update (FR64) | Story 14.5 | Both default system prompts carry the static query-methodology & dialect card; both chat-panel welcome messages advertise the analytics / schema-discovery / schema-notes capability areas |
 
 ## Try it in a clean namespace (recommended for evaluation)
 
@@ -492,9 +493,17 @@ Where the knowledge corpus ships *static* expertise, the **learned schema notes*
 - **Audit:** every schema-note write emits the pre-registered `(SessionAgent, SchemaNoteWrite, explicit)` audit event; the tool envelope reports `audit_emitted` so registration drift is operator-visible.
 - **Documented, accepted residual risk:** notes are shared per namespace and replayed into every conversation's first turn in that namespace — agent-authored note content is a persistent prompt-context channel. Mitigations: notes are written only through `save_schema_note` (server-side normalization + length caps), digest lines are single-line snippets (160 chars) whose subjects and bodies cannot forge the prefix-block delimiter, and all operators of a namespace already share the same data visibility. Per-user scoping or content screening is possible future hardening (tracked in `deferred-work.md`).
 
+### Query methodology card + welcome text *(Epic 14 — Story 14.5, FR64)*
+
+The fourth leg of the knowledge subsystem (corpus → discovery tools → schema notes → **prompts**): both agents' **default system prompts** end with a static *query methodology & dialect card* (`SessionAgent.Config.AgentDefaults.GetMethodologyCard`). The card directs the agent through the discover → consult-knowledge → build → execute (small TOP-N) → validate loop; mandates consulting `get_query_knowledge` and `get_schema_notes` **before** authoring SQL and saving durable discoveries via `save_schema_note`; requires **disclosing the executed SQL in every answer**; lists the cardinal IRIS dialect traps (`TOP` not `LIMIT`, integer-coded enum predicates, `%EXTERNAL` vs `%ODBCOUT` decode choice, header↔body joins on id+class, time-bounding, the `ID = SessionId` session anchor); and restates the read-only covenant.
+
+- **Deterministic by construction (NFR-P6):** the card is static text with no runtime-derived values — it rides *inside* the cached `system` segment, so the Anthropic prompt-cache prefix stays byte-identical across turns. A regression test locks `GetSystemPrompt` determinism and the card's zero-digit / no-tool-enumeration discipline.
+- **Override semantics:** a per-row `SystemPromptOverride` (Agent Configuration form) replaces the default prompt **including the card**. Operators who override the prompt and still want the methodology guidance should copy the card text into their override.
+- **Operator-visible capability advertisement:** both chat-panel welcome messages now name the new capability areas in plain English — analytics/statistics questions answered with read-only SQL (the SQL is always shown in the answer), describing unfamiliar message types, and per-namespace remembered schema notes — with example questions like *"what's the error rate by target in the last 24 hours?"*.
+
 ## Status
 
-**Currently shipped — v1.0.4 (GA).** All 13 planning + implementation epics complete. Release tags: `v1.0.0` (feature-complete, Epic 10 close), `v1.0.1` (Epic 11 patch), `v1.0.2` (Epic 12 — walkthrough hardening), `v1.0.3` (Epic 13 — Tool Catalog Expansion: 6 new tools, 28 total, 509/509 regression sweep), `v1.0.4` (README UI-label pass — operator-facing field names now match the Agent Configuration form).
+**Currently shipped — v1.0.4 (GA).** All 13 planning + implementation epics complete; **Epic 14 (Trace Intelligence — FR60–FR64: knowledge corpus, schema discovery, guarded read-only SQL, learned schema notes, prompt methodology card) is in progress on `main` and not yet release-tagged.** Release tags: `v1.0.0` (feature-complete, Epic 10 close), `v1.0.1` (Epic 11 patch), `v1.0.2` (Epic 12 — walkthrough hardening), `v1.0.3` (Epic 13 — Tool Catalog Expansion: 6 new tools, 28 total, 509/509 regression sweep), `v1.0.4` (README UI-label pass — operator-facing field names now match the Agent Configuration form).
 
 | Stage | Status | Artifact |
 |---|---|---|

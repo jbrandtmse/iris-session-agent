@@ -117,3 +117,44 @@ envelope/transcript checks), **Trap notes** (where applicable).
 **Total: 13 entries** (≥12 per AC-6; the 10 proposal-mandated questions are GQ-1…GQ-10;
 GQ-11/GQ-12/GQ-13 are the lead's-choice picks from cookbook §07). The trapped question is
 GQ-10 and explicitly names the silent-wrong-results failure mode it guards.
+
+---
+
+## Mock-matrix run — Story 14.5, 2026-06-11
+
+**Method.** Each entry's expected tool chain dispatched mechanically through the REAL
+`SessionAgent.Tool.Registry.Dispatch` path (registry resolution, arg validation, audit
+emit, envelope shaping) via the `SessionAgent.Test.GoldenQuestionDriver.RunTool` helper,
+against the live sample production (`Ens.Director.IsProductionRunning=1`; window state at
+run time: 223 messages / 37 session starts in the trailing day). This validates toolchain
+**mechanics**; the LLM-driven pass is the epic-end user-led walkthrough (Rule 6 bullet 5).
+
+| GQ | Tool(s) dispatched | Envelope outcome | Result (verbatim key rows) | Pass |
+|---|---|---|---|---|
+| GQ-1 | `get_query_knowledge` (topic=cookbook) → `execute_readonly_sql` | both `render_strategy:"ok"` | knowledge top hit = `daily-counts` recipe; SQL: `["2026-06-11",223,37]` — matches manual run exactly (223/37) | **PASS** |
+| GQ-2 | `execute_readonly_sql` | ok, 5 rows | `["SESSIONAGENT.SAMPLE.BP.ORDERROUTER",124,27,"21.77"]` + 4 zero-error targets; one row per active target | **PASS** |
+| GQ-3 | `execute_readonly_sql` (`%ODBCOUT` + prefix-truncated GROUP BY) | ok, 1 row | `["خطأ <Ens>ErrGeneral: Injected SQL persist failure for OrderId=ORD-000003 (sample error mode)",27]` — readable decoded text, group total 27 = GQ-2 error count | **PASS** |
+| GQ-4 | `execute_readonly_sql` (single-header pattern, `Type=1`, 7-day bound, `TOP 100`) | ok, 31 rows | slow tail max `ResponseMs=7` (ID 1349); no self-join | **PASS** |
+| GQ-5 | `list_active_body_types` (hours=168) | ok | `OrderRequest:124`, `OrderResponse:66`, `(no body):33`; `window_start` present | **PASS** |
+| GQ-6 | `describe_message_class` → `execute_readonly_sql` (pivot) | ok | 8 columns match `%Dictionary` (verified `OrderId`/`CustomerName`/`LineItems`); `has_additional_info:false` → honest no-AdditionalInfo path; supplemental discovered-column pivot: `none:68, businessOperationFailure:52, partialSuccess:4` via real `SessionAgent_Sample_Msg.OrderRequest` join on id+class | **PASS** |
+| GQ-7 | `execute_readonly_sql` (`{fn TIMESTAMPDIFF}` > 20 s) | ok, 0 rows | empty set returned as clean `render_strategy:"ok"` envelope ("none found"), NOT an error | **PASS** |
+| GQ-8 | `session_summary` → `message_headers(min_severity=error)` → `get_message_detail` → `explain_error` — ZERO `execute_readonly_sql` | all ok | session 13320: 7 msgs / 2 errors; failing components `SqlPersist`+`FilePublish` (headers 13325/13326); `explain_error` matched `<Ens>ErrGeneral` with decoded text + diagnostics | **PASS** |
+| GQ-9 | `discover_tables` (fragment=Order) → `execute_readonly_sql` (INFORMATION_SCHEMA) | ok | 15 real tables, no invented names; `SessionAgent_Sample_Msg.OrderResponse` columns (ID, OrderId, PersistedRowId, ProcessedTimestamp, RejectionReason, Status) match INFORMATION_SCHEMA | **PASS** |
+| GQ-10 | `get_query_knowledge` (topic=dialect → `integer-string-trap` article) + BOTH query forms | ok (SQLCODE 0 both — that IS the trap) | **trapped** `WHERE Status != 'Completed'` → `[[223]]` = ENTIRE 1-day window (223 total — every row silently matched); **corrected** `%EXTERNAL(Status) != 'Completed'` → `[[27]]`. Delta 223 vs 27 with zero error envelope = the silent-wrong-results failure mode, demonstrated verbatim | **PASS** |
+| GQ-11 | `session_timeline` + `execute_readonly_sql` (full-trace SQL) cross-check | ok | both return 7 hops for session 13320 in identical order (ID tiebreak); SQL renders `%EXTERNAL(Status)` words (`Completed`/`Error`); tool integers 9/8 reconcile to the same enum values | **PASS** |
+| GQ-12 | discovery query (`%EXACT(TargetConfigName)` GROUP BY) → `execute_readonly_sql` recipe | ok | live-discovered name `SessionAgent.Sample.BP.OrderRouter` (NOT guessed); daily counts `["2026-06-11",124]` = router total from GQ-2 | **PASS** |
+| GQ-13 | `execute_readonly_sql` (aggregate-first subquery + `LEFT JOIN Ens_Config.Item`) | ok, 6 rows | each source annotated with real host class (e.g. `OrderRouter` 93); framework `Ens.ScheduleService` correctly unannotated (no production item) | **PASS** |
+
+**Schema-note round-trip (AC-4 save-then-re-read):** `save_schema_note`
+(`ztest-gq145-orderrequest-shape`) → `{"action":"created","audit_emitted":1}` →
+`get_schema_notes(subject_fragment=ztest-gq145)` returned the note verbatim (`age_days:0`)
+→ fixture swept via `SchemaNoteToolTest.DeleteFixtureRows` → re-read returned `count:0`. **PASS**
+
+**Notes for the epic-end walkthrough.**
+- `%ODBCOUT(ErrorStatus)` decodes with an Arabic severity label (`خطأ`) on this instance —
+  server NLS rendering, identical via direct `iris_sql_execute` (NOT a tool-path defect).
+- Unwrapped string columns in a SELECT list render case-folded (GQ-2's UPPERCASE names);
+  `%EXACT(col) AS alias` preserves case (used in GQ-4/12/13 discovery) — consistent with
+  guide §01 and the Story 13.3 aliasing rule.
+- **Outcome: 13/13 PASS + schema-note round-trip PASS; zero toolchain failures — nothing to
+  fix-now under Rule 8.**

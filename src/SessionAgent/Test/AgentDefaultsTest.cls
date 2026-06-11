@@ -76,6 +76,84 @@ Method TestEmitStyleEmitsOverflowRules()
     Do $$$AssertTrue(tCSS [ "overflow-x: auto", "EmitStyle must still emit overflow-x: auto on tool-card pre (AC-3 regression guard)")
 }
 
+/// <p><b>Story 14.5 AC-1 — methodology card present in BOTH agents'
+/// prompts, verbatim-identically.</b> Asserts <method>GetMethodologyCard</method>
+/// returns a non-empty static card; both agent prompts contain that
+/// exact card string; and the unknown-agent fallthrough still returns
+/// <code>""</code> (the card must not leak to unknown agents).</p>
+Method TestMethodologyCardPresentBothAgents()
+{
+    Set tCard = ##class(SessionAgent.Config.AgentDefaults).GetMethodologyCard()
+    Do $$$AssertNotEquals(tCard, "", "methodology card must be non-empty (AC-1)")
+    Set tInsp = ##class(SessionAgent.Config.AgentDefaults).GetSystemPrompt("session-inspection")
+    Set tSearch = ##class(SessionAgent.Config.AgentDefaults).GetSystemPrompt("message-search")
+    Do $$$AssertTrue(tInsp [ tCard, "session-inspection prompt contains the card verbatim (AC-1)")
+    Do $$$AssertTrue(tSearch [ tCard, "message-search prompt contains the card verbatim (AC-1)")
+    ; Unknown agent: no card leak — contract preserved.
+    Do $$$AssertEquals(##class(SessionAgent.Config.AgentDefaults).GetSystemPrompt("no-such-agent"), "", "unknown agent still returns empty string (AC-1 contract)")
+}
+
+/// <p><b>Story 14.5 AC-1 — card content discipline.</b> Per the LLM
+/// Prompt Construction rule (Epic 3 retro AI-15): (a) the four
+/// FR64-mandated directives present (loop, consult-before-SQL,
+/// save-notes, disclose-SQL) + read-only covenant; (b) the cardinal
+/// dialect traps present as static taxonomy; (c) NO runtime-state
+/// enumeration — no digit characters at all (locks "no run-to-run
+/// numeric drift / no tool-count claims"), no tool names beyond the
+/// three FR64-named references, no provider names.</p>
+Method TestMethodologyCardStaticContent()
+{
+    Set tCard = ##class(SessionAgent.Config.AgentDefaults).GetMethodologyCard()
+    ; (a) FR64 directives + covenant.
+    Do $$$AssertTrue(tCard [ "discover the schema", "loop directive: discover (AC-1a)")
+    Do $$$AssertTrue(tCard [ "consult knowledge", "loop directive: knowledge (AC-1a)")
+    Do $$$AssertTrue(tCard [ "build the SQL incrementally", "loop directive: build (AC-1a)")
+    Do $$$AssertTrue(tCard [ "validate", "loop directive: validate (AC-1a)")
+    Do $$$AssertTrue(tCard [ "get_query_knowledge", "FR64 directive: consult get_query_knowledge (AC-1c)")
+    Do $$$AssertTrue(tCard [ "get_schema_notes", "FR64 directive: consult get_schema_notes (AC-1c)")
+    Do $$$AssertTrue(tCard [ "save_schema_note", "FR64 directive: save via save_schema_note (AC-1c)")
+    Do $$$AssertTrue(tCard [ "disclose the exact SQL", "FR64 directive: disclose executed SQL (AC-1c)")
+    Do $$$AssertTrue(tCard [ "Read-only covenant", "read-only covenant line present (AC-1d)")
+    ; (b) cardinal dialect traps (static taxonomy).
+    Do $$$AssertTrue(tCard [ "use TOP, never LIMIT", "trap: TOP not LIMIT (AC-1b)")
+    Do $$$AssertTrue(tCard [ "integer-coded enums", "trap: integer-enum predicates (AC-1b)")
+    Do $$$AssertTrue(tCard [ "%EXTERNAL", "trap: %EXTERNAL decode choice (AC-1b)")
+    Do $$$AssertTrue(tCard [ "%ODBCOUT", "trap: %ODBCOUT decode choice (AC-1b)")
+    Do $$$AssertTrue(tCard [ "BOTH the body id AND the body class", "trap: header-body join needs id+class (AC-1b)")
+    Do $$$AssertTrue(tCard [ "time-bound exploratory queries", "trap: always time-bound (AC-1b)")
+    Do $$$AssertTrue(tCard [ "TOP-N preview", "trap: TOP-N preview habit (AC-1b)")
+    Do $$$AssertTrue(tCard [ "ID equals its SessionId", "trap: ID = SessionId session anchor (AC-1b)")
+    ; (c) static-content discipline: ZERO digit characters — locks
+    ; "no digits that change run-to-run, no tool-count claims".
+    Do $$$AssertEquals($Translate(tCard, "0123456789", ""), tCard, "card contains NO digit characters (AC-1 static-content lock)")
+    ; No tool-catalog enumeration beyond the three FR64 references —
+    ; representative registry tool names must be absent.
+    Do $$$AssertTrue('(tCard [ "session_summary"), "card does not enumerate session_summary (LLM Prompt Construction rule)")
+    Do $$$AssertTrue('(tCard [ "execute_readonly_sql"), "card does not name execute_readonly_sql (only the three FR64 references allowed)")
+    Do $$$AssertTrue('(tCard [ "list_active_body_types"), "card does not enumerate list_active_body_types (LLM Prompt Construction rule)")
+    Do $$$AssertTrue('(tCard [ "tools available"), "card makes no tool-count claim (LLM Prompt Construction rule)")
+    ; No provider-name enumeration.
+    Do $$$AssertTrue('($ZConvert(tCard, "L") [ "anthropic"), "card does not name providers (LLM Prompt Construction rule)")
+    Do $$$AssertTrue('($ZConvert(tCard, "L") [ "openai"), "card does not name providers (LLM Prompt Construction rule)")
+}
+
+/// <p><b>Story 14.5 AC-3 — GetSystemPrompt determinism (NFR-P6).</b>
+/// Two consecutive calls per agent return byte-identical strings (the
+/// card rides INSIDE the cached <code>system</code> segment, so any
+/// run-to-run drift would break the Anthropic prompt-cache hit
+/// rate).</p>
+Method TestGetSystemPromptDeterminism()
+{
+    Set tInsp1 = ##class(SessionAgent.Config.AgentDefaults).GetSystemPrompt("session-inspection")
+    Set tInsp2 = ##class(SessionAgent.Config.AgentDefaults).GetSystemPrompt("session-inspection")
+    Do $$$AssertEquals($Length(tInsp1), $Length(tInsp2), "session-inspection prompt length identical across calls (NFR-P6)")
+    Do $$$AssertEquals(tInsp1, tInsp2, "session-inspection prompt byte-identical across calls (NFR-P6)")
+    Set tSearch1 = ##class(SessionAgent.Config.AgentDefaults).GetSystemPrompt("message-search")
+    Set tSearch2 = ##class(SessionAgent.Config.AgentDefaults).GetSystemPrompt("message-search")
+    Do $$$AssertEquals($Length(tSearch1), $Length(tSearch2), "message-search prompt length identical across calls (NFR-P6)")
+    Do $$$AssertEquals(tSearch1, tSearch2, "message-search prompt byte-identical across calls (NFR-P6)")
+}
+
 /// <p>Helper — capture <method>SessionAgent.UI.ChatPanel.EmitStyle</method>'s
 /// rendered output as a string. Implementation reads the canonical
 /// class source via <CLASS>%Dictionary.MethodDefinition</CLASS> and

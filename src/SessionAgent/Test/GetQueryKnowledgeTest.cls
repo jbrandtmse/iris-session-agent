@@ -340,4 +340,39 @@ Method TestKeywordSpecialCharactersRobust()
     Quit
 }
 
+/// <p><b>Story 14.5 AC-4 QA gap coverage —
+/// <CLASS>SessionAgent.Test.GoldenQuestionDriver</CLASS> smoke.</b> The
+/// driver gates the epic-end Rule 6 battery (it is the mechanical
+/// dispatch helper the bullet-5 walkthrough builds on) but is not a
+/// TestCase itself, so nothing in the regression suite would catch a
+/// signature drift or envelope-serialization break. Runs ONE cheap
+/// golden question through it (corpus read — no trace-table SQL, no
+/// production dependency; the corpus is seeded by this class's
+/// <method>OnBeforeOneTest</method>) and asserts a sane aggregate:
+/// parseable JSON, no <code>driverError</code>, success envelope,
+/// at least one dialect article.</p>
+Method TestGoldenQuestionDriverSmoke()
+{
+    Set tJson = ##class(SessionAgent.Test.GoldenQuestionDriver).RunTool("get_query_knowledge", "{""topic"":""dialect""}")
+    Do $$$AssertNotEquals(tJson, "", "driver returns a non-empty JSON string")
+    Set tEnv = ""
+    Try {
+        Set tEnv = ##class(%DynamicObject).%FromJSON(tJson)
+    } Catch ex {
+        Set tEnv = ""
+    }
+    Do $$$AssertTrue($IsObject(tEnv), "driver output parses as JSON (got: " _ $Extract(tJson, 1, 200) _ ")")
+    If '$IsObject(tEnv) Quit
+    Do $$$AssertEquals(tEnv.%Get("driverError"), "", "no driverError in the driver envelope")
+    ; Story 14.5 review fix: on a driverError envelope +""=0 would make
+    ; the isError assertion below pass spuriously — stop here instead.
+    If tEnv.%Get("driverError") '= "" Quit
+    Do $$$AssertEquals(+tEnv.%Get("isError"), 0, "isError=0 — real Tool.Registry.Dispatch succeeded through the driver")
+    Do $$$AssertTrue($IsObject(tEnv.%Get("structuredContent")), "structuredContent present in the round-tripped envelope")
+    If '$IsObject(tEnv.%Get("structuredContent")) Quit
+    Do $$$AssertEquals(tEnv.structuredContent.%Get("render_strategy"), "ok", "render_strategy='ok' through the driver round-trip")
+    Do $$$AssertTrue(tEnv.structuredContent.%Get("article_count") >= 1, "sane aggregate: at least one dialect article returned")
+    Quit
+}
+
 }

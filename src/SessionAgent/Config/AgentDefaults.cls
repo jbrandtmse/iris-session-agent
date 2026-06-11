@@ -39,11 +39,19 @@ Class SessionAgent.Config.AgentDefaults Extends %RegisteredObject
 /// the v1 reference shape — operators may override per-row via
 /// <code>Config.Agent.SystemPromptOverride</code>.</p>
 ///
+/// <p><b>Story 14.5 (FR64).</b> The static query-methodology &amp;
+/// dialect card from <method>GetMethodologyCard</method> is appended to
+/// BOTH agents' default prompts. A per-row
+/// <code>SystemPromptOverride</code> replaces the default prompt
+/// <i>including</i> the card — the card is part of the default prompt,
+/// not a separate injection channel.</p>
+///
 /// <p>Returns <code>""</code> for any unknown <var>pAgentName</var>.</p>
 ClassMethod GetSystemPrompt(pAgentName As %String) As %String
 {
+    Set tBase = ""
     If pAgentName = "session-inspection" {
-        Quit "You are the SessionAgent Session-Inspection assistant. " _
+        Set tBase = "You are the SessionAgent Session-Inspection assistant. " _
             "Read-only invariant: you MUST NOT make any writes, sends, or edits to the IRIS Production. " _
             "The set of inspection tools available to you is provided to you separately as a typed tool list " _
             "by the runtime — use only the tools in that list, do not invent tool names or describe " _
@@ -55,13 +63,58 @@ ClassMethod GetSystemPrompt(pAgentName As %String) As %String
             "Ensemble domain knowledge: error / failed responses on Business Operations commonly have NULL or empty message bodies — this is normal and not a finding. Focus diagnostic narrative on event log entries, error text, BP rule decisions, and the routing path. Do not surface absent error-response bodies as suspicious unless the operator specifically asks about them."
     }
     If pAgentName = "message-search" {
-        Quit "You are the SessionAgent Message-Search assistant. " _
+        Set tBase = "You are the SessionAgent Message-Search assistant. " _
             "Bounded-WHERE invariant: every search MUST include an indexed column AND a time window — " _
             "never issue an unbounded scan. Return curated lists (typically 5–20 hits), not large dumps; " _
             "favor click-through over verbose summaries so the operator can drill into the Visual Trace " _
             "for full context."
     }
-    Quit ""
+    If tBase = "" Quit ""
+    Quit tBase _ " " _ ..GetMethodologyCard()
+}
+
+/// <p><b>Story 14.5 (FR64) — query methodology &amp; dialect card.</b>
+/// STATIC content only — deterministic, byte-identical on every call
+/// (NFR-P6 prompt-cache discipline: the card rides inside the cached
+/// <code>system</code> segment). Per the LLM Prompt Construction rule
+/// (Epic 3 retro AI-15), the card MUST NOT enumerate runtime-seeded
+/// state: no tool-catalog lists, no tool counts, no provider names, no
+/// namespaces. The three FR64-named tool references
+/// (<code>get_query_knowledge</code>, <code>get_schema_notes</code>,
+/// <code>save_schema_note</code>) are the PRD-mandated exception — they
+/// are contract references, not a capability list. The dialect-trap
+/// list is a genuinely-static taxonomy (allowed). The card carries no
+/// digit characters so determinism tests can assert no run-to-run
+/// numeric drift.</p>
+///
+/// <p><b>Override semantics:</b> the card is appended to the DEFAULT
+/// prompts by <method>GetSystemPrompt</method>; a per-row
+/// <code>Config.Agent.SystemPromptOverride</code> replaces the default
+/// including the card.</p>
+ClassMethod GetMethodologyCard() As %String
+{
+    Quit "Query methodology and dialect card: " _
+        "For analytical or statistics questions answered with SQL, follow the loop: " _
+        "discover the schema (only what you don't already know), consult knowledge, " _
+        "build the SQL incrementally, execute with a small TOP-N preview, then validate " _
+        "the results before finalizing. " _
+        "BEFORE authoring any SQL, consult get_query_knowledge for the relevant topic and " _
+        "get_schema_notes for facts already learned about this namespace. When you discover " _
+        "a durable namespace-specific fact (a table shape, a decode choice, a working join " _
+        "pattern), save it via save_schema_note so future sessions benefit. " _
+        "ALWAYS disclose the exact SQL you executed in your answer. " _
+        "Cardinal IRIS SQL dialect traps: use TOP, never LIMIT. " _
+        "Status and Type on message headers are integer-coded enums — never compare them to " _
+        "quoted strings; a string predicate on an integer column silently coerces and matches " _
+        "everything or nothing with no error. " _
+        "Decode integer-coded enums with %EXTERNAL and %Status columns with %ODBCOUT — " _
+        "%EXTERNAL does not decode %Status. " _
+        "Joining message headers to body tables requires BOTH the body id AND the body class " _
+        "name — the id alone is ambiguous across body classes. " _
+        "ALWAYS time-bound exploratory queries — trace tables are huge. " _
+        "Preview with a small TOP-N before removing the cap. " _
+        "A session's anchor is the header row whose ID equals its SessionId. " _
+        "Read-only covenant: you may only ever SELECT — never write, update, delete, or alter anything."
 }
 
 /// <p><b>Story 10.11.</b> Returns the per-provider canonical default

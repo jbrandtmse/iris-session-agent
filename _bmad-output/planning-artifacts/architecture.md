@@ -1392,6 +1392,39 @@ Consolidating these gave 10 epics where each epic has a clean operator-facing ac
 
 The original 18-step enumeration in this document's §"Decision Impact Analysis → Implementation Sequence" was edited in-place during the 2026-05-02 epic-design alignment. Prior versions are recoverable from git history (`git log --oneline _bmad-output/planning-artifacts/architecture.md`) if the original 18-step prose is needed verbatim.
 
+## Epic 14 Addendum — Trace Intelligence (2026-06-10)
+
+Approved via [`sprint-change-proposal-2026-06-10.md`](sprint-change-proposal-2026-06-10.md) (decisions D1–D4 recorded there). Adds FR60–FR64 (PRD §Trace Intelligence). All v1 architectural patterns are reused; nothing below overturns a prior decision. The raw knowledge source is `docs/iris-query-guide/`.
+
+### New tool family: `SessionAgent.Tool.Query.*`
+
+- Abstract `SessionAgent.Tool.Query.Base` joins `Tool.Base` and `Tool.Search.Base` as a registry-discoverable base: `Tool.Registry`'s discovery SQL gains the third `Super` alternative. Tools remain pure-dispatch per FR55–FR56; `MutatesState=0`.
+- The base owns the dynamic-SQL **guard pipeline** (FR60): single-statement validation → `%Prepare()` → **`%SQL.StatementMetadata.statementType = 1` gate** (verified against `irislib/%SQL/StatementMetadata.cls`: 1=SELECT, 45=CALL, 79=EXPLAIN) → ODBC `%SelectMode` execution → fetch loop enforcing row cap + result character budget + elapsed-time guard → envelope shaping with `row_count` / `truncated` / `elapsed_ms`.
+- **Calibration constants** (AR10 pattern, Class Parameters on `Tool.Query.Base`): `DefaultMaxRows=50`, `HardMaxRows=200`, `ResultCharBudget=32000`, `DefaultElapsedGuardSec=30`, `HardElapsedGuardSec=60`.
+- **CI invariant:** `ReadOnlySqlInvariantTest` (mirrors `BoundedWhereInvariantTest`) — every `Tool.Query.*` concrete must route execution through the base pipeline; CI fails any that bypasses it.
+- **Error envelopes carry diagnosis:** SQLCODE + `%Message` + a fix-hint keyed from the knowledge corpus's diagnostic-checklist article (e.g., −29 alias-in-GROUP-BY; −37 SUBSTR-on-stream; −25 hint placement). This feeds the LLM's execute-observe-refine loop.
+- **Read-only layering for dynamic SQL** (extends FR31/NFR-S1): L1 = `statementType` gate (compiler-level, replaces per-tool code discipline for this surface), L2 = `MutatesState=0` dispatch gate, L3 = `SessionAgent_ReadOnly` RBAC. **Residual risk (documented, accepted):** a SELECT can invoke SQL-projected class methods with side effects; mitigations are L3, 100% SQL audit (FR33–FR34), and the read-only prompt covenant. Optional future hardening: restricted-privilege execution job.
+- **SQL-injection rule (adapted):** the tool input *is* SQL by design, so layer 1 = schema-`description` priming ("single SELECT; always include a time-window predicate and TOP N"), layer 2 = `statementType` gate (stronger than `$Match`), layer 3 = single-statement capped execution, layer 4 = reviewer confirmation.
+
+### New package: `SessionAgent.Knowledge.*`
+
+- `Knowledge.Article` (persistent): topic-keyed, keyword-searchable corpus distilled from `docs/iris-query-guide/` (~35 articles; distillation map in the proposal's Appendix C). Seeded at install by an idempotent `Seed()` invoked from `SessionAgent.Installer` (SeedVocabulary precedent, NFR-R5 install-log count line). Source content carried as **class XData** on `Knowledge.SeedContent` (decision D2) — namespace-portable, no FileCopy path dependency.
+- `Knowledge.SchemaNote` (persistent): agent-authored learned notes, keyed `(Namespace, Subject)`, `VerifiedAt`-timestamped; written via `save_schema_note`, read via `get_schema_notes` (retrieval surfaces age so the agent re-verifies stale facts). Writes target agent-owned tables only (vocab_lookup save-mode precedent) with ByRef audit-emitted envelope-correctness.
+- `Knowledge.SchemaNoteDigest.Build(namespace)` (decision D4): mirrors `Search.VocabularyDigest.Build` — `MaxEntries=10`, `MaxChars≈2000`, most-recently-verified-first. `AgentLoop` first-turn injection extends the Story 9.4 **two-array channel to both agents**: search agent concatenates vocabulary digest + schema-notes digest in the first-user-message prefix; inspection agent gains its first first-turn digest. The cached `system + tools` prefix stays bit-identical (NFR-P6); the cache-stability test extends accordingly.
+- Retrieval is **keyword/topic-keyed, not vector** — NFR-C1 bans `%Library.Embedding`; corpus size (~35 articles) makes this near-costless. Vector retrieval remains Vision-tier.
+
+### Knowledge tiers (cache-aligned)
+
+| Tier | Content | Channel | Cacheable |
+|---|---|---|---|
+| 1 | Static dialect-trap + methodology card (FR64) | System prompt (`AgentDefaults.GetSystemPrompt`, both agents; per-row override semantics unchanged) | Yes (stable prefix) |
+| 2 | Guide corpus (FR62) | `get_query_knowledge` tool pull | Per-turn tool result |
+| 3 | Learned schema notes (FR63) | `get_schema_notes` pull + first-turn digest (D4) | Digest in uncached user segment |
+
+### Tool exposure
+
+Decision D1: all Epic 14 tools are exposed to **both agents** (`Tool.Registry.ListTools()` has no per-agent filter; guards are agent-independent). The Search Agent's bounded-WHERE invariant continues to govern `Tool.Search.*`; `Tool.Query.*` is governed by its own guard pipeline instead.
+
 ## Status
 
-Architecture workflow complete. Document is ready to drive implementation; all 8 workflow steps recorded in frontmatter `stepsCompleted`. **Revision 2026-05-02:** epic numbering aligned with `epics.md` 10-epic consolidated structure (recorded in frontmatter `revisions`).
+Architecture workflow complete. Document is ready to drive implementation; all 8 workflow steps recorded in frontmatter `stepsCompleted`. **Revision 2026-05-02:** epic numbering aligned with `epics.md` 10-epic consolidated structure (recorded in frontmatter `revisions`). **Revision 2026-06-10:** Epic 14 Addendum — Trace Intelligence (`Tool.Query.*` guard pipeline, `SessionAgent.Knowledge.*` package, cache-aligned knowledge tiers) appended per the approved sprint change proposal; no prior decision overturned.

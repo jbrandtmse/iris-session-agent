@@ -124,6 +124,14 @@ The 10 v1 epics below consolidate the architect's original 18-step implementatio
 - **FR58**: Community Contributor can subclass `SessionAgent.Tool.Base` to add custom tools; v1 ships with built-in tools only and **public-API stability of the Tool plugin contract is post-v1**.
 - **FR59**: System ships a tool-call-roundtrip integration test that exercises every bundled provider against every bundled tool, validating the agent loop, adapter conversions, and dispatch policy gate.
 
+**Trace Intelligence (FR60–FR64) — Epic 14 addendum, 2026-06-10**
+
+- **FR60**: Guarded dynamic read-only SQL tool (`execute_readonly_sql`) — single statement, post-`%Prepare` `%SQL.StatementMetadata.statementType = 1` (SELECT-only) gate, row cap 50/200, ≈32 KB result budget with truncation markers, elapsed-time fetch guard 30s/60s, ODBC `%SelectMode`, full SQL audit per FR33–FR34, SQLCODE + knowledge-corpus diagnostic hint on failure.
+- **FR61**: Typed schema-discovery tools: `list_active_body_types`, `describe_message_class` (class→table mapping, columns, indexes, subclasses, collection tables, `_AdditionalInfo` key census), `discover_tables`.
+- **FR62**: Install-seeded query-knowledge corpus (`SessionAgent.Knowledge.Article`, XData-carried) distilled from `docs/iris-query-guide/`, retrievable via `get_query_knowledge` by topic enum + keyword match (non-vector per NFR-C1).
+- **FR63**: Agent-authored learned schema notes (`SessionAgent.Knowledge.SchemaNote`, Namespace + Subject keyed, `VerifiedAt`-timestamped) via `save_schema_note`/`get_schema_notes`; schema-notes digest injected into the first-user-message segment for both agents via the FR24 two-array channel (cache-preserving).
+- **FR64**: Static query-methodology + dialect-trap card in both agent system prompts, with directives to consult knowledge/notes before authoring SQL and disclose executed SQL; prompt-cache-stable, no runtime-state enumeration.
+
 ### NonFunctional Requirements
 
 **Performance (NFR-P1–P6)**
@@ -335,6 +343,14 @@ Every FR mapped to its **primary** epic (the epic that completes its acceptance)
 - **FR58** (Community Contributor can subclass `SessionAgent.Tool.Base`) → Epic 2 *(structurally supported; v1 ships built-ins only)*
 - **FR59** (tool-call-roundtrip integration test exercises every provider × every tool) → Epic 5 *(test infrastructure; re-runs as more tools land in Epic 4 and Epic 8)*
 
+**Trace Intelligence (FR60–FR64) — added 2026-06-10:**
+
+- **FR60** (guarded dynamic read-only SQL — `execute_readonly_sql` + `Tool.Query.Base` guard pipeline) → Epic 14
+- **FR61** (schema-discovery tools — `list_active_body_types` / `describe_message_class` / `discover_tables`) → Epic 14
+- **FR62** (install-seeded query-knowledge corpus + `get_query_knowledge`) → Epic 14
+- **FR63** (learned schema notes + first-turn digest injection for both agents) → Epic 14
+- **FR64** (query-methodology + dialect-trap card in system prompts) → Epic 14
+
 **NFR coverage** is implicit per-epic (each NFR's enforcement mechanism lives in its owning epic — see the per-epic NFR list under §Epic List below). **AR coverage** ditto.
 
 ## Epic List
@@ -446,6 +462,14 @@ The epics below were opened after v1.0.0 shipped to address findings from operat
 **Stories:** 6 (13.0 setup + 5 tool-add stories).
 
 **No PRD / architecture / UX-spec edits.** Pure additive surface within the existing tool-registry pattern.
+
+### Epic 14: Trace Intelligence
+
+**Operator outcome:** Both agents become dramatically smarter about message-trace *content*. The operator can ask open-ended analytical questions the fixed tool catalog cannot answer — failure rate by endpoint, daily volume/session trends, latency distributions, payload-derived dimensions, custom application tables — and the agent answers them by authoring guarded read-only SQL informed by a seeded knowledge corpus distilled from `docs/iris-query-guide/`, typed schema-discovery tools, and per-namespace learned schema notes it writes and re-reads across conversations. Source-of-truth artifact: `_bmad-output/planning-artifacts/sprint-change-proposal-2026-06-10.md`.
+
+**Stories:** 6 + 1 stretch (14.0 setup + 5 capability stories + 14.6 stretch). Adds FR60–FR64 (PRD §Trace Intelligence addendum).
+
+**PRD + architecture addenda committed with epic opening** (unlike Epics 11–13): FR60–FR64 and the `Tool.Query.*` / `SessionAgent.Knowledge.*` architecture addendum ship in the approval commit.
 
 ### Vision Tier — Out of Scope (post-v1)
 
@@ -2895,3 +2919,39 @@ All 6 stories ship `done`. Tool catalog grows to 28 entries verifiable via `Tool
 13.0 → 13.4 → 13.2 → 13.1 → 13.3 → 13.5 — smallest tool first to validate the "add a new tool" path, then build up to the originally-motivating `get_class_source`, then 13.3's `Ens.Config.*` SQL family, then the Search-Agent variant last.
 
 **See also:** `_bmad-output/planning-artifacts/sprint-change-proposal-2026-05-09.md` for the full impact analysis, Story 13.0 triage of Epic 12 retro AIs (3 INCLUDE as Carry-Forward, 2 DEFER to v3), and approval trail that opened this epic.
+
+## Epic 14: Trace Intelligence
+
+**Status:** backlog (opened 2026-06-10).
+
+**Source:** `_bmad-output/planning-artifacts/sprint-change-proposal-2026-06-10.md` is the source-of-truth design artifact — guard pipeline contract, knowledge-tier design, research grounding (Perplexity deep-research verification line), decision record (D1–D4), and the knowledge-corpus distillation map (Appendix C). Each Story 14.x spec cites it. The raw knowledge source is `docs/iris-query-guide/` (10 files, commit `89c5fce`).
+
+**Trigger:** product-owner request (2026-06-10) — *"make the agent smarter about the content of message traces"* using `docs/iris-query-guide/`. The v1 agents answer only what the 28 fixed-purpose tools anticipate; they cannot answer open-ended analytical questions (failure rate by dimension, volume/latency trends, payload-derived pivots, custom app tables) and hold near-zero stored knowledge of the IRIS SQL dialect's silent-wrong-results traps, the header/body/session model, or schema-discovery technique.
+
+**Design (three axes, hybrid pattern):**
+1. **Tools** — guarded dynamic `execute_readonly_sql` (`Tool.Query.Base` pipeline: single statement → post-`%Prepare` `statementType=1` gate → capped/elapsed-guarded fetch → SQLCODE+hint error envelope) plus typed schema-discovery tools (`describe_message_class`, `list_active_body_types`, `discover_tables`). Exposed to **both agents** (D1).
+2. **Stored knowledge** — install-seeded `SessionAgent.Knowledge.Article` corpus distilled from the query guide (XData-carried, D2; keyword/topic retrieval per NFR-C1) via `get_query_knowledge`.
+3. **Learned memory + prompts** — `SessionAgent.Knowledge.SchemaNote` with `save_schema_note`/`get_schema_notes` and first-turn digest injection for both agents (D4, FR24 two-array precedent); static dialect-trap methodology card appended to both system prompts (FR64).
+
+**Stories (in order):**
+- 14.0 — Epic 13 closeout + Epic 14 setup (Rule 7 operator-state gate; Rule 9 carry-forward closure: `%Execute()` SQLCODE sweep across `Tool.Inspection.*` [deferred-work carrier], Epic 13 retro AI-2 + AI-3; stale-reference scan incl. `renderWelcomeMessage` capability text; golden-question eval set authored, ≈12 questions)
+- 14.1 — Knowledge corpus + `get_query_knowledge` (`Knowledge.Article` + `SeedContent` XData ≈35 articles; idempotent `Seed()` + Installer wiring per SeedVocabulary precedent; topic enum + keyword match; tests)
+- 14.2 — Schema-discovery tools (FR61; `UPPER()` both sides on `%Dictionary` joins; `%EXACT`-alias positional reads; subclass + collection-table coverage; tests)
+- 14.3 — `execute_readonly_sql` + `Tool.Query.Base` (FR60 guard pipeline; SQLCODE→hint map; `ReadOnlySqlInvariantTest` CI check; audit enrichment row_count/truncated/elapsed_ms; EXPECTEDTOOLCOUNT bump; Task 0 probes `statementType` values + `%SelectMode` rendering live)
+- 14.4 — Learned schema notes + digest injection (FR63 + D4; `SchemaNoteDigest.Build` mirrors `VocabularyDigest.Build`; AgentLoop first-turn injection both agents; NFR-P6 cache-stability test extension; ByRef audit-emitted envelope-correctness per Rule 8 defensive-surface enumeration)
+- 14.5 — Prompt methodology card + welcome text + eval pass (FR64; Rule 4 watch-item welcome-message update; prompt-cache stability verification; mock-matrix golden-question run; README tool-catalog + knowledge-subsystem update)
+- 14.6 — *(stretch, D3)* EXPLAIN plan-reasoning support (`statementType=79` allowance + `%PARALLEL`/`%IGNOREINDEX` guidance article activation; only if 14.0–14.5 land clean)
+
+**Out of scope for Epic 14:**
+- Vector/semantic retrieval for the knowledge corpus (NFR-C1 bans `%Library.Embedding`; Vision tier).
+- Per-agent tool filtering in `Tool.Registry` (D1 resolved both-agents; revisit only if walkthrough shows misuse).
+- Restricted-privilege execution job for dynamic SQL (residual-risk hardening documented in the proposal §4.2; future epic if pilot demands).
+- Promoting recurring dynamic-SQL patterns to typed tools (explicitly a *later*-epic activity once usage data exists).
+
+**Acceptance gate:**
+All 6 core stories ship `done` (14.6 stretch optional). Tool catalog grows 28 → 33–34 verifiable via `Tool.Registry:ListTools` (exact count reconciled in 14.0 Task 0; EXPECTEDTOOLCOUNT updated). Knowledge corpus seeded and retrievable on fresh install (install-log count line per NFR-R5). Golden-question eval set passes the user-led chat-panel walkthrough on the sample production (Rule 6 bullet 5), demonstrating: knowledge consulted before SQL, time-bounded + TOP-N queries, self-correction from a seeded SQLCODE error, schema note saved and re-read across conversations, executed SQL disclosed. The deliberately-trapped question (status-string vs integer predicate) answers correctly. 100% dynamic-SQL audit capture verified. Regression baseline grows from 509 with zero failures.
+
+**Recommended ordering:**
+14.0 → 14.1 → 14.2 → 14.3 → 14.4 → 14.5 (→ 14.6 stretch) — knowledge corpus first because 14.3's SQLCODE→hint map and 14.5's prompt card both consume it; discovery tools before dynamic SQL so the eval of 14.3 can exercise the full discover→query loop; prompts last so they reference shipped tools only.
+
+**See also:** `_bmad-output/planning-artifacts/sprint-change-proposal-2026-06-10.md` for the full impact analysis, research grounding, decision record (D1–D4 resolved at approval), and approval trail that opened this epic.

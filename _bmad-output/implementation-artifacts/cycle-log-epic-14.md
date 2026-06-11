@@ -56,3 +56,4 @@
 2026-06-11T21:39:06Z	Epic 14	walkthrough_complete	method=browser scope=live+multiprovider+comprehensive gq=13/13 schema_note=pass explain=pass providers=openai+anthropic+gemini+ollama-wire defects_caught=4 fixes=1(bare-host-v1) sha=7e86495 evidence=evidence/walkthrough-*.png model=claude-fable-5
 2026-06-11T21:39:06Z	Epic 14	battery_bullet5_complete	user_scoped=all-three-additive driven_via=chrome-devtools sweep_final=630/630/0
 2026-06-11T21:48:44Z	Epic 14	retrospective_complete	path=_bmad-output/implementation-artifacts/epic-14-retro-2026-06-11.md action_items=5 rules_codified=2 readiness=production-ready model=claude-fable-5
+2026-06-11T21:52:47Z	Epic 14	epic_merged_to_feature	repos=. feature_sha=d440a29 merge_sha=d440a29 submodules= epic_branch_deleted=local+remote

@@ -58,7 +58,7 @@ Class SessionAgent.Test.InspectionSuiteVerificationTest Extends %UnitTest.TestCa
 /// incrementing the catalog must update this constant + the named-tool
 /// list in <method>TestRegistryListsExpectedToolCount</method> + the
 /// representative-args table in <method>GetRepresentativeArgs</method>.</p>
-/// <p>As of Story 14.2 this is <b>32</b> — 21 inspection tools
+/// <p>As of Story 14.3 this is <b>33</b> — 21 inspection tools
 /// (Stories 2.11 + 4.x + 13.4: <code>get_queue_state</code>; Story 13.2:
 /// <code>get_rule_source</code>; Story 13.1:
 /// <code>get_class_source</code>; Story 13.3:
@@ -74,13 +74,14 @@ Class SessionAgent.Test.InspectionSuiteVerificationTest Extends %UnitTest.TestCa
 /// <code>search_by_body_field</code>; Story 8.6:
 /// <code>inspect_body_candidates</code>; Story 8.7:
 /// <code>vocab_lookup</code>; Story 13.5:
-/// <code>find_sessions_using_class</code>).</p>
+/// <code>find_sessions_using_class</code>) + 1 query tool (Story 14.3:
+/// <code>execute_readonly_sql</code>).</p>
 /// <p><b>Story 14.0 correction (Epic 13 retro AI-3 incident):</b> Story
 /// 13.5 shipped <code>find_sessions_using_class</code> without bumping
 /// this constant 27→28 or extending the named-tool list — the three
 /// count-equality assertions in this class failed against the live
 /// 28-tool registry until Story 14.0 reconciled them.</p>
-Parameter EXPECTEDTOOLCOUNT As %Integer = 32;
+Parameter EXPECTEDTOOLCOUNT As %Integer = 33;
 
 /// <p>Synthetic session id well outside any realistic Ens production
 /// range. Used by every "not found" / "validation error" envelope assertion
@@ -119,9 +120,10 @@ ClassMethod GetConcreteToolClasses() As %DynamicArray
     Set tList = []
     Set tStmt = ##class(%SQL.Statement).%New()
     ; Story 8.3 — also discover concrete search tools that extend the
-    ; Tool.Search.Base intermediate abstract. Keep this filter in
-    ; lockstep with SessionAgent.Tool.Registry's discovery filter.
-    Set tSC = tStmt.%Prepare("SELECT %EXACT(Name) AS ClassName FROM %Dictionary.ClassDefinition WHERE (%EXACT(Super) = 'SessionAgent.Tool.Base' OR %EXACT(Super) = 'SessionAgent.Tool.Search.Base') AND Abstract = 0 AND NOT (%EXACT(Name) %STARTSWITH 'SessionAgent.Test.') ORDER BY %EXACT(Name)")
+    ; Tool.Search.Base intermediate abstract; Story 14.3 adds the
+    ; Tool.Query.Base third base. Keep this filter in lockstep with
+    ; SessionAgent.Tool.Registry's discovery filter.
+    Set tSC = tStmt.%Prepare("SELECT %EXACT(Name) AS ClassName FROM %Dictionary.ClassDefinition WHERE (%EXACT(Super) = 'SessionAgent.Tool.Base' OR %EXACT(Super) = 'SessionAgent.Tool.Search.Base' OR %EXACT(Super) = 'SessionAgent.Tool.Query.Base') AND Abstract = 0 AND NOT (%EXACT(Name) %STARTSWITH 'SessionAgent.Test.') ORDER BY %EXACT(Name)")
     If $$$ISERR(tSC) Quit tList
     Set tRs = tStmt.%Execute()
     While tRs.%Next() {
@@ -269,6 +271,14 @@ ClassMethod GetRepresentativeArgs(pToolName As %String) As %DynamicObject
         ; always projected); bounded result set.
         Do tArgs.%Set("name_fragment", "MessageHeader")
         Do tArgs.%Set("max_results", 5, "number")
+    } ElseIf pToolName = "execute_readonly_sql" {
+        ; Story 14.3 — a TOP-1 SELECT against Ens.MessageHeader exercises
+        ; the full guarded pipeline (validation -> prepare -> statementType
+        ; gate -> execute -> capped fetch -> envelope). Always returns an
+        ; "ok" envelope (zero rows is still success); no fixture seeding
+        ; required.
+        Do tArgs.%Set("sql", "SELECT TOP 1 ID, SessionId FROM Ens.MessageHeader ORDER BY ID DESC")
+        Do tArgs.%Set("max_rows", 1, "number")
     }
     Quit tArgs
 }
@@ -393,7 +403,7 @@ Method TestRegistryListsExpectedToolCount()
     Do $$$AssertEquals(tList.%Size(), ..#EXPECTEDTOOLCOUNT, "exactly " _ ..#EXPECTEDTOOLCOUNT _ " tools registered")
 
     ; Verify every expected name is present (order-independent).
-    Set tExpected = $ListBuild("session_summary", "session_timeline", "message_headers", "event_log", "rule_log", "get_message_body", "get_message_detail", "get_business_process_source", "get_business_process_instance", "list_business_process_methods", "find_related_sessions", "find_sessions_by_body", "explain_error", "search_by_time", "search_by_status", "search_by_source", "search_by_target", "search_by_message_class", "search_by_session", "search_by_super_session", "search_by_body_field", "inspect_body_candidates", "vocab_lookup", "get_queue_state", "get_rule_source", "get_class_source", "get_production_config_item", "find_sessions_using_class", "get_query_knowledge", "list_active_body_types", "describe_message_class", "discover_tables")
+    Set tExpected = $ListBuild("session_summary", "session_timeline", "message_headers", "event_log", "rule_log", "get_message_body", "get_message_detail", "get_business_process_source", "get_business_process_instance", "list_business_process_methods", "find_related_sessions", "find_sessions_by_body", "explain_error", "search_by_time", "search_by_status", "search_by_source", "search_by_target", "search_by_message_class", "search_by_session", "search_by_super_session", "search_by_body_field", "inspect_body_candidates", "vocab_lookup", "get_queue_state", "get_rule_source", "get_class_source", "get_production_config_item", "find_sessions_using_class", "get_query_knowledge", "list_active_body_types", "describe_message_class", "discover_tables", "execute_readonly_sql")
     Set tFound = ""
     Set tIter = tList.%GetIterator()
     While tIter.%GetNext(.tKey, .tEntry) {

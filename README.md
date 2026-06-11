@@ -54,8 +54,9 @@ Some HealthShare-Foundation-configured namespaces serve their pages with `/healt
 | Sweep tasks (audit + chat-history retention) | Epic 7 + Story 10.6 | Mgmt Portal Task Manager (`SessionAgent.PurgeOrphanedChatHistory`, `SessionAgent.PurgeStaleSearchChatHistory`, `SessionAgent.UserVocabularyDecay`) |
 | Vendored Markdown bundle (citations + code blocks render under CDN-blocked browsers) | Story 10.7 | `<script src="markdown-bundle.min.js">` ships with the module |
 | Tool Catalog Expansion (5 new agent-introspection tools + `find_sessions_using_class`) | Epic 13 | 6 new tools across both agents; `get_rule_source`, `get_class_source`, `get_queue_state`, `get_production_config_item`, `find_sessions_using_class` |
-| FR59 cross-matrix gate (32 tools × 4 providers = 128) | Story 5.4 + 8.x + 10.9 + 13.x + 14.1 + 14.2 | `SessionAgent.Test.ToolCallRoundtripIntegrationTest` (mock + live) |
+| FR59 cross-matrix gate (33 tools × 4 providers = 132) | Story 5.4 + 8.x + 10.9 + 13.x + 14.1 + 14.2 + 14.3 | `SessionAgent.Test.ToolCallRoundtripIntegrationTest` (mock + live) |
 | Schema-discovery tools (FR61: `list_active_body_types`, `describe_message_class`, `discover_tables`) | Story 14.2 | Both agents discover live table/column/index state instead of hallucinating names into SQL |
+| Guarded dynamic SQL (FR60: `execute_readonly_sql` + `Tool.Query.Base` pipeline + `ReadOnlySqlInvariantTest`) | Story 14.3 | Open-ended analytical SELECTs under a compiler-level read-only gate (statementType), caps, and corpus-fed SQLCODE hints |
 
 ## Try it in a clean namespace (recommended for evaluation)
 
@@ -406,7 +407,7 @@ This module embeds two AI agents directly in the surfaces operators already use:
 
 ## Tool Catalog
 
-All 32 tools are registered in `SessionAgent.Tool.Registry` and are dispatched via the read-only tool dispatch gate (`MutatesState=0` enforced on every call). Tools are organized by agent.
+All 33 tools are registered in `SessionAgent.Tool.Registry` and are dispatched via the read-only tool dispatch gate (`MutatesState=0` enforced on every call). Tools are organized by agent.
 
 ### Session Inspection Agent (21 tools)
 
@@ -453,6 +454,23 @@ These tools run on the Message Viewer screen and find sessions matching natural-
 | `inspect_body_candidates` | Two-stage indexed-prefilter + body-content inspection for unindexed body patterns (≤50 candidates) |
 | `vocab_lookup` | Manage per-user vocabulary aliases (list, save, search modes); silent alias capture on session click-through |
 | `find_sessions_using_class` | Find sessions referencing a given class name in `SourceConfigName`, `TargetConfigName`, or `MessageBodyClassName` *(Epic 13)* |
+
+### Guarded dynamic SQL *(Epic 14 — 1 tool, exposed to both agents)*
+
+| Tool | Description |
+|---|---|
+| `execute_readonly_sql` | Run a single LLM-authored SQL `SELECT` under a compiler-level read-only gate and return capped tabular results *(Epic 14; exposed to both agents)* |
+
+`execute_readonly_sql` answers the long tail of open-ended analytical trace questions the purpose-built tools do not cover (aggregates, custom joins, `AdditionalInfo` pivots). Every call routes through the `SessionAgent.Tool.Query.Base` guard pipeline:
+
+1. **Single-statement validation** — multi-statement input (a semicolon outside string literals) is rejected; a trailing semicolon is tolerated; `EXPLAIN` is rejected by keyword (on this IRIS build `EXPLAIN SELECT` prepares with `statementType=1`, so the keyword check is the honest rejection point).
+2. **`statementType` compiler gate** — after `%Prepare`, any statement whose `%Metadata.statementType` is not `1` (SELECT) is rejected pre-execution with an envelope naming the statement type (`INSERT`/`UPDATE`/`DELETE`/`CALL`/DDL). This is a compiler-level decision, stronger than any regex.
+3. **Caps** — row cap (default 50, hard max 200), total result character budget (32,000 chars) with an explicit `truncated` marker, and an elapsed guard (default 30 s, hard max 60 s) checked **between fetch iterations**. The guard does not preempt a single long-running statement — that is bounded only by the Web Gateway's 300-second backstop.
+4. **Hint-bearing error envelopes** — SQL prepare/execute failures append a `SQLCODE <n> / symptom -> fix` hint read live from the knowledge corpus's `diagnostic-checklist` article, steering the agent to the corrected query shape.
+
+**Documented, accepted residual risk:** a `SELECT` statement can invoke SQL-projected class methods (stored functions) that have side effects — the gate proves the outer statement is a SELECT, not that every function it references is pure. Mitigations: the `SessionAgent_ReadOnly` RBAC role on the executing context, 100% ToolCall audit (the audit row's args JSON carries the full SQL text), and the read-only prompt covenant. A restricted-privilege execution job is a possible future hardening and is explicitly out of scope for v1.
+
+The CI invariant test `SessionAgent.Test.ReadOnlySqlInvariantTest` source-scans every concrete `SessionAgent.Tool.Query.*` tool and fails any whose `Invoke` does not route through the guarded pipeline (or that calls `%Prepare`/`%Execute`/`&sql(` directly); the `SessionAgent.Test.ReadOnlySqlProofBatteryTest` battery proves INSERT/UPDATE/DELETE/CALL/EXPLAIN rejection (including a write-proof row-count probe), the caps, and the hint map.
 
 ### Query Knowledge corpus *(Epic 14)*
 

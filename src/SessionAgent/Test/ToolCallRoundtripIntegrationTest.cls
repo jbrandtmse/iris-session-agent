@@ -797,8 +797,11 @@ ClassMethod RunMatrix() As %DynamicObject
 /// <code>get_query_knowledge</code>); Story 14.2 grows it to
 /// 4 × 32 = 128 (21 inspection + 11 search — adds
 /// <code>list_active_body_types</code>, <code>describe_message_class</code>,
-/// <code>discover_tables</code>).
-/// When a 5th provider or 33rd tool is added, this assertion
+/// <code>discover_tables</code>); Story 14.3 grows it to
+/// 4 × 33 = 132 (21 inspection + 11 search + 1 query — adds
+/// <code>execute_readonly_sql</code>, the first
+/// <code>Tool.Query.Base</code>-family tool).
+/// When a 5th provider or 34th tool is added, this assertion
 /// auto-fails so the maintainer updates the expected count +
 /// acknowledges the matrix grew. Defensive against silent shrinkage
 /// too (a regression deleting a tool).</p>
@@ -807,7 +810,7 @@ ClassMethod RunMatrix() As %DynamicObject
 Method TestMatrixCardinalityMatchesCatalog()
 {
     Set tMatrix = ..EnumerateMatrix()
-    Do $$$AssertEquals(tMatrix.%Size(), 128, "Matrix cardinality at Story 14.2 close = 4 providers × 32 tools (21 inspection + 11 search) = 128 pairs (got: " _ tMatrix.%Size() _ ")")
+    Do $$$AssertEquals(tMatrix.%Size(), 132, "Matrix cardinality at Story 14.3 close = 4 providers × 33 tools (21 inspection + 11 search + 1 query) = 132 pairs (got: " _ tMatrix.%Size() _ ")")
 }
 
 /// <p><b>AC-5 — Dispatch policy gate.</b> Structurally verify that every

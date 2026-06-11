@@ -23,3 +23,10 @@
 2026-06-11T10:30:13Z	Story 14.2	qa_complete	model=claude-fable-5 tests_added=4 first_run_failures=0 clarifications=0 closing_sections_present=true sweep=552/552/0 output_tokens=155347
 2026-06-11T11:04:36Z	Story 14.2	cr_complete	model=claude-fable-5 resolved=12 deferred=4 dismissed=4 high=0 med=7 low=5 clarifications=0 closing_sections_present=true sweep=554/554/0 output_tokens=287067
 2026-06-11T11:06:02Z	Story 14.2	smoke_complete	method=api result=pass iterations=2 defects_caught=0 evidence=labt=3types;dmc(Ens.MessageHeader)=25cols;dt(Knowledge)=1table model=claude-fable-5
+2026-06-11T11:06:39Z	Story 14.2	committed	sha=22af7d2 submodules=
+2026-06-11T11:08:47Z	Story 14.3	story_created	path=_bmad-output/implementation-artifacts/14-3-execute-readonly-sql-tool-query-base-invariant-test.md spec_lines=109 model=claude-fable-5
+2026-06-11T11:35:19Z	Story 14.3	dev_complete	model=claude-fable-5 files=11 tests_added=17 sweep=571/571/0 clarifications=0 closing_sections_present=true output_tokens=285929 notes=EXPLAIN-prepares-as-type1-on-this-build
+2026-06-11T11:35:19Z	Story 14.3	adr_verifications_complete	result=none_required model=claude-fable-5
+2026-06-11T11:46:18Z	Story 14.3	qa_complete	model=claude-fable-5 tests_added=11 first_run_failures=0 clarifications=0 closing_sections_present=true sweep=582/582/0 output_tokens=161847 notes=comment-prefixed-EXPLAIN-bypass-finding-for-reviewer
+2026-06-11T12:06:06Z	Story 14.3	cr_complete	model=claude-fable-5 resolved=5 deferred=2 dismissed=1 high=1 med=2 low=2 clarifications=0 closing_sections_present=true sweep=582/582/0 output_tokens=235125 notes=HIGH-comment-prefix-EXPLAIN-bypass-fixed
+2026-06-11T12:06:48Z	Story 14.3	smoke_complete	method=api result=pass iterations=1 defects_caught=0 evidence=select3rows433ms;insert=not_select+writeproof-unchanged;-29hint-present model=claude-fable-5

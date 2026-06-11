@@ -64,9 +64,18 @@ Property ToolName As %String;
 
 /// <p>JSON string of the args the agent passed to the tool — REDACTED via
 /// <method>SessionAgent.Util.Json.Redact</method> before this row was
-/// persisted. <code>MAXLEN=8192</code> accommodates a non-trivial Mango
-/// selector or vocabulary-keys array without a stream backing store.</p>
-Property ArgsJson As %String(MAXLEN = 8192);
+/// persisted. <code>MAXLEN=32768</code> (parity with
+/// <property>ResultJson</property>) accommodates a non-trivial Mango
+/// selector, a vocabulary-keys array, or — since Story 14.3 — the
+/// free-text <code>sql</code> arg of <code>execute_readonly_sql</code>,
+/// the first tool whose primary arg is unbounded operator/LLM-authored
+/// SQL. Before Story 14.3 every tool carried small structured args that
+/// never approached the prior <code>8192</code> ceiling; a >8 KB SQL
+/// query executed but its audit row silently failed to persist
+/// (<code>%Save</code> DATATYPE overflow swallowed by the Dispatch
+/// audit-emit path), violating FR60 100% ToolCall audit. Bumped to
+/// close that reachable gap (Story 14.3 review fix cr-14-3-C).</p>
+Property ArgsJson As %String(MAXLEN = 32768);
 
 /// <p>JSON string of the result the tool returned — REDACTED via the same
 /// helper. <code>MAXLEN=32768</code> accommodates a 50-row session-summary

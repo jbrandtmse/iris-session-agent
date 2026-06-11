@@ -1,3 +1,88 @@
+# Test Automation Summary — Story 14.3 (qa-generate-e2e-tests stage, 2026-06-11)
+
+**Env:** IRIS HSCUSTOM (production running). Framework: IRIS `%UnitTest` (ObjectScript backend
+security story, no UI surface). All new tests dispatch through the real
+`SessionAgent.Tool.Query.ExecuteReadonlySql.Invoke` path.
+
+## Scope
+
+GAP coverage for the security story: adversarial read-only-bypass INPUT shapes against
+`SessionAgent.Tool.Query.ExecuteReadonlySql` / `SessionAgent.Tool.Query.Base`. The dev battery
+(`ReadOnlySqlProofBatteryTest`, 13) + invariant (`ReadOnlySqlInvariantTest`, 4) already lock the
+bare INSERT/UPDATE/DELETE/CALL/EXPLAIN cases, caps/budget/elapsed, ODBC rendering, −29 hint +
+fallback, multi-statement/semicolon edges, empty-result, missing-sql. This stage adds the
+adversarial-input layer those tests did not exercise. Every candidate gap was probed LIVE before
+locking semantics (scratch class `SessionAgent.ScratchQA143`, deleted after).
+
+## Gap Assessment (candidates from the stage briefing)
+
+- **(a) read-only bypass shapes — REAL GAPS, all probed + locked.** Comment-prefix
+  (`/* */ INSERT`, `-- \n INSERT`), case variation (`iNsErT`), leading whitespace/control chars,
+  CTE-wrapped INSERT, and DDL/DCL leading keywords (DROP/CREATE/TRUNCATE/GRANT/TUNE) — every write
+  shape is caught by the `statementType` compiler gate (the gate inspects compiled metadata, so
+  comments/case/whitespace/CTE-wrapping never smuggle a write through). 5 tests added with sentinel
+  write-proofs. `SELECT ... INTO :hostvar` → rejected at %Prepare (prepare_error). `FROM (INSERT)`
+  / unpreparable shapes are subsumed by the statementType gate.
+- **(b) case variants — COVERED** by `TestCaseInsensitiveWriteRejected`.
+- **(c) string literal containing `'; DROP TABLE'` — REAL GAP, false-positive lock added.** The
+  single-statement scanner honors string-literal boundaries; the keyword-bearing literal is data,
+  the SELECT runs and the literal round-trips verbatim.
+- **(d) unbound parameter marker `?` — REAL GAP.** No params are bound (L3); IRIS returns a
+  graceful execute_error envelope (no crash). Envelope shape locked.
+- **(e) very long SQL input (~40,000 chars) — REAL GAP.** No MAXLEN error / throw; executes and the
+  OUTPUT char budget caps the result.
+
+## Generated Tests
+
+### `SessionAgent.Test.ReadOnlySqlAdversarialTest` (NEW — 11 methods, all pass)
+
+- [x] `TestCommentPrefixedWriteRejectedWithProof`
+- [x] `TestCaseInsensitiveWriteRejected`
+- [x] `TestLeadingWhitespaceControlChars` (also asserts whitespace-led legit SELECT is NOT false-rejected)
+- [x] `TestDdlAndDclLeadingKeywordsRejected` (DROP/CREATE/TRUNCATE/GRANT/TUNE; DROP write-proof)
+- [x] `TestCteWrappedInsertRejected` (canonical bypass — caught as statementType=2)
+- [x] `TestStringLiteralWithSqlKeywordsNotFalseRejected` (false-positive guard)
+- [x] `TestSelectIntoHostVarRejected`
+- [x] `TestUnboundParameterMarkerGracefulEnvelope`
+- [x] `TestVeryLongSqlInputHandled`
+- [x] `TestCommentPrefixedExplainStaysReadOnly` (read-only-invariant lock for the EXPLAIN leak — see Finding)
+- [x] `TestLegitCteAndUnionPass` (legit CTE + UNION not false-rejected)
+
+## Findings
+
+1. **Security invariant holds.** Every probed write/mutation shape is rejected PRE-execution by the
+   `statementType` gate (deny-by-default allow-list; only type 1 SELECT passes). No bypass found.
+2. **FINDING (non-security, for reviewer/lead) — comment-prefixed EXPLAIN bypasses the stage-1
+   keyword check.** `/* c */ EXPLAIN SELECT ...` has first token `/*`, so
+   `Base.ValidateSingleStatement`'s leading-`EXPLAIN` check misses it; IRIS compiles it as
+   statementType=1, so it executes and returns a query plan. NOT a read-only violation (EXPLAIN
+   mutates nothing — write-proof confirms), only a leak of the EXPLAIN-rejection nicety. Bare /
+   lowercase `EXPLAIN` IS still rejected. EXPLAIN allowance is explicitly Story 14.6 stretch scope;
+   logged as a finding rather than fixed in this test-generation stage. The added test locks the
+   security-meaningful truth (no mutation) so it holds under either a future keyword-check fix or
+   the 14.6 allowance.
+3. **Minor cosmetic — unmapped statementType names.** GRANT (type 7) and TUNE TABLE (type 52) are
+   rejected correctly but render as `statementType=7` / `statementType=52` in
+   `rejected_statement_type` (absent from `Base.StatementTypeName`). Rejection is correct; only the
+   friendly name is missing. No bug shape; noted for optional polish.
+
+## Verification (canonical numerical-MAX SQL ground-truth probe)
+
+- New-class roster: 11/11 `Status=1` (verbatim from `%UnitTest_Result.TestMethod`; MCP envelope
+  truncated to 1 row — SQL probe is the gate).
+- Full-suite aggregate: **Total=582, Passed=582, Failed=0** = baseline 571 + 11 new.
+- Pre-flight: `Ens.Director.IsProductionRunning` → 1.
+
+## Rule 8 (discoverability)
+
+`ReadOnlySqlAdversarialTest` lives in `SessionAgent.Test`, extends `%UnitTest.TestCase`; all 11
+methods are `Test*`-prefixed camelCase with no underscores; the `AssertNotSelect` helper is a
+non-`Test*` instance method, `SentinelCount`/`BuildCtx`/`RunTool` are non-`Test*` ClassMethods; no
+`Property Test*`. Discovery proven empirically by the 582-count package aggregate including all 11
+new methods. Class size 285 lines (≤ ~500 rule).
+
+---
+
 # Code-review addendum — Story 14.2 (code-review stage, 2026-06-11)
 
 Corrections + additions to the QA section below, applied at code review:

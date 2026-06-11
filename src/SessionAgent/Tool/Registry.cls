@@ -62,11 +62,12 @@ ClassMethod ListTools() As %DynamicArray
         ; Tool.Base; concrete search tools (e.g., SearchByTime) declare
         ; their immediate Super as Tool.Search.Base, NOT Tool.Base, so the
         ; flat Super-equality filter would have missed all 6 search tools.
-        ; The OR clause closes that gap. Future intermediate abstract
-        ; bases (e.g., Tool.Vocab.Base if added in Story 8.7+) would
-        ; require a parallel OR entry — the alternative is a recursive
-        ; Super-chain walk, which is heavier and not yet warranted.
-        Set tSC = tStmt.%Prepare("SELECT %EXACT(Name) AS ClassName FROM %Dictionary.ClassDefinition WHERE (%EXACT(Super) = 'SessionAgent.Tool.Base' OR %EXACT(Super) = 'SessionAgent.Tool.Search.Base') AND Abstract = 0 AND NOT (%EXACT(Name) %STARTSWITH 'SessionAgent.Test.') ORDER BY %EXACT(Name)")
+        ; The OR clause closes that gap. Story 14.3 adds the third base
+        ; (Tool.Query.Base) for the guarded dynamic-SQL Query family.
+        ; Future intermediate abstract bases would require a parallel OR
+        ; entry — the alternative is a recursive Super-chain walk, which
+        ; is heavier and not yet warranted.
+        Set tSC = tStmt.%Prepare("SELECT %EXACT(Name) AS ClassName FROM %Dictionary.ClassDefinition WHERE (%EXACT(Super) = 'SessionAgent.Tool.Base' OR %EXACT(Super) = 'SessionAgent.Tool.Search.Base' OR %EXACT(Super) = 'SessionAgent.Tool.Query.Base') AND Abstract = 0 AND NOT (%EXACT(Name) %STARTSWITH 'SessionAgent.Test.') ORDER BY %EXACT(Name)")
         If $$$ISERR(tSC) Quit
         Set tRs = tStmt.%Execute()
         ; Story 14.0 review fix (cr-13-3 class) — a runtime discovery-query
@@ -306,12 +307,13 @@ ClassMethod ResolveToolName(pToolName As %String) As %String
     Try {
         Set tStmt = ##class(%SQL.Statement).%New()
         ; Story 8.3 fix-now — also dispatch via the Tool.Search.Base
-        ; intermediate abstract. NOTE: this method does NOT filter out
+        ; intermediate abstract; Story 14.3 adds the Tool.Query.Base
+        ; third base. NOTE: this method does NOT filter out
         ; SessionAgent.Test.* fixtures (unlike ListTools, which does);
         ; ToolRegistryTest's stub-throwing-tool dispatch path depends on
         ; resolution working for fixture classes. Operators only see
         ; tools through ListTools, so the exclusion happens there.
-        Set tSC = tStmt.%Prepare("SELECT %EXACT(Name) AS ClassName FROM %Dictionary.ClassDefinition WHERE (%EXACT(Super) = 'SessionAgent.Tool.Base' OR %EXACT(Super) = 'SessionAgent.Tool.Search.Base') AND Abstract = 0")
+        Set tSC = tStmt.%Prepare("SELECT %EXACT(Name) AS ClassName FROM %Dictionary.ClassDefinition WHERE (%EXACT(Super) = 'SessionAgent.Tool.Base' OR %EXACT(Super) = 'SessionAgent.Tool.Search.Base' OR %EXACT(Super) = 'SessionAgent.Tool.Query.Base') AND Abstract = 0")
         If $$$ISERR(tSC) Quit
         Set tRs = tStmt.%Execute()
         ; Story 14.0 review fix (cr-13-3 class) — a runtime discovery-query

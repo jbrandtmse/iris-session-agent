@@ -401,6 +401,13 @@ ClassMethod BuildMinimalToolArgs(pToolName As %String) As %String
     ; returns the user's saved vocabulary (or count=0 / empty array
     ; on a fresh tester) — success envelope shape.
     If pToolName = "vocab_lookup" Quit "{""mode"":""list""}"
+    ; Story 14.2 — schema-discovery tools. list_active_body_types +
+    ; discover_tables have no required args; bounded inputs keep result
+    ; sets small. describe_message_class targets Ens.MessageHeader
+    ; (always compiled+persistent in an interoperability namespace).
+    If pToolName = "list_active_body_types" Quit "{""hours"":24}"
+    If pToolName = "describe_message_class" Quit "{""class_name"":""Ens.MessageHeader""}"
+    If pToolName = "discover_tables" Quit "{""name_fragment"":""MessageHeader"",""max_results"":5}"
     ; Unknown tool — empty object. Will produce a tool-error envelope but
     ; the dispatch round-trip still happens.
     Quit "{}"
@@ -787,8 +794,11 @@ ClassMethod RunMatrix() As %DynamicObject
 /// find_sessions_using_class) without bumping this lock (the Epic 13
 /// retro AI-3 stale-count incident shape); Story 14.1 grows it to
 /// 4 × 29 = 116 (18 inspection + 11 search — adds
-/// <code>get_query_knowledge</code>).
-/// When a 5th provider or 30th tool is added, this assertion
+/// <code>get_query_knowledge</code>); Story 14.2 grows it to
+/// 4 × 32 = 128 (21 inspection + 11 search — adds
+/// <code>list_active_body_types</code>, <code>describe_message_class</code>,
+/// <code>discover_tables</code>).
+/// When a 5th provider or 33rd tool is added, this assertion
 /// auto-fails so the maintainer updates the expected count +
 /// acknowledges the matrix grew. Defensive against silent shrinkage
 /// too (a regression deleting a tool).</p>
@@ -797,7 +807,7 @@ ClassMethod RunMatrix() As %DynamicObject
 Method TestMatrixCardinalityMatchesCatalog()
 {
     Set tMatrix = ..EnumerateMatrix()
-    Do $$$AssertEquals(tMatrix.%Size(), 116, "Matrix cardinality at Story 14.1 close = 4 providers × 29 tools (18 inspection + 11 search) = 116 pairs (got: " _ tMatrix.%Size() _ ")")
+    Do $$$AssertEquals(tMatrix.%Size(), 128, "Matrix cardinality at Story 14.2 close = 4 providers × 32 tools (21 inspection + 11 search) = 128 pairs (got: " _ tMatrix.%Size() _ ")")
 }
 
 /// <p><b>AC-5 — Dispatch policy gate.</b> Structurally verify that every

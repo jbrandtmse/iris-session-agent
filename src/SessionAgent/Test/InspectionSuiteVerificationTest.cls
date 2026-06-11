@@ -58,12 +58,14 @@ Class SessionAgent.Test.InspectionSuiteVerificationTest Extends %UnitTest.TestCa
 /// incrementing the catalog must update this constant + the named-tool
 /// list in <method>TestRegistryListsExpectedToolCount</method> + the
 /// representative-args table in <method>GetRepresentativeArgs</method>.</p>
-/// <p>As of Story 14.1 this is <b>29</b> — 18 inspection tools
+/// <p>As of Story 14.2 this is <b>32</b> — 21 inspection tools
 /// (Stories 2.11 + 4.x + 13.4: <code>get_queue_state</code>; Story 13.2:
 /// <code>get_rule_source</code>; Story 13.1:
 /// <code>get_class_source</code>; Story 13.3:
 /// <code>get_production_config_item</code>; Story 14.1:
-/// <code>get_query_knowledge</code>) + 11
+/// <code>get_query_knowledge</code>; Story 14.2:
+/// <code>list_active_body_types</code>, <code>describe_message_class</code>,
+/// <code>discover_tables</code>) + 11
 /// search tools (Story 8.3: <code>search_by_time</code>,
 /// <code>search_by_status</code>, <code>search_by_source</code>,
 /// <code>search_by_target</code>, <code>search_by_message_class</code>,
@@ -78,7 +80,7 @@ Class SessionAgent.Test.InspectionSuiteVerificationTest Extends %UnitTest.TestCa
 /// this constant 27→28 or extending the named-tool list — the three
 /// count-equality assertions in this class failed against the live
 /// 28-tool registry until Story 14.0 reconciled them.</p>
-Parameter EXPECTEDTOOLCOUNT As %Integer = 29;
+Parameter EXPECTEDTOOLCOUNT As %Integer = 32;
 
 /// <p>Synthetic session id well outside any realistic Ens production
 /// range. Used by every "not found" / "validation error" envelope assertion
@@ -254,6 +256,19 @@ ClassMethod GetRepresentativeArgs(pToolName As %String) As %DynamicObject
         ; Ens fixture seeding required.
         Do tArgs.%Set("topic", "dialect")
         Do tArgs.%Set("max_results", 2, "number")
+    } ElseIf pToolName = "list_active_body_types" {
+        ; Story 14.2 — small census window; empty census is a success
+        ; envelope (body_types:[]), so no fixture seeding required.
+        Do tArgs.%Set("hours", 24, "number")
+    } ElseIf pToolName = "describe_message_class" {
+        ; Story 14.2 — Ens.MessageHeader is always compiled+persistent
+        ; in an interoperability namespace; returns the "ok" envelope.
+        Do tArgs.%Set("class_name", "Ens.MessageHeader")
+    } ElseIf pToolName = "discover_tables" {
+        ; Story 14.2 — fragment guaranteed to resolve (Ens.MessageHeader
+        ; always projected); bounded result set.
+        Do tArgs.%Set("name_fragment", "MessageHeader")
+        Do tArgs.%Set("max_results", 5, "number")
     }
     Quit tArgs
 }
@@ -337,8 +352,10 @@ Method TestAllToolsValidationFailureReturnsEnvelope()
     Set tDispatchCount = 0
     ; Tools whose entire input schema is optional — empty args returns
     ; a success envelope, not an isError envelope. Story 8.3 adds
-    ; search_by_time (default 24h window when no bounds supplied).
-    Set tNoRequiredArgs = $ListBuild("search_by_time")
+    ; search_by_time (default 24h window when no bounds supplied);
+    ; Story 14.2 adds list_active_body_types (default 168h census) and
+    ; discover_tables (default unfiltered 50-row listing).
+    Set tNoRequiredArgs = $ListBuild("search_by_time", "list_active_body_types", "discover_tables")
     Set tNoRequiredCount = 0
     While tIter.%GetNext(.tKey, .tEntry) {
         Set tToolName = tEntry.%Get("name")
@@ -376,7 +393,7 @@ Method TestRegistryListsExpectedToolCount()
     Do $$$AssertEquals(tList.%Size(), ..#EXPECTEDTOOLCOUNT, "exactly " _ ..#EXPECTEDTOOLCOUNT _ " tools registered")
 
     ; Verify every expected name is present (order-independent).
-    Set tExpected = $ListBuild("session_summary", "session_timeline", "message_headers", "event_log", "rule_log", "get_message_body", "get_message_detail", "get_business_process_source", "get_business_process_instance", "list_business_process_methods", "find_related_sessions", "find_sessions_by_body", "explain_error", "search_by_time", "search_by_status", "search_by_source", "search_by_target", "search_by_message_class", "search_by_session", "search_by_super_session", "search_by_body_field", "inspect_body_candidates", "vocab_lookup", "get_queue_state", "get_rule_source", "get_class_source", "get_production_config_item", "find_sessions_using_class", "get_query_knowledge")
+    Set tExpected = $ListBuild("session_summary", "session_timeline", "message_headers", "event_log", "rule_log", "get_message_body", "get_message_detail", "get_business_process_source", "get_business_process_instance", "list_business_process_methods", "find_related_sessions", "find_sessions_by_body", "explain_error", "search_by_time", "search_by_status", "search_by_source", "search_by_target", "search_by_message_class", "search_by_session", "search_by_super_session", "search_by_body_field", "inspect_body_candidates", "vocab_lookup", "get_queue_state", "get_rule_source", "get_class_source", "get_production_config_item", "find_sessions_using_class", "get_query_knowledge", "list_active_body_types", "describe_message_class", "discover_tables")
     Set tFound = ""
     Set tIter = tList.%GetIterator()
     While tIter.%GetNext(.tKey, .tEntry) {

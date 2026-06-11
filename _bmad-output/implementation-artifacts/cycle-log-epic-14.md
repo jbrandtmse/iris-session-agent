@@ -16,3 +16,10 @@
 2026-06-11T08:53:33Z	Story 14.1	qa_complete	spawn_at=2026-06-11T09:00:00Z model=claude-fable-5 tests_added=4 first_run_failures=0 clarifications=0 closing_sections_present=true sweep=536/536/0 output_tokens=148547
 2026-06-11T09:22:03Z	Story 14.1	cr_complete	model=claude-fable-5 resolved=12 deferred=1 dismissed=13 high=0 med=4 low=9 clarifications=0 closing_sections_present=true sweep=536/536/0 output_tokens=264698
 2026-06-11T09:22:54Z	Story 14.1	smoke_complete	method=api result=pass iterations=1 defects_caught=0 evidence=dispatch(get_query_knowledge,dialect+keywords)=ok,2articles,first=integer-string-trap;table=47rows/7topics model=claude-fable-5
+2026-06-11T09:23:32Z	Story 14.1	committed	sha=f8c4548 submodules=
+2026-06-11T09:25:04Z	Story 14.2	story_created	path=_bmad-output/implementation-artifacts/14-2-schema-discovery-tools.md spec_lines=92 model=claude-fable-5
+2026-06-11T10:21:48Z	Story 14.2	dev_complete	model=claude-fable-5 files=10 tests_added=12 sweep=548/548/0 clarifications=0 cycle_iteration=2 closing_sections_present=true output_tokens=498605 notes=perf-root-cause-fix-UPPER-index
+2026-06-11T10:21:48Z	Story 14.2	adr_verifications_complete	result=none_required model=claude-fable-5
+2026-06-11T10:30:13Z	Story 14.2	qa_complete	model=claude-fable-5 tests_added=4 first_run_failures=0 clarifications=0 closing_sections_present=true sweep=552/552/0 output_tokens=155347
+2026-06-11T11:04:36Z	Story 14.2	cr_complete	model=claude-fable-5 resolved=12 deferred=4 dismissed=4 high=0 med=7 low=5 clarifications=0 closing_sections_present=true sweep=554/554/0 output_tokens=287067
+2026-06-11T11:06:02Z	Story 14.2	smoke_complete	method=api result=pass iterations=2 defects_caught=0 evidence=labt=3types;dmc(Ens.MessageHeader)=25cols;dt(Knowledge)=1table model=claude-fable-5

@@ -1,3 +1,123 @@
+# Code-review addendum — Story 14.2 (code-review stage, 2026-06-11)
+
+Corrections + additions to the QA section below, applied at code review:
+
+- **Line-count claim corrected.** "481 lines" was a `Measure-Object -Line`
+  count (excludes blank lines); physical `wc -l` was 517 at QA close and is
+  **536 after review fixes** (fixture Try/Catch safety + assertion updates).
+  Slightly over the ~500 test-class guideline — accepted (Rule 8 test 3, no
+  bug shape); the two review-added tests were split into a NEW class
+  `SchemaDiscoveryEdgeTest.cls` (113 lines) to bound further growth.
+- **`TestDiscoverTablesMaxResultsSubOneTreatedAsUnset` superseded.** Code
+  review adjudicated the QA-flagged divergence in favor of AC-3's
+  "clamp 1..200" (consistent with `hours<1`→1 and the published
+  GetInputSchema text): code now clamps `max_results<1` → 1; the test was
+  renamed `TestDiscoverTablesMaxResultsSubOneClampsToOne` and asserts the
+  clamp.
+- **New review tests:** `SchemaDiscoveryEdgeTest.TestDescribeMessageClassCharBudgetTrim`
+  (16 KB trim path — previously only the negative truncated=false case was
+  asserted) + `TestDiscoverTablesDottedFragmentMatchesQualified` (dotted
+  fragment fix lock). `TestDiscoverTablesIncludeSystemAndClamp` gained the
+  string-`"true"` include_system lock and a strict overflow-based
+  `truncated=1` assertion; `TestDescribeMessageClassSampleMsgMapping`
+  gained the IDKEY `unique=1` decode lock.
+- **Ground truth after review fixes (canonical numeric run-id picker):**
+  **Total=554, Passed=554, Failed=0** = QA 552 + 2 new EdgeTest methods.
+  Affected-class runs: SchemaDiscoveryToolTest 16/16 (run 181),
+  SchemaDiscoveryEdgeTest 2/2 (run 182), InspectionSuiteVerificationTest
+  13/13 (run 183), AgentConfigTest 25/25 (run 184),
+  ToolCallRoundtripIntegrationTest 4/4 (run 185 — perf gate verbatim
+  `"Matrix completed in 85.799606s (derived gate: 128s = 128 pairs x
+  1s/pair, floor 30s); regression if over."`), SampleProductionTest 3/3
+  (run 186; `Ens.Director.IsProductionRunning` → 1 AFTER the class run —
+  restore-prior-state teardown verified).
+
+---
+
+# Test Automation Summary — Story 14.2 (qa-generate-e2e-tests stage, 2026-06-11)
+
+## Scope
+
+Gap coverage for Story 14.2 (FR61 schema-discovery tools), complementing the
+dev-authored `SchemaDiscoveryToolTest` (12 methods). Framework: IRIS
+`%UnitTest` (project standard — ObjectScript backend story, no UI surface).
+All new tests dispatch through the real `Tool.Registry.Dispatch` trust
+boundary or the real `Tool.Registry.ListTools` manifest.
+
+## Gap Assessment (5 candidates from the stage briefing)
+
+- **(a) describe_message_class with NO collection properties — REAL GAP.**
+  All dev tests used classes WITH collections (OrderRequest/LineItems,
+  OrderRouter, Ens.MessageHeader). Verified live that
+  `SessionAgent.Sample.Msg.OrderResponse` is persistent with zero
+  `%Dictionary.CompiledProperty` Collection rows and zero `OrderResponse_*`
+  child tables → one test added.
+- **(b) hours-clamp upper bound + empty-window ok-empty envelope — COVERED;
+  no test added.** Upper clamp (999999→2160) and lower clamp (0→1) are both
+  in `TestListActiveBodyTypesWindowClampAndDefaults`, which also asserts the
+  success envelope + `body_types` array presence on the minimum window. A
+  *deterministically empty* census cannot be constructed non-destructively:
+  the minimum window is 1 hour and the running sample production / sibling
+  tests legitimately create headers inside any 1-hour window, so an
+  `body_type_count=0` assertion would be sweep-flaky. The ok-empty envelope
+  discipline is structurally locked by the existing assertions.
+- **(c) discover_tables max_results clamp + include_system=true — MOSTLY
+  COVERED; one sub-gap.** `TestDiscoverTablesIncludeSystemAndClamp` covers
+  include_system=true (%Dictionary surfaced), 5000→200 clamp, and the
+  small-cap truncated flag. Uncovered sub-gap: the lower bound — implemented
+  semantic is `max_results<1` → treated as UNSET → default 50 (NOT clamp to
+  1; contrast `hours<1`→1 in list_active_body_types). One test added locking
+  the implemented semantic (flagged in Decisions for code-review attention).
+- **(d) LIKE-wildcard chars in name_fragment — REAL GAP.** The layer-2 regex
+  deliberately admits `%`/`_`, and the fragment is bound into LIKE unescaped,
+  so SQL wildcard semantics pass through (already documented in the
+  GetInputSchema description). Verified live, then locked: `Mes_ageHeader`
+  and `Message%Header` both match `Ens.MessageHeader`.
+- **(e) ListTools manifest entries for the 3 tools — REAL GAP.** No
+  `TestRegistryListToolsIncludes<Tool>` test existed for any of the 3 new
+  tools (Story 14.1 precedent). One combined test added.
+
+## Generated Tests
+
+### ObjectScript %UnitTest (gap coverage)
+
+- [x] `src/SessionAgent/Test/SchemaDiscoveryToolTest.cls` — 4 methods + 1
+  non-Test-prefixed helper added (now 16 methods, 481 lines ≤ ~500):
+  - `TestDescribeMessageClassNoCollectionsGracefulEmpty` — OrderResponse:
+    `child_tables:[]` + `collection_properties:[]` present (not omitted),
+    `has_additional_info=false`, no `additional_info_keys` field,
+    `truncated=false`, columns still populated.
+  - `TestDiscoverTablesLikeWildcardSemantics` — `_` (one char) and `%`
+    (zero+) wildcards pass the regex gate and apply LIKE semantics; both
+    find `Ens.MessageHeader`.
+  - `TestDiscoverTablesMaxResultsSubOneTreatedAsUnset` — `max_results:0` →
+    default 50 (implemented unset semantic locked).
+  - `TestRegistryListToolsIncludesDiscoveryTools` — all 3 tools surfaced
+    with non-empty priming Descriptions (`FIRST` / `schema.table` /
+    `INFORMATION_SCHEMA` hooks) + input_schema properties/required shape
+    (`class_name` sole required arg; the other two declare none).
+  - `TablesContain` (ClassMethod helper — non-`Test*` per the
+    Property/method discovery-shadow rule).
+
+## Verification (ground-truth SQL probe, canonical numeric run-id picker)
+
+- Per-class run 180: 16/16 `Status=1` (verbatim roster probed from
+  `%UnitTest_Result.TestMethod`; the MCP envelope truncated to 1 row —
+  envelope is best-effort, SQL is the gate).
+- Package-wide aggregate: **Total=552, Passed=552, Failed=0** = 548 baseline
+  + 4 new methods.
+- Pre-flight: `Ens.Director.IsProductionRunning` → 1 (production left
+  running per Rule 7).
+
+## Rule 8 (discoverability)
+
+All 4 methods are `Test*`-prefixed instance methods on a
+`%UnitTest.TestCase` subclass in the `SessionAgent.Test` package — picked up
+by the default package sweep; no exclusions, no opt-out tags; helper is
+deliberately not `Test*`-prefixed.
+
+---
+
 # Test Automation Summary — Story 14.1 (qa-generate-e2e-tests stage, 2026-06-11)
 
 ## Scope

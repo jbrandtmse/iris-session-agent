@@ -14,12 +14,25 @@ Include Ensemble
 ///
 /// <p>Test isolation: <method>OnBeforeAllTests</method> installs the
 /// production + starts it (idempotent if a previous run already started
-/// it). <method>OnAfterAllTests</method> stops + uninstalls so the dev
-/// install returns to its baseline shape.</p>
+/// it). <method>OnAfterAllTests</method> restores the PRIOR state
+/// (Story 14.2 code-review fix): when a production was already running
+/// before this class ran (the Rule 7 Step-1 operator state), teardown
+/// leaves it installed + running; only when the namespace was
+/// production-less at entry does teardown uninstall back to the
+/// baseline shape. The previous unconditional uninstall left every
+/// post-sweep namespace production-less — recurring
+/// GetProductionConfigItemTest failures in any later full-package
+/// sweep (Story 14.2 dev sweep run 178: 4 failures, all this shape).</p>
 Class SessionAgent.Test.SampleProductionTest Extends %UnitTest.TestCase
 {
 
 Parameter PRODUCTIONNAME As %String = "SessionAgent.Sample.Production";
+
+/// <p>Whether a production was running BEFORE this class's setup ran —
+/// captured in <method>OnBeforeAllTests</method>, consulted by the
+/// restore-prior-state teardown. (NOT Test-prefixed — property
+/// discovery-shadow rule, .claude/rules/object-script-testing.md.)</p>
+Property PriorProductionWasRunning As %Boolean [ InitialExpression = 0 ];
 
 /// Maximum wait (in seconds) for the async trace to complete after
 /// dispatching a scenario.
@@ -39,6 +52,14 @@ Method %OnNew(initvalue As %String = "") As %Status
 /// the install worked.
 Method OnBeforeAllTests() As %Status
 {
+    ; Capture the ambient state BEFORE mutating it (restore-prior-state
+    ; teardown — Story 14.2 code-review fix).
+    Try {
+        Set ..PriorProductionWasRunning = +##class(Ens.Director).IsProductionRunning()
+    }
+    Catch ex {
+        Set ..PriorProductionWasRunning = 0
+    }
     Set tInstSC = ##class(SessionAgent.Sample.Bootstrap).InstallProduction()
     If $$$ISERR(tInstSC) Quit tInstSC
     Set tStartSC = ##class(SessionAgent.Sample.Bootstrap).StartProductionIfStopped()
@@ -46,11 +67,18 @@ Method OnBeforeAllTests() As %Status
     Quit $$$OK
 }
 
-/// Class-level teardown — stop + uninstall. Best-effort; an error here
-/// should not fail tests that already passed.
+/// Class-level teardown — restore the prior state. Best-effort; an error
+/// here should not fail tests that already passed.
 Method OnAfterAllTests() As %Status
 {
-    Do ##class(SessionAgent.Sample.Bootstrap).UninstallProduction()
+    If ..PriorProductionWasRunning {
+        ; A production was running before this class ran — leave the
+        ; sample production installed + running so later test classes
+        ; (and the operator's Rule 7 Step-1 state) see a live production.
+        Do ##class(SessionAgent.Sample.Bootstrap).StartProductionIfStopped()
+    } Else {
+        Do ##class(SessionAgent.Sample.Bootstrap).UninstallProduction()
+    }
     Quit $$$OK
 }
 

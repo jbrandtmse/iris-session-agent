@@ -1,7 +1,7 @@
 # iris-session-agent
 
 > [!NOTE]
-> **v1.0.4 (Epic 13 Tool Catalog Expansion + UI-label documentation pass) is feature-complete.**
+> **Epic 14 "Trace Intelligence" is complete** — knowledge corpus, schema-discovery tools, guarded read-only dynamic SQL, learned schema notes, and query-methodology prompting (FR60–FR64). 35-tool catalog, regression sweep 630/630/0. Latest release tag: **v1.0.4**; Epic 14 ships on `feature/ISA-14_trace-intelligence` pending merge + tag.
 >
 
 An open-source InterSystems IRIS module that adds an AI assistant chat experience to the Interoperability operator's existing Management Portal. Two agents share infrastructure inside one IPM-installable package and run on **IRIS / IRIS for Health 2024.1+** in pure ObjectScript — no embedded Python in the runtime path, no AI Hub dependency.
@@ -17,6 +17,7 @@ Two agents that read your Ensemble sessions and answer questions in plain Englis
 - On the **Message Viewer + Search Agent** screen — *"Find sessions with errors in the last hour"* — the Search Agent narrows the table to matching sessions and offers a "Load N sessions into table" button so you can keep investigating.
 - On the **Visual Trace + Inspection Agent** screen — *"Why did this session fail?"* — the Inspection Agent reads the rule log, event log, and message headers in parallel and answers with citations back to the underlying rows.
 - On either screen — *"Show me the source of the OrderRouter business process"* — the Inspection Agent's BP-introspection tools surface the routing rule + class definition.
+- On either screen *(Epic 14)* — *"What's the error rate per target component over the last 24 hours?"* — the agent consults its query-knowledge corpus, composes a time-bounded read-only `SELECT` through the guarded `execute_readonly_sql` tool, and shows you the exact SQL it ran alongside the answer. If its first attempt hits a dialect error, you'll see the error tool-card followed by the corrected query — the self-correction loop is visible in the transcript.
 
 ![Search Agent finding failed sessions and offering to load them into the Message Viewer table](documentation/images/readme/search-agent-finding-failed-sessions.png)
 
@@ -43,7 +44,7 @@ The custom Search and Inspection screens do **not** appear as new menu entries i
 
 Some HealthShare-Foundation-configured namespaces serve their pages with `/healthshare/` between `csp/` and the namespace instead — see [§ "8. Bookmark URLs"](#8-bookmark-urls) for how to determine which pattern your namespace uses.
 
-## v1.0.4 scope-complete summary
+## Scope summary (Epics 1–14 complete)
 
 | Capability | Story / Epic | Operator-observable surface |
 |---|---|---|
@@ -214,7 +215,7 @@ For each cloud provider you intend to use, wire **one** of the two delivery mech
 
   > **Windows note (env-var path):** the IRIS service process does not see your desktop user's environment variables. Set the variable at **Machine** scope and restart the IRIS service, or use the `Ens.Config.Credentials` mechanism instead — on a fresh Windows install the credentials row is usually the faster path.
 
-**OpenAI-compatible / Ollama (Epic 5 Story 5.3):** on the Agent Configuration form, select **Provider** = `openai-compatible`. The **Endpoint URL (OpenAI-Compatible only)** field appears — enter the **full** endpoint URL including the `/v1/chat/completions` path. Examples:
+**OpenAI-compatible / Ollama (Epic 5 Story 5.3):** on the Agent Configuration form, select **Provider** = `openai-compatible`. The **Endpoint URL (OpenAI-Compatible only)** field appears — enter the **full** endpoint URL including the `/v1/chat/completions` path (recommended). Shorter forms also work: a base URL ending in `/v1` (Story 11.4) and a bare `http://host:port` (Epic 14 walkthrough fix) are both auto-normalized to `/v1/chat/completions`; only a server with a non-`/v1` path prefix requires the full explicit URL. Examples:
 
   | Deployment | Value for the **Endpoint URL** field |
   |---|---|
@@ -396,8 +397,9 @@ An Ensemble session leaves a trace across six disconnected data surfaces — `En
 
 This module embeds two AI agents directly in the surfaces operators already use:
 
-- **Session Inspection Agent** — a chat tab on a custom subclass of `EnsPortal.VisualTrace`. Reads the six session-trace surfaces in parallel via 17 disciplined tool calls and answers questions like *"what happened?"* in plain English with citations back to the underlying rule-log / event-log / message-headers rows. Includes tools for BP source inspection, queue-state monitoring, production config-item interrogation, rule-source retrieval, and arbitrary class-source lookup added in Epic 13.
+- **Session Inspection Agent** — a chat tab on a custom subclass of `EnsPortal.VisualTrace`. Reads the six session-trace surfaces in parallel via 23 disciplined tool calls and answers questions like *"what happened?"* in plain English with citations back to the underlying rule-log / event-log / message-headers rows. Includes tools for BP source inspection, queue-state monitoring, production config-item interrogation, rule-source retrieval, and arbitrary class-source lookup added in Epic 13, plus the Epic 14 knowledge / schema-discovery / schema-notes tools shared with the Search Agent.
 - **Message Search Agent** — a chat tab on a custom subclass of `EnsPortal.MessageViewer`. Helps operators find sessions by natural-language query (*"find me failed admits from the last hour"*) using 10 indexed-access search tools + a two-stage body-content search (≤50 candidates) + per-user vocabulary learning that captures aliases on click-through. Epic 13 adds `find_sessions_using_class` to locate sessions by the class names flowing through them.
+- **Trace Intelligence (Epic 14, both agents)** — beyond the fixed-purpose tools, both agents answer open-ended analytical questions (error rates by dimension, daily volume trends, latency tails, custom-table pivots) with `execute_readonly_sql` under a compiler-level read-only gate, grounded by a 47-article query-knowledge corpus, live schema-discovery tools, per-namespace learned schema notes that persist across conversations, and a static query-methodology card in both system prompts. The executed SQL is always disclosed in the answer.
 
 **Design properties** that drive the v1 architecture:
 
@@ -503,16 +505,16 @@ The fourth leg of the knowledge subsystem (corpus → discovery tools → schema
 
 ## Status
 
-**Currently shipped — v1.0.4 (GA).** All 13 planning + implementation epics complete; **Epic 14 (Trace Intelligence — FR60–FR64: knowledge corpus, schema discovery, guarded read-only SQL, learned schema notes, prompt methodology card) is in progress on `main` and not yet release-tagged.** Release tags: `v1.0.0` (feature-complete, Epic 10 close), `v1.0.1` (Epic 11 patch), `v1.0.2` (Epic 12 — walkthrough hardening), `v1.0.3` (Epic 13 — Tool Catalog Expansion: 6 new tools, 28 total, 509/509 regression sweep), `v1.0.4` (README UI-label pass — operator-facing field names now match the Agent Configuration form).
+**Currently shipped — v1.0.4 (GA) + Epic 14 complete on the feature branch.** All 14 planning + implementation epics complete. **Epic 14 (Trace Intelligence — FR60–FR64: knowledge corpus, schema discovery, guarded read-only SQL, learned schema notes, prompt methodology card; 7/7 stories incl. the EXPLAIN stretch; 35-tool catalog; 630/630/0 regression sweep) shipped 2026-06-11 on `feature/ISA-14_trace-intelligence`, pending merge to `main` + release tag.** Release tags: `v1.0.0` (feature-complete, Epic 10 close), `v1.0.1` (Epic 11 patch), `v1.0.2` (Epic 12 — walkthrough hardening), `v1.0.3` (Epic 13 — Tool Catalog Expansion: 6 new tools, 28 total, 509/509 regression sweep), `v1.0.4` (README UI-label pass — operator-facing field names now match the Agent Configuration form).
 
 | Stage | Status | Artifact |
 |---|---|---|
 | Product Brief | Complete | [product-brief-iris-session-agent.md](_bmad-output/planning-artifacts/product-brief-iris-session-agent.md) |
-| PRD (59 FRs / 33 NFRs) | Complete | [prd.md](_bmad-output/planning-artifacts/prd.md) |
-| Architecture (10 calibration decisions, ~50-class structure) | Complete | [architecture.md](_bmad-output/planning-artifacts/architecture.md) |
+| PRD (64 FRs / 33 NFRs — incl. the Epic 14 FR60–FR64 addendum) | Complete | [prd.md](_bmad-output/planning-artifacts/prd.md) |
+| Architecture (10 calibration decisions, ~50-class structure + Epic 14 addendum) | Complete | [architecture.md](_bmad-output/planning-artifacts/architecture.md) |
 | UX Design (30 UX-DRs, 11 components) | Complete | [ux-design-specification.md](_bmad-output/planning-artifacts/ux-design-specification.md) |
-| Epics & Stories (13 epics shipped) | Complete | [epics.md](_bmad-output/planning-artifacts/epics.md) |
-| Implementation | **Shipped — v1.0.4** | regression sweep 509/509/0 |
+| Epics & Stories (14 epics shipped) | Complete | [epics.md](_bmad-output/planning-artifacts/epics.md) |
+| Implementation | **Shipped — v1.0.4 + Epic 14 on the feature branch** | regression sweep 630/630/0 |
 
 Post-v1 / vision-tier items (MCP serving, vector / semantic body-content search, PHI redaction architecture, cross-namespace operation, streaming responses, LLM-extracted alias generation, cross-user `NamespaceVocabulary` baseline population, stand-alone terminal REPL) are explicitly out of scope for v1 — see [PRD §"Vision (Future, post-v1)"](_bmad-output/planning-artifacts/prd.md) for full enumeration. Future cycles wait for the next walkthrough-driven feedback.
 
@@ -524,10 +526,10 @@ All planning artifacts live under [`_bmad-output/planning-artifacts/`](_bmad-out
 
 - **[Product Brief](_bmad-output/planning-artifacts/product-brief-iris-session-agent.md)** — vision-level input. Six-surface problem statement, primary users, posture (single-author hobby project, MIT, no commercial motion).
 - **[Product Brief Distillate](_bmad-output/planning-artifacts/product-brief-iris-session-agent-distillate.md)** — LLM-optimized condensed reference of the brief.
-- **[Product Requirements Document (PRD)](_bmad-output/planning-artifacts/prd.md)** — 59 functional requirements across 8 capability areas + 33 non-functional requirements across 7 categories. Locks the binding capability contract for v1.
+- **[Product Requirements Document (PRD)](_bmad-output/planning-artifacts/prd.md)** — 64 functional requirements (59 v1 + the Epic 14 FR60–FR64 Trace Intelligence addendum) + 33 non-functional requirements across 7 categories. Locks the binding capability contract.
 - **[Architecture Decision Document](_bmad-output/planning-artifacts/architecture.md)** — 10 calibration decisions, ~50-class structure, six-Topic decision tree, all FR/NFR coverage traced.
 - **[UX Design Specification](_bmad-output/planning-artifacts/ux-design-specification.md)** — 30 UX-DRs, 11 `sa-*` components, design-token system, phased UX roadmap (MVP Epic 3 → Growth Epic 10).
-- **[Epics & Stories Breakdown](_bmad-output/planning-artifacts/epics.md)** — 13 epics shipped, full FR/AR/NFR/UX-DR coverage map, bidirectional mapping to architect's original 18-step sequence, cross-cutting story patterns.
+- **[Epics & Stories Breakdown](_bmad-output/planning-artifacts/epics.md)** — 14 epics shipped, full FR/AR/NFR/UX-DR coverage map, bidirectional mapping to architect's original 18-step sequence, cross-cutting story patterns.
 
 ### Validation
 
